@@ -6,14 +6,7 @@ const userValidator = require('../validators/userValidator');
 const Helper = require('../utility/helper');
 const ApiError = require('../utility/ApiError'); // Ensure this utility exists
 const catchAsync = require('../utility/catchAsync'); // Ensure this utility exists
-
-// Basic console logger
-const logger = {
-  info: console.log,
-  error: console.error,
-  warn: console.warn,
-  debug: console.log,
-};
+const logger = require('../config/logger');
 
 /**
  * Utility to generate JWT token.
@@ -194,10 +187,55 @@ const login = catchAsync(async (req, res) => {
   });
 });
 
-// --- Placeholder for future auth methods ---
-// const forgotPassword = catchAsync(async (req, res) => { ... });
-// const resetPassword = catchAsync(async (req, res) => { ... });
-// const changePassword = catchAsync(async (req, res) => { ... });
+const changePassword = catchAsync(async (req, res) => {
+  // 1. Validate request body
+  const { oldPassword, newPassword } =
+    await userValidator.changePasswordSchema.validateAsync(req.body);
+
+  // 2. Get user ID from authenticated user
+  const userId = req.user.id; // Assumes authenticateUser middleware ran successfully
+
+  // 3. Call service to change password
+  await userService.changePassword(userId, oldPassword, newPassword);
+
+  // 4. Send success response
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Password changed successfully.',
+  });
+});
+
+const forgotPassword = catchAsync(async (req, res) => {
+  // 1. Validate request body
+  const { email } = await userValidator.forgotPasswordSchema.validateAsync(
+    req.body
+  );
+
+  // 2. Call service to request reset
+  await userService.requestPasswordReset(email);
+
+  // 3. Send generic success response (for security)
+  res.status(httpStatus.OK).json({
+    status: true,
+    message:
+      'If an account with that email exists, a password reset link has been sent.',
+  });
+});
+
+const verifyOtp = catchAsync(async (req, res) => {
+  // 1. Validate request body for email, otp, newPassword
+  const { email, otp, newPassword } =
+    await userValidator.verifyOtpSchema.validateAsync(req.body);
+
+  // 2. Call service to verify OTP and reset password
+  await userService.verifyOtpAndResetPassword(email, otp, newPassword);
+
+  // 3. Send success response
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Password has been reset successfully.',
+  });
+});
 
 module.exports = {
   createUser,
@@ -206,6 +244,9 @@ module.exports = {
   updateUser,
   deleteUser,
   login,
+  changePassword,
+  forgotPassword,
+  verifyOtp,
 };
 
 // --- Utility: catchAsync (Place in src/utility/catchAsync.js) ---
