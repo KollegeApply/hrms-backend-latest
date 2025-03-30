@@ -132,10 +132,61 @@ const getAllUsersSchema = Joi.object({
   isPaginated: Joi.boolean().optional().default(true), // Default to paginated results
 }).options({ stripUnknown: true });
 
+const changePasswordSchema = Joi.object({
+  oldPassword: Joi.string().required().messages({
+    'string.empty': 'Current password is required',
+    'any.required': 'Current password is required',
+  }),
+  newPassword: Joi.string().min(8).required().messages({
+    'string.min': 'New password must be at least 8 characters long',
+    'string.empty': 'New password is required',
+    'any.required': 'New password is required',
+  }),
+  // Optional: Add complexity rules (e.g., regex for uppercase, number, symbol)
+  // newPassword: Joi.string().min(8).pattern(new RegExp('^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*])')).required().messages({ ... }),
+}).options({ stripUnknown: true });
+
+// Schema for requesting a password reset link
+const forgotPasswordSchema = Joi.object({
+  email: Joi.string().trim().email().required().messages({
+    'string.email': 'Please provide a valid email address',
+    'string.empty': 'Email is required',
+    'any.required': 'Email is required',
+  }),
+}).options({ stripUnknown: true });
+
+const verifyOtpSchema = Joi.object({
+  email: Joi.string().trim().email().required().messages({
+    // Need email to find user
+    'string.email': 'Please provide a valid email address',
+    'string.empty': 'Email is required',
+    'any.required': 'Email is required',
+  }),
+  otp: Joi.string()
+    .trim()
+    .length(6) // Assuming 6-digit OTP
+    .pattern(/^[0-9]+$/) // Ensure it's numeric
+    .required()
+    .messages({
+      'string.length': 'OTP must be 6 digits long',
+      'string.pattern.base': 'OTP must contain only digits',
+      'string.empty': 'OTP is required',
+      'any.required': 'OTP is required',
+    }),
+  newPassword: Joi.string().min(8).required().messages({
+    'string.min': 'New password must be at least 8 characters long',
+    'string.empty': 'New password is required',
+    'any.required': 'New password is required',
+  }),
+}).options({ stripUnknown: true });
+
 module.exports = {
   createUserSchema,
   updateUserSchema,
   loginSchema,
   mongoIdSchema,
   getAllUsersSchema,
+  changePasswordSchema,
+  forgotPasswordSchema,
+  verifyOtpSchema,
 };

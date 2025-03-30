@@ -1,6 +1,7 @@
 // src/utility/helper.js
 const mongoose = require('mongoose');
 const nodemailer = require('nodemailer');
+const logger = require('../config/logger');
 const {
   MAIL_HOST,
   MAIL_PORT,
@@ -10,14 +11,7 @@ const {
   MAIL_USER,
   MAIL_PASS,
 } = require('./constants');
-
-// Basic console logger (replace with Pino or Winston if complex logging is needed)
-const logger = {
-  info: console.log,
-  error: console.error,
-  warn: console.warn,
-  debug: console.log,
-};
+const { OTP_EXPIRY_MINUTES } = require('./constants');
 
 class Helper {
   /**
@@ -116,8 +110,35 @@ class Helper {
     `;
   }
 
-  // Add getOTPEmail if/when you implement password reset functionality
-  // static getOTPEmail = (otp: string) => { ... }
+  /**
+   * Generates a password reset email template using OTP.
+   * @param {string} otp - The One-Time Password.
+   * @returns {string} - HTML email content.
+   */
+  static getOTPEmail(otp) {
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h1 style="color: #333;">Your Password Reset OTP</h1>
+        </div>
+        <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+            <p style="color: #555; font-size: 16px; line-height: 1.6;">Dear User,</p>
+            <p style="color: #555; font-size: 16px; line-height: 1.6;">We received a request to reset the password for your HRMS account.</p>
+            <p style="color: #555; font-size: 16px; line-height: 1.6;">Use the following One-Time Password (OTP) to complete your password reset process:</p>
+            <div style="background-color: #eef; padding: 15px 20px; border-radius: 5px; margin: 25px 0; text-align: center; border-left: 4px solid #66f;">
+                <h2 style="color: #333; font-size: 24px; margin: 0; letter-spacing: 2px; font-weight: bold;">${otp}</h2>
+            </div>
+            <p style="color: #555; font-size: 16px; line-height: 1.6;">This OTP is valid for <strong>${OTP_EXPIRY_MINUTES} minutes</strong>.</p>
+            <p style="color: #555; font-size: 16px; line-height: 1.6;">If you did not request a password reset, please ignore this email. Your password will remain unchanged.</p>
+            <p style="color: #777; font-size: 14px; line-height: 1.5; margin-top: 30px;">For security reasons, do not share this OTP with anyone.</p>
+            <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Your Company HR Team</strong></p>
+        </div>
+        <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
+          This is an automated message. Please do not reply directly to this email. If you need help, contact HR.
+        </div>
+    </div>
+    `;
+  }
 }
 
 module.exports = Helper;
