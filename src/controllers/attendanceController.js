@@ -51,3 +51,10 @@ exports.getAttendance = async (req, res) => {
   const result = await attendanceService.getAttendance(userId, role);
   return res.status(result.statusCode).json(result.data ? result.data : { message: result.message });
 };
+
+exports.getTodayCheckIn = async (req, res) => {
+  const userId = req.user.id;
+
+  const result = await attendanceService.getTodayCheckInStatus(userId);
+  return res.status(result.statusCode).json(result.data ? result.data : { message: result.message });
+};
