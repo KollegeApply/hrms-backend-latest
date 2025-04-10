@@ -1,6 +1,7 @@
 // src/routes.js
 const express = require('express');
 const userRoutes = require('./routes/userRoutes');
+const holidayRoutes = require('./routes/holidayRoute');
 // const otherRoutes = require('./routes/otherRoutes'); // Example for future routes
 
 const router = express.Router();
@@ -11,6 +12,10 @@ const defaultRoutes = [
   {
     path: `/api/${apiVersion}/users`,
     route: userRoutes,
+  },
+  {
+    path: `/api/${apiVersion}/holiday`,
+    route: holidayRoutes,
   },
   // Add other route configurations here
   // {

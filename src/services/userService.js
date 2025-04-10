@@ -264,6 +264,9 @@ class UserService {
     }
 
     // Compare provided password with the stored hash
+    console.log('Plain password:', password);
+    console.log('Hashed password in DB:', user.password);
+
     const isPasswordMatch = await bcrypt.compare(password, user.password);
 
     if (!isPasswordMatch) {

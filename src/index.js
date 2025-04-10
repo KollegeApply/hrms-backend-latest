@@ -33,7 +33,7 @@ mongoose
     require('./expressServer');
   })
   .catch((err) => {
-    console.error('❌ MongoDB connection error:', err.message);
+    console.error('❌ error:', err.message);
     process.exit(1); // Exit the application if DB connection fails
   });
 
