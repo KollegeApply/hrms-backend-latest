@@ -37,7 +37,7 @@ const updateHolidaySchema = Joi.object({
     'string.base': 'Holiday date must be a validate date.',
     'any.required': 'Holiday date is required.',
   }),
-})
+});
 
 const holidayIdSchema = Joi.object({
   id: objectIdSchema.required().messages({

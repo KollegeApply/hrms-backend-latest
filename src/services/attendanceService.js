@@ -4,7 +4,15 @@ const Attendance = require('../models/attendanceModel');
 const getCurrentMonthRange = () => {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+  const endOfMonth = new Date(
+    now.getFullYear(),
+    now.getMonth() + 1,
+    0,
+    23,
+    59,
+    59,
+    999
+  );
   return { startOfMonth, endOfMonth };
 };
 
@@ -22,7 +30,11 @@ const attendanceService = {
       });
 
       if (existingAttendance) {
-        return { status: 'error', statusCode: 400, message: 'Already checked in today.' };
+        return {
+          status: 'error',
+          statusCode: 400,
+          message: 'Already checked in today.',
+        };
       }
 
       const attendance = new Attendance({
@@ -33,10 +45,19 @@ const attendanceService = {
       });
 
       await attendance.save();
-      return { status: 'success', statusCode: 201, message: 'Check-in successful.', data: attendance };
+      return {
+        status: 'success',
+        statusCode: 201,
+        message: 'Check-in successful.',
+        data: attendance,
+      };
     } catch (error) {
       console.error('Error marking check-in in service:', error);
-      return { status: 'error', statusCode: 500, message: 'Failed to mark check-in.' };
+      return {
+        status: 'error',
+        statusCode: 500,
+        message: 'Failed to mark check-in.',
+      };
     }
   },
 
@@ -53,16 +74,29 @@ const attendanceService = {
       });
 
       if (!attendance) {
-        return { status: 'error', statusCode: 400, message: 'Not checked in today.' };
+        return {
+          status: 'error',
+          statusCode: 400,
+          message: 'Not checked in today.',
+        };
       }
 
       attendance.checkOutTime = now;
       attendance.checkOutLocation = { latitude, longitude };
       await attendance.save();
-      return { status: 'success', statusCode: 200, message: 'Check-out successful.', data: attendance };
+      return {
+        status: 'success',
+        statusCode: 200,
+        message: 'Check-out successful.',
+        data: attendance,
+      };
     } catch (error) {
       console.error('Error marking check-out in service:', error);
-      return { status: 'error', statusCode: 500, message: 'Failed to mark check-out.' };
+      return {
+        status: 'error',
+        statusCode: 500,
+        message: 'Failed to mark check-out.',
+      };
     }
   },
 
@@ -77,7 +111,11 @@ const attendanceService = {
       });
 
       if (existingAttendance && existingAttendance.status !== 'present') {
-        return { status: 'error', statusCode: 400, message: 'Attendance already marked for today.' };
+        return {
+          status: 'error',
+          statusCode: 400,
+          message: 'Attendance already marked for today.',
+        };
       }
 
       const attendance = await Attendance.findOneAndUpdate(
@@ -86,10 +124,19 @@ const attendanceService = {
         { upsert: true, new: true }
       );
 
-      return { status: 'success', statusCode: 200, message: 'Leave application submitted.', data: attendance };
+      return {
+        status: 'success',
+        statusCode: 200,
+        message: 'Leave application submitted.',
+        data: attendance,
+      };
     } catch (error) {
       console.error('Error applying for leave in service:', error);
-      return { status: 'error', statusCode: 500, message: 'Failed to apply for leave.' };
+      return {
+        status: 'error',
+        statusCode: 500,
+        message: 'Failed to apply for leave.',
+      };
     }
   },
 
@@ -104,7 +151,11 @@ const attendanceService = {
       });
 
       if (existingAttendance && existingAttendance.status !== 'present') {
-        return { status: 'error', statusCode: 400, message: 'Attendance already marked for today.' };
+        return {
+          status: 'error',
+          statusCode: 400,
+          message: 'Attendance already marked for today.',
+        };
       }
 
       const attendance = await Attendance.findOneAndUpdate(
@@ -113,10 +164,19 @@ const attendanceService = {
         { upsert: true, new: true }
       );
 
-      return { status: 'success', statusCode: 200, message: 'Work from home application submitted.', data: attendance };
+      return {
+        status: 'success',
+        statusCode: 200,
+        message: 'Work from home application submitted.',
+        data: attendance,
+      };
     } catch (error) {
       console.error('Error applying for WFH in service:', error);
-      return { status: 'error', statusCode: 500, message: 'Failed to apply for work from home.' };
+      return {
+        status: 'error',
+        statusCode: 500,
+        message: 'Failed to apply for work from home.',
+      };
     }
   },
 
@@ -128,14 +188,25 @@ const attendanceService = {
       if (role === 'employee') {
         query.user = userId;
       } else if (role !== 'hr' && role !== 'manager' && role !== 'admin') {
-        return { status: 'error', statusCode: 403, message: 'Unauthorized to view attendance.' };
+        return {
+          status: 'error',
+          statusCode: 403,
+          message: 'Unauthorized to view attendance.',
+        };
       }
 
-      const attendance = await Attendance.find(query).populate('user', 'firstName lastName employeeId');
+      const attendance = await Attendance.find(query).populate(
+        'user',
+        'firstName lastName employeeId'
+      );
       return { status: 'success', statusCode: 200, data: attendance };
     } catch (error) {
       console.error('Error fetching attendance in service:', error);
-      return { status: 'error', statusCode: 500, message: 'Failed to fetch attendance.' };
+      return {
+        status: 'error',
+        statusCode: 500,
+        message: 'Failed to fetch attendance.',
+      };
     }
   },
 };
