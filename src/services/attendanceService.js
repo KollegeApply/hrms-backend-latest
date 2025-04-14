@@ -138,6 +138,45 @@ const attendanceService = {
       return { status: 'error', statusCode: 500, message: 'Failed to fetch attendance.' };
     }
   },
+
+  async getTodayCheckInStatus(userId) {
+    try {
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+      const attendance = await Attendance.findOne({
+        user: userId,
+        date: { $gte: todayStart, $lte: todayEnd },
+        checkOutTime: null,
+        status: 'present',
+      }).select('checkInTime'); // Only select the checkInTime field
+
+      if (attendance) {
+        return {
+          status: 'success',
+          statusCode: 200,
+          data: {
+            isCheckedIn: true,
+            checkInTime: attendance.checkInTime,
+          },
+        };
+      } else {
+        return {
+          status: 'success',
+          statusCode: 200,
+          data: {
+            isCheckedIn: false,
+            checkInTime: null,
+          },
+        };
+      }
+    } catch (error) {
+      console.error('Error fetching today\'s check-in status in service:', error);
+      return { status: 'error', statusCode: 500, message: 'Failed to fetch today\'s check-in status.' };
+    }
+  },
+
 };
 
 module.exports = attendanceService;

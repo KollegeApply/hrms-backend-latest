@@ -7,11 +7,14 @@ if (process.env.NODE_ENV) {
   require('dotenv').config(); // Default to .env
 }
 
+// Import logger
+const logger = require('./config/logger');
+
 // Validate essential environment variables (optional but recommended)
 const requiredEnv = ['MONGO_URI', 'SECRET_KEY', 'PORT'];
 const missingEnv = requiredEnv.filter((key) => !process.env[key]);
 if (missingEnv.length > 0) {
-  console.error(
+  logger.error(
     `FATAL ERROR: Missing required environment variables: ${missingEnv.join(', ')}`
   );
   process.exit(1); // Exit if critical configuration is missing
@@ -28,12 +31,12 @@ mongoose
     // Add other options if needed, e.g., serverSelectionTimeoutMS
   })
   .then(() => {
-    console.log(`🗄️ MongoDB connected successfully.`);
+    logger.info(`🗄️ MongoDB connected successfully.`);
     // Start the Express server ONLY after DB connection is successful
     require('./expressServer');
   })
   .catch((err) => {
-    console.error('❌ MongoDB connection error:', err.message);
+    logger.error('❌ MongoDB connection error:', err.message);
     process.exit(1); // Exit the application if DB connection fails
   });
 
@@ -41,15 +44,15 @@ mongoose
 const signals = ['SIGINT', 'SIGTERM', 'SIGQUIT'];
 signals.forEach((signal) => {
   process.on(signal, async () => {
-    console.log(`\n${signal} received. Closing connections...`);
+    logger.info(`\n${signal} received. Closing connections...`);
     try {
       await mongoose.connection.close();
-      console.log('MongoDB connection closed.');
+      logger.info('MongoDB connection closed.');
       // Close server if it's exported or accessible here
-      // server.close(() => { console.log('HTTP server closed.'); });
+      // server.close(() => { logger.info('HTTP server closed.'); });
       process.exit(0);
     } catch (error) {
-      console.error('Error during graceful shutdown:', error);
+      logger.error('Error during graceful shutdown:', error);
       process.exit(1);
     }
   });

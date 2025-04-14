@@ -1,14 +1,8 @@
 // src/middleware/authMiddleware.js
 const jwt = require('jsonwebtoken');
 const { default: httpStatus } = require('http-status');
-const ApiError = require('../utility/ApiError'); // Create this utility class
-
-// Basic console logger
-const logger = {
-  info: console.log,
-  error: console.error,
-  warn: console.warn,
-};
+const ApiError = require('../utility/ApiError');
+const logger = require('../config/logger');
 
 /**
  * Middleware to authenticate user requests using JWT.
