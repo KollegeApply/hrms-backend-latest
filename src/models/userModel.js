@@ -96,7 +96,17 @@ const userSchema = new Schema(
     // Add other relevant HRMS fields as needed:
     // dateOfBirth: Date,
     // reportingManager: { type: Schema.Types.ObjectId, ref: 'User' },
-    // emergencyContact: { name: String, phone: String, relationship: String }
+    // emergencyContact: { name: String, phone: String, relationship: String },
+    passwordResetOtp: {
+      type: String,
+      required: false,
+      select: false, // Don't return OTP by default
+    },
+    passwordResetOtpExpires: {
+      type: Date,
+      required: false,
+      select: false, // Don't return expiry by default
+    },
   },
   {
     timestamps: true, // Adds createdAt and updatedAt automatically

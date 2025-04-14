@@ -3,6 +3,7 @@ const { default: httpStatus } = require('http-status');
 const { app } = require('./server'); // Import the configured app
 const mainRouter = require('./routes'); // Import the main router from routes.js
 const ApiError = require('./utility/ApiError'); // Import ApiError utility
+const logger = require('./config/logger');
 
 // *** IMPORT YOUR ERROR MIDDLEWARE HERE ***
 const {
@@ -38,7 +39,7 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 3301;
 app.listen(PORT, (err) => {
   if (err) {
-    return console.error('Failed to start server:', err);
+    return logger.error('Failed to start server:', err);
   }
-  console.log(`🚀 Server is listening on Port : ${PORT}`);
+  logger.info(`🚀 Server is listening on Port : ${PORT}`);
 });

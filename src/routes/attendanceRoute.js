@@ -12,7 +12,7 @@ router.post('/check-in', attendanceController.markCheckIn);
 router.post('/check-out', attendanceController.markCheckOut);
 router.post('/apply-leave', attendanceController.applyForLeave);
 router.post('/apply-wfh', attendanceController.applyForWFH);
-
+router.get('/today-check-in', attendanceController.getTodayCheckIn);
 // Get attendance
 router.get('/', attendanceController.getAttendance);
 

@@ -26,6 +26,8 @@ const MAIL_FROM = process.env.SMTP_FROM_EMAIL || 'noreply@yourcompany.com';
 const MAIL_USER = process.env.SMTP_USER;
 const MAIL_PASS = process.env.SMTP_PASS;
 
+const OTP_EXPIRY_MINUTES = 10;
+
 module.exports = {
   USER_ROLES,
   EMPLOYEE_STATUS,
@@ -38,4 +40,5 @@ module.exports = {
   MAIL_FROM,
   MAIL_USER,
   MAIL_PASS,
+  OTP_EXPIRY_MINUTES,
 };

@@ -5,7 +5,7 @@ const {
   authenticateUser,
   authorizeRole,
 } = require('../middleware/authMiddleware');
-const { USER_ROLES } = require('../utility/constants'); // Import roles for authorization
+const { USER_ROLES } = require('../utility/constants');
 
 const router = express.Router();
 
@@ -23,13 +23,7 @@ router.post(
   userController.createUser
 );
 
-// Get All Users: Access might vary by role (e.g., everyone sees basic info, HR/Admin see more)
-router.get(
-  '/',
-  authenticateUser,
-  // Add authorizeRole if access needs restriction, e.g., authorizeRole([USER_ROLES.ADMIN, USER_ROLES.HR, USER_ROLES.MANAGER])
-  userController.getAllUsers
-);
+router.get('/', authenticateUser, userController.getAllUsers);
 
 // Get Specific User: Allow self-access, plus HR/Admin/Manager access
 router.get(
@@ -78,6 +72,14 @@ router.delete(
 );
 
 // --- Add other user-related routes as needed ---
-// e.g., router.post('/change-password', authenticateUser, userController.changePassword);
+router.post(
+  '/change-password',
+  authenticateUser,
+  userController.changePassword
+);
+
+router.post('/forgot-password', userController.forgotPassword); // Request OTP email
+// Update the handler for this route
+router.post('/reset-password', userController.verifyOtp);
 
 module.exports = router;

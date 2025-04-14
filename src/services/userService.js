@@ -5,14 +5,8 @@ const Helper = require('../utility/helper');
 const { paginate } = require('../utility/common'); // Ensure common.js is created
 const ApiError = require('../utility/ApiError'); // You might need to create this utility
 const { default: httpStatus } = require('http-status'); // Install http-status: npm install http-status
-
-// Basic console logger (replace with Pino or Winston if complex logging is needed)
-const logger = {
-  info: console.log,
-  error: console.error,
-  warn: console.warn,
-  debug: console.log,
-};
+const logger = require('../config/logger');
+const { OTP_EXPIRY_MINUTES } = require('../utility/constants');
 
 class UserService {
   /**
@@ -318,10 +312,148 @@ class UserService {
     return user.toJSON();
   }
 
-  // --- Placeholder for future methods ---
-  // async changePassword(userId, oldPassword, newPassword) { ... }
-  // async requestPasswordReset(email) { ... } // (generateAndSendOtp equivalent)
-  // async resetPasswordWithToken(token, newPassword) { ... } // (verifyOtp equivalent)
+  /**
+   * Allows an authenticated user to change their own password.
+   * @param {string} userId - The ID of the user changing the password.
+   * @param {string} oldPassword - The user's current password.
+   * @param {string} newPassword - The desired new password.
+   * @returns {Promise<boolean>} - True if the password was changed successfully.
+   * @throws {ApiError} - If user not found, old password mismatch, or update fails.
+   */
+  async changePassword(userId, oldPassword, newPassword) {
+    logger.info(`Attempting password change for user ID: ${userId}`);
+
+    // Fetch user *with* password selected
+    const user = await User.findById(userId).select('+password');
+
+    if (!user || user.isDeleted) {
+      logger.warn(
+        `Password change failed: User not found or deleted for ID: ${userId}`
+      );
+      throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
+    }
+
+    // Verify the old password
+    const isPasswordMatch = await bcrypt.compare(oldPassword, user.password);
+    if (!isPasswordMatch) {
+      logger.warn(
+        `Password change failed: Incorrect old password for user ID: ${userId}`
+      );
+      throw new ApiError(
+        httpStatus.UNAUTHORIZED,
+        'Incorrect current password.'
+      );
+    }
+
+    // Hash the new password
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    logger.info(`Password changed successfully for user ID: ${userId}`);
+    // Optionally: Send an email notification about the password change
+    return true;
+  }
+
+  /**
+   * Generates a password reset OTP and sends it via email.
+   * @param {string} email - The email address of the user requesting the reset.
+   * @returns {Promise<void>}
+   * @throws {Error} - Propagates email sending errors if needed.
+   */
+  async requestPasswordReset(email) {
+    logger.info(`Password reset requested for email: ${email}`);
+    // Fetch user *including* OTP fields for potential overwriting
+    const user = await User.findOne({
+      email: email.toLowerCase(),
+      isDeleted: false,
+    }).select('+passwordResetOtp +passwordResetOtpExpires');
+
+    // IMPORTANT: Always return successfully, even if user doesn't exist, to prevent email enumeration attacks.
+    if (!user) {
+      logger.warn(
+        `Password reset requested for non-existent or deleted email: ${email}. No action taken.`
+      );
+      return; // Silently exit
+    }
+
+    // Generate a 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000); // Set expiry time
+
+    // Save OTP and expiry to the user document
+    user.passwordResetOtp = otp;
+    user.passwordResetOtpExpires = otpExpires;
+    await user.save();
+
+    logger.info(
+      `Generated OTP ${otp} for user ${user.id}, expires at ${otpExpires}`
+    );
+
+    try {
+      await Helper.sendEmail({
+        receiverEmails: [user.email],
+        subject: 'HRMS Password Reset OTP',
+        message: Helper.getOTPEmail(otp), // Use the OTP email template
+      });
+      logger.info(`Password reset OTP email sent successfully to: ${email}`);
+    } catch (error) {
+      logger.error(
+        `Failed to send password reset OTP email to ${email}:`,
+        error
+      );
+      // Consider cleaning up OTP fields if email fails critically?
+      // user.passwordResetOtp = undefined;
+      // user.passwordResetOtpExpires = undefined;
+      // await user.save();
+      // Decide if you want to throw the error or just log it
+      // throw new Error('Failed to send password reset OTP email.');
+    }
+  }
+
+  /**
+   * Verifies the OTP and resets the user's password.
+   * @param {string} email - The user's email address.
+   * @param {string} otp - The OTP provided by the user.
+   * @param {string} newPassword - The desired new password.
+   * @returns {Promise<boolean>} - True if password reset was successful.
+   * @throws {ApiError} - If OTP is invalid/expired, user not found, or update fails.
+   */
+  async verifyOtpAndResetPassword(email, otp, newPassword) {
+    logger.info(`Attempting password reset via OTP for email: ${email}`);
+
+    // Find the user, selecting the necessary fields
+    const user = await User.findOne({
+      email: email.toLowerCase(),
+      isDeleted: false,
+      // Ensure OTP hasn't already been used/cleared and hasn't expired
+      passwordResetOtp: otp, // Directly match the OTP
+      passwordResetOtpExpires: { $gt: new Date() }, // Check expiry
+    }).select('+password +passwordResetOtp +passwordResetOtpExpires'); // Select fields for update and verification
+
+    // Check if a user was found matching the email, OTP, and expiry criteria
+    if (!user) {
+      logger.warn(
+        `Password reset failed: Invalid OTP, expired OTP, or user not found for email: ${email}`
+      );
+      // It's crucial to give a generic error here to prevent leaking info about whether the email exists or if the OTP was just wrong/expired.
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid or expired OTP.');
+    }
+
+    // --- OTP is valid and user found ---
+
+    // Hash and set the new password
+    user.password = await bcrypt.hash(newPassword, 10);
+
+    // Clear the OTP fields after successful use
+    user.passwordResetOtp = undefined;
+    user.passwordResetOtpExpires = undefined;
+
+    await user.save();
+
+    logger.info(`Password reset via OTP successful for user ID: ${user.id}`);
+    // Optionally: Send confirmation email that password was changed
+    return true;
+  }
 }
 
 module.exports = new UserService(); // Export an instance
