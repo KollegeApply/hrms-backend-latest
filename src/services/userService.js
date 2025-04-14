@@ -60,19 +60,39 @@ class UserService {
     const sort = {};
     sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
 
+    const populateOptions = [
+      {
+        path: 'teamLeadId',
+        select: 'id firstName lastName email',
+      },
+      {
+        path: 'subTeamLeadId',
+        select: 'id firstName lastName email',
+      },
+    ];
+
     if (isPaginated) {
       logger.info(
         `Fetching paginated users: page=${page}, limit=${limit}, query=${JSON.stringify(query)}, sort=${JSON.stringify(sort)}`
       );
-      // Use the paginate utility function
-      return await paginate(User, query, page, limit, sort);
+      const paginatedResult = await paginate(
+        User,
+        query,
+        page,
+        limit,
+        sort,
+        null,
+        populateOptions
+      );
+
+      return paginatedResult;
     } else {
       logger.info(
         `Fetching all users: query=${JSON.stringify(query)}, sort=${JSON.stringify(sort)}`
       );
       // Fetch all matching users without pagination
       const users = await User.find(query).sort(sort);
-      return { data: users }; // Return in a structure consistent with pagination
+      return { data: users };
     }
   }
 
@@ -148,8 +168,25 @@ class UserService {
       userData.employeeId &&
       (await this.getUserByEmployeeId(userData.employeeId))
     ) {
-      logger.warn(`Employee ID already in use: ${userData.employeeId}`);
+      logger.warn(`Employee ID already in use: ${userData?.employeeId}`);
       throw new ApiError(httpStatus.CONFLICT, 'Employee ID is already in use.');
+    }
+
+    //check if tl exist in db
+    try {
+      const tlExist = await this.getUserById(userData?.teamLeadId);
+      if (!tlExist)
+        throw new ApiError(httpStatus.NOT_FOUND, 'Team lead not found');
+    } catch (err) {
+      throw new ApiError(err);
+    }
+
+    // check if subTL exist in db
+    if (
+      userData.subTeamLeadId &&
+      !(await this.getUserById(userData.subTeamLeadId))
+    ) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'Sub Team Lead not found');
     }
 
     // Hash the password

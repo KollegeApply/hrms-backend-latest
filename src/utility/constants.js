@@ -3,6 +3,9 @@ const USER_ROLES = {
   HR: 'hr',
   MANAGER: 'manager',
   EMPLOYEE: 'employee',
+  CONTRACTOR: 'contractor',
+  TEAMLEAD: 'teamlead',
+  SUBTEAMLEAD: 'subteamlead',
 };
 
 const EMPLOYEE_STATUS = {

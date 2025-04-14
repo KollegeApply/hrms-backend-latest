@@ -53,6 +53,15 @@ const userSchema = new Schema(
       type: String,
       trim: true,
     },
+    teamLeadId: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: true,
+      ref: 'User',
+    },
+    subTeamLeadId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
     address: {
       // Optional: More detailed address structure can be added
       street: String,
