@@ -8,12 +8,13 @@ const router = express.Router();
 router.use(authenticateUser);
 
 // Mark attendance
-router.post('/check-in', attendanceController.markCheckIn);
-router.post('/check-out', attendanceController.markCheckOut);
-router.post('/apply-leave', attendanceController.applyForLeave);
-router.post('/apply-wfh', attendanceController.applyForWFH);
-router.get('/today-check-in', attendanceController.getTodayCheckIn);
+router.post('/check-in', attendanceController?.markCheckIn);
+router.post('/check-out', attendanceController?.markCheckOut);
+router.post('/apply-leave', attendanceController?.applyForLeave);
+router.post('/apply-wfh', attendanceController?.applyForWFH);
+router.get('/today-check-in', attendanceController?.getTodayCheckIn);
 // Get attendance
-router.get('/', attendanceController.getAttendance);
+router.get('/', attendanceController?.getAttendance);
+router.get('/today-checkin', attendanceController?.getTodayCheckIn);
 
 module.exports = router;

@@ -2,11 +2,21 @@
 const bcrypt = require('bcryptjs');
 const User = require('../models/userModel');
 const Helper = require('../utility/helper');
-const { paginate } = require('../utility/common'); // Ensure common.js is created
+const {
+  paginate,
+  validateHeaders,
+  validateUsersCsvFile,
+} = require('../utility/common'); // Ensure common.js is created
 const ApiError = require('../utility/ApiError'); // You might need to create this utility
 const { default: httpStatus } = require('http-status'); // Install http-status: npm install http-status
 const logger = require('../config/logger');
-const { OTP_EXPIRY_MINUTES } = require('../utility/constants');
+const {
+  OTP_EXPIRY_MINUTES,
+  USER_CSV_FILE_HEADERS,
+} = require('../utility/constants');
+const { default: mongoose } = require('mongoose');
+const csv = require('csvtojson');
+const Department = require('../models/departmentModel');
 
 class UserService {
   /**
@@ -19,6 +29,7 @@ class UserService {
       page,
       limit,
       search,
+      department,
       role,
       status,
       sortBy,
@@ -28,17 +39,28 @@ class UserService {
 
     const query = { isDeleted: false }; // Base query to exclude soft-deleted users
 
+    if (
+      department &&
+      typeof department === 'string' &&
+      department?.trim()?.length > 0
+    ) {
+      // Assuming 'department' field in User schema stores the ObjectId
+      query.department = department?.trim();
+      logger.info(`Applying department filter: ${query.department}`);
+    }
+
     // Add search criteria
-    if (search) {
+    if (search && typeof search === 'string' && search?.trim()?.length > 0) {
+      const searchTerm = search?.trim();
       // Simple search across multiple fields (adjust fields as needed)
       const searchRegex = new RegExp(search, 'i'); // Case-insensitive search
       query.$or = [
         { firstName: searchRegex },
         { lastName: searchRegex },
-        { email: searchRegex },
+        // { email: searchRegex },
         { employeeId: searchRegex },
-        { jobTitle: searchRegex },
-        { department: searchRegex },
+        // { jobTitle: searchRegex },
+        // { department: searchRegex },
       ];
     }
 
@@ -61,7 +83,11 @@ class UserService {
       },
       {
         path: 'subTeamLeadId',
-        select: 'id firstName lastName email',
+        select: '_id firstName lastName email',
+      },
+      {
+        path: 'department',
+        select: '_id name',
       },
     ];
 
@@ -97,7 +123,10 @@ class UserService {
    */
   async getUserById(id) {
     logger.info(`Fetching user by ID: ${id}`);
-    const user = await User.findOne({ _id: id, isDeleted: false });
+    const user = await User.findOne({ _id: id, isDeleted: false }).populate(
+      'department',
+      'name'
+    );
     if (!user) {
       logger.warn(`User not found with ID: ${id}`);
     }
@@ -133,7 +162,7 @@ class UserService {
     const user = await User.findOne({
       employeeId: employeeId,
       isDeleted: false,
-    });
+    }).populate('department', 'name');
     if (!user) {
       logger.debug(`User not found with employeeId: ${employeeId}`);
     }
@@ -147,10 +176,10 @@ class UserService {
    * @throws {ApiError} - Throws error if email or employeeId is already in use.
    */
   async createUser(userData) {
-    logger.info(`Attempting to create user with email: ${userData.email}`);
+    logger.info(`Attempting to create user with email: ${userData?.email}`);
     // Check for existing email
-    if (await this.getUserByEmail(userData.email)) {
-      logger.warn(`Email already in use: ${userData.email}`);
+    if (await this.getUserByEmail(userData?.email)) {
+      logger.warn(`Email already in use: ${userData?.email}`);
       throw new ApiError(
         httpStatus.CONFLICT,
         'Email address is already registered.'
@@ -159,8 +188,8 @@ class UserService {
 
     // Check for existing employee ID if provided
     if (
-      userData.employeeId &&
-      (await this.getUserByEmployeeId(userData.employeeId))
+      userData?.employeeId &&
+      (await this.getUserByEmployeeId(userData?.employeeId))
     ) {
       logger.warn(`Employee ID already in use: ${userData?.employeeId}`);
       throw new ApiError(httpStatus.CONFLICT, 'Employee ID is already in use.');
@@ -177,23 +206,23 @@ class UserService {
 
     // check if subTL exist in db
     if (
-      userData.subTeamLeadId &&
-      !(await this.getUserById(userData.subTeamLeadId))
+      userData?.subTeamLeadId &&
+      !(await this.getUserById(userData?.subTeamLeadId))
     ) {
       throw new ApiError(httpStatus.NOT_FOUND, 'Sub Team Lead not found');
     }
 
     // Hash the password
-    const hashedPassword = await bcrypt.hash(userData.password, 10); // 10 is the salt rounds
+    const hashedPassword = await bcrypt.hash(userData?.password, 10); // 10 is the salt rounds
 
     // Create and save the new user
     const user = new User({
       ...userData,
       password: hashedPassword,
-      email: userData.email.toLowerCase(), // Store email in lowercase
+      email: userData?.email?.toLowerCase(), // Store email in lowercase
     });
     const savedUser = await user.save();
-    logger.info(`User created successfully with ID: ${savedUser.id}`);
+    logger.info(`User created successfully with ID: ${savedUser?.id}`);
 
     // Return user object without password (using toJSON transform)
     return savedUser.toJSON();
@@ -216,12 +245,12 @@ class UserService {
     }
 
     // Check for email conflict if email is being updated
-    if (updateData.email) {
-      updateData.email = updateData.email.toLowerCase();
-      const existingUser = await this.getUserByEmail(updateData.email);
-      if (existingUser && existingUser.id !== id) {
+    updateData.email = updateData?.email?.toLowerCase();
+    const existingUser = await this.getUserByEmail(updateData?.email);
+    if (updateData?.email) {
+      if (existingUser && existingUser?.id !== id) {
         logger.warn(
-          `Update conflict: Email ${updateData.email} already in use by user ${existingUser.id}`
+          `Update conflict: Email ${updateData?.email} already in use by user ${existingUser.id}`
         );
         throw new ApiError(
           httpStatus.CONFLICT,
@@ -231,13 +260,13 @@ class UserService {
     }
 
     // Check for employee ID conflict if employeeId is being updated
-    if (updateData.employeeId) {
+    if (updateData?.employeeId) {
       const existingUser = await this.getUserByEmployeeId(
-        updateData.employeeId
+        updateData?.employeeId
       );
-      if (existingUser && existingUser.id !== id) {
+      if (existingUser && existingUser?.id !== id) {
         logger.warn(
-          `Update conflict: Employee ID ${updateData.employeeId} already in use by user ${existingUser.id}`
+          `Update conflict: Employee ID ${updateData?.employeeId} already in use by user ${existingUser?.id}`
         );
         throw new ApiError(
           httpStatus.CONFLICT,
@@ -247,13 +276,30 @@ class UserService {
     }
 
     // Prevent password update through this method (should have a dedicated password reset/change flow)
-    delete updateData.password;
+    delete updateData?.password;
+
+    if (
+      updateData?.status === 'onroll' &&
+      existingUser?.status === 'probation'
+    ) {
+      updateData = {
+        ...updateData,
+        leaves: {
+          annualLeave: 16,
+          casualSickLeave: 8,
+          bereavementLeaves: 3,
+          marriageLeave: 5,
+          birthdayLeave: 1,
+          total: 33,
+        },
+      };
+    }
 
     // Apply updates
     Object.assign(user, updateData);
     const updatedUser = await user.save();
 
-    logger.info(`User updated successfully: ${updatedUser.id}`);
+    logger.info(`User updated successfully: ${updatedUser?.id}`);
     return updatedUser.toJSON();
   }
 
@@ -264,9 +310,14 @@ class UserService {
    */
   async deleteUser(id) {
     logger.info(`Attempting to soft delete user with ID: ${id}`);
+    const result1 = await User.findById(id);
+    console.log(result1);
+    if (result1.isDeleted) {
+      return false;
+    }
     const result = await User.findByIdAndUpdate(
       id,
-      { isDeleted: true, status: 'inactive' }, // Mark as deleted and inactive
+      { isDeleted: true }, // Mark as deleted
       { new: true } // Option not strictly needed for deletion check but good practice
     );
 
@@ -295,10 +346,10 @@ class UserService {
     }
 
     // Compare provided password with the stored hash
-    console.log('Plain password:', password);
-    console.log('Hashed password in DB:', user.password);
+    // console.log('Plain password:', password);
+    // console.log('Hashed password in DB:', user.password);
 
-    const isPasswordMatch = await bcrypt.compare(password, user.password);
+    const isPasswordMatch = await bcrypt.compare(password, user?.password);
 
     if (!isPasswordMatch) {
       logger.warn(
@@ -326,7 +377,7 @@ class UserService {
     // Fetch user *with* password selected
     const user = await User.findById(userId).select('+password');
 
-    if (!user || user.isDeleted) {
+    if (!user || user?.isDeleted) {
       logger.warn(
         `Password change failed: User not found or deleted for ID: ${userId}`
       );
@@ -334,7 +385,7 @@ class UserService {
     }
 
     // Verify the old password
-    const isPasswordMatch = await bcrypt.compare(oldPassword, user.password);
+    const isPasswordMatch = await bcrypt.compare(oldPassword, user?.password);
     if (!isPasswordMatch) {
       logger.warn(
         `Password change failed: Incorrect old password for user ID: ${userId}`
@@ -364,7 +415,7 @@ class UserService {
     logger.info(`Password reset requested for email: ${email}`);
     // Fetch user *including* OTP fields for potential overwriting
     const user = await User.findOne({
-      email: email.toLowerCase(),
+      email: email?.toLowerCase(),
       isDeleted: false,
     }).select('+passwordResetOtp +passwordResetOtpExpires');
 
@@ -386,19 +437,21 @@ class UserService {
     await user.save();
 
     logger.info(
-      `Generated OTP ${otp} for user ${user.id}, expires at ${otpExpires}`
+      `Generated OTP ${otp} for user ${user?.id}, expires at ${otpExpires}`
     );
 
     try {
       await Helper.sendEmail({
-        receiverEmails: [user.email],
+        receiverEmails: [user?.email],
         subject: 'HRMS Password Reset OTP',
         message: Helper.getOTPEmail(otp), // Use the OTP email template
       });
-      logger.info(`Password reset OTP email sent successfully to: ${email}`);
+      logger.info(
+        `Password reset OTP email sent successfully to: ${user?.email}`
+      );
     } catch (error) {
       logger.error(
-        `Failed to send password reset OTP email to ${email}:`,
+        `Failed to send password reset OTP email to ${user?.email}:`,
         error
       );
       // Consider cleaning up OTP fields if email fails critically?
@@ -418,12 +471,12 @@ class UserService {
    * @returns {Promise<boolean>} - True if password reset was successful.
    * @throws {ApiError} - If OTP is invalid/expired, user not found, or update fails.
    */
-  async verifyOtpAndResetPassword(email, otp, newPassword) {
+  async verifyOtpAndResetPassword(email, newPassword, otp) {
     logger.info(`Attempting password reset via OTP for email: ${email}`);
 
     // Find the user, selecting the necessary fields
     const user = await User.findOne({
-      email: email.toLowerCase(),
+      email: email?.toLowerCase(),
       isDeleted: false,
       // Ensure OTP hasn't already been used/cleared and hasn't expired
       passwordResetOtp: otp, // Directly match the OTP
@@ -448,11 +501,230 @@ class UserService {
     user.passwordResetOtp = undefined;
     user.passwordResetOtpExpires = undefined;
 
-    await user.save();
+    await user?.save();
 
-    logger.info(`Password reset via OTP successful for user ID: ${user.id}`);
+    logger.info(`Password reset via OTP successful for user ID: ${user?.id}`);
     // Optionally: Send confirmation email that password was changed
     return true;
+  }
+
+  async bulkUpload(usersFile, activity) {
+    try {
+      // Parse CSV
+      const fileInString = usersFile?.buffer?.toString('utf-8');
+      const usersCsvJson = await csv()?.fromString(fileInString);
+
+      if (!usersCsvJson?.length) {
+        return {
+          status: false,
+          code: 400,
+          message: 'CSV file is empty or invalid.',
+          isErrorForUser: true,
+        };
+      }
+
+      // Validate Headers
+      const { status: headerStatus, message: headerMessage } = validateHeaders(
+        USER_CSV_FILE_HEADERS,
+        usersCsvJson[0]
+      );
+      if (!headerStatus) {
+        return {
+          status: false,
+          code: 400,
+          message: headerMessage || 'Invalid CSV headers.',
+          isErrorForUser: true,
+        };
+      }
+
+      // logic to convert department name,teamlead and subteamlead email to there objectId
+      let departmentName = [];
+      let tlName = [];
+      let stlName = [];
+      for (let user of usersCsvJson) {
+        departmentName.push(user?.department?.trim());
+        tlName.push(user?.teamLeadId?.trim());
+        stlName.push(user?.subTeamLeadId?.trim());
+      }
+
+      const uniqueDepartments = [...new Set(departmentName)];
+      const uniqueTeamLeads = [...new Set(tlName)];
+      const uniqueSubTeamLeads = [...new Set(stlName)];
+
+      // Fetch matching departments
+      const departments = await Department.find({
+        name: { $in: uniqueDepartments },
+      })
+        .select('_id name')
+        .lean();
+
+      const users = await User.find({
+        email: {
+          $in: [...new Set([...uniqueTeamLeads, ...uniqueSubTeamLeads])],
+        },
+      })
+        .select('id email')
+        .lean();
+
+      const departmentMap = {};
+      departments.forEach((dep) => (departmentMap[dep?.name] = dep?._id));
+
+      const userMap = {};
+      users.forEach((u) => (userMap[u?.email] = u?._id));
+
+      for (let user of usersCsvJson) {
+        user.department = departmentMap[user?.department]?.toString() || null;
+        user.teamLeadId = userMap[user?.teamLeadId]?.toString() || null;
+        user.subTeamLeadId = userMap[user?.subTeamLeadId]?.toString() || null;
+      }
+
+      // Validate Rows & Internal Duplicates
+      let { validData, invalidData } = await validateUsersCsvFile(usersCsvJson);
+
+      if (validData.length === 0) {
+        return {
+          status: true,
+          code: 200,
+          message: 'No valid user data found.',
+          data: invalidData,
+        };
+      }
+
+      // Check DB Duplicates
+      const emailsToCheck = validData.map((u) => u?.email);
+      const employeeIdsToCheck = validData.map((u) => u?.employeeId); // Filter falsy IDs
+
+      const existingUsers = await User.find({
+        isDeleted: false,
+        $or: [
+          { email: { $in: emailsToCheck } },
+          ...(employeeIdsToCheck?.length > 0
+            ? [{ employeeId: { $in: employeeIdsToCheck } }]
+            : []),
+        ],
+      })
+        .select('email employeeId')
+        .lean();
+
+      const existingEmails = new Set(existingUsers?.map((u) => u?.email));
+      const existingEmployeeIds = new Set(
+        existingUsers.filter((u) => u.employeeId)?.map((u) => u?.employeeId)
+      );
+
+      // Filter out existing users and add them to invalidData
+      const usersToInsert = [];
+      validData.forEach((user) => {
+        let reason = '';
+        if (existingEmails.has(user?.email)) {
+          reason = `Email '${user?.email}' already exists in DB.`;
+        } else if (
+          user?.employeeId &&
+          existingEmployeeIds.has(user?.employeeId)
+        ) {
+          reason = `EmployeeID '${user?.employeeId}' already exists in DB.`;
+        }
+
+        if (reason) {
+          // Find original CSV row for context (simplified lookup)
+          const originalCsvRow = usersCsvJson?.find(
+            (row) => row.Email?.trim()?.toLowerCase() === user?.email
+          );
+          invalidData.push({
+            '#': 'DB Check',
+            Reason: reason,
+            ...(originalCsvRow || {
+              Email: user?.email,
+              EmployeeID: user?.employeeId,
+            }),
+          });
+        } else {
+          usersToInsert.push(user);
+        }
+      });
+
+      if (usersToInsert.length === 0) {
+        console.log(`${activity} No new users to insert after DB check.`);
+        return {
+          status: true,
+          code: 200,
+          message:
+            'No new users to create (all valid rows already exist or had issues).',
+          data: invalidData,
+        };
+      }
+
+      // Hash Passwords
+      const saltRounds = 10;
+      const usersReadyForInsert = [];
+      for (const user of usersToInsert) {
+        try {
+          if (!user.password)
+            throw new Error('Missing password prior to hashing.');
+          user.password = await bcrypt.hash(user?.password, saltRounds);
+          usersReadyForInsert?.push(user);
+        } catch (hashError) {
+          console.error(
+            `${activity} Failed to hash password for ${user?.email}:`,
+            hashError
+          );
+          invalidData.push({
+            '#': 'Hashing',
+            Reason: `Failed to process password for user ${user?.email}.`,
+            Email: user?.email,
+          });
+        }
+      }
+
+      // Bulk Insert
+      let createdCount = 0;
+      if (usersReadyForInsert?.length > 0) {
+        try {
+          const result = await User.insertMany(usersReadyForInsert, {
+            ordered: false,
+          });
+          createdCount = result?.length;
+          console.log(`${activity} Inserted ${createdCount} users.`);
+        } catch (dbError) {
+          console.error(`${activity} Error during User.insertMany:`, dbError);
+          invalidData.push({
+            '#': 'DB Insert',
+            Reason: `Database error during insertion: ${dbError?.message}`,
+          });
+          // Return failure, but acknowledge partial success is possible with ordered:false
+          return {
+            status: false, // Indicate potential partial failure
+            code: 500,
+            message: `Database error during bulk insertion. ${createdCount} users might have been created before the error. Check error report.`,
+            data: invalidData,
+            isErrorForUser: false,
+          };
+        }
+      }
+
+      // Format Response
+      const successMessage =
+        createdCount > 0
+          ? `Successfully created ${createdCount} users.`
+          : 'No new users were created.';
+      const finalMessage =
+        invalidData?.length > 0
+          ? `${successMessage} ${invalidData?.length} rows had issues.`
+          : successMessage;
+
+      return {
+        status: true,
+        code: createdCount > 0 ? 201 : 200,
+        message: finalMessage,
+        data: invalidData,
+      };
+    } catch (error) {
+      console.error(
+        `${activity} Unexpected error in bulkUpload service:`,
+        error
+      );
+      // Throw a generic error for the controller to catch
+      throw new Error('Failed to process bulk user upload.');
+    }
   }
 }
 

@@ -1,7 +1,6 @@
 const USER_ROLES = {
   ADMIN: 'admin',
   HR: 'hr',
-  MANAGER: 'manager',
   EMPLOYEE: 'employee',
   CONTRACTOR: 'contractor',
   TEAMLEAD: 'teamlead',
@@ -9,11 +8,10 @@ const USER_ROLES = {
 };
 
 const EMPLOYEE_STATUS = {
-  ACTIVE: 'active',
-  INACTIVE: 'inactive',
   PROBATION: 'probation',
   TERMINATED: 'terminated',
-  ON_LEAVE: 'on_leave',
+  ABSCONDED: 'absconded',
+  ONROLL: 'onroll',
 };
 
 const MAIL_HOST = 'smtp.gmail.com';
@@ -25,8 +23,37 @@ const MAIL_SERVICE = 'gmail';
 const MAIL_FROM = process.env.SMTP_FROM_EMAIL || 'noreply@yourcompany.com';
 const MAIL_USER = process.env.SMTP_USER;
 const MAIL_PASS = process.env.SMTP_PASS;
+const HR_EMAIL = 'fakeofake404@gmail.com';
 
 const OTP_EXPIRY_MINUTES = 10;
+
+const USER_CSV_FILE_HEADERS = [
+  'firstName',
+  'lastName',
+  'email',
+  'password', // Important: Ensure secure handling/generation if needed
+  'employeeId',
+  'jobTitle',
+  'department', // Assuming you upload the Department's MongoDB ObjectId
+  'hireDate', // Expected format: YYYY-MM-DD
+  'phoneNumber',
+  'teamLeadId', // Required: User's MongoDB ObjectId
+  'subTeamLeadId', // Optional: User's MongoDB ObjectId
+  'role', // Must match values in VALID_USER_ROLES
+  'status', // Must match values in VALID_EMPLOYEE_STATUS
+  // Optional Address Fields
+  // 'AddressStreet',
+  // 'AddressCity',
+  // 'AddressState',
+  // 'AddressZipCode',
+  // 'AddressCountry',
+];
+
+const CSV_TYPES = [
+  'text/csv',
+  'application/vnd.ms-excel', // Common MIME type for CSV
+  'application/csv',
+];
 
 module.exports = {
   USER_ROLES,
@@ -41,4 +68,7 @@ module.exports = {
   MAIL_USER,
   MAIL_PASS,
   OTP_EXPIRY_MINUTES,
+  HR_EMAIL,
+  USER_CSV_FILE_HEADERS,
+  CSV_TYPES,
 };

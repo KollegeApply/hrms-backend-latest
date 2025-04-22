@@ -19,10 +19,10 @@ class departmentService {
       throw new ApiError(httpStatus.CONFLICT, 'Department already exist');
     }
     const data = {
-      name: departmentData.name,
-      description: departmentData.description,
-      createdBy: departmentData.userId,
-      edittedBy: departmentData.userId,
+      name: departmentData?.name,
+      description: departmentData?.description,
+      createdBy: departmentData?.userId,
+      edittedBy: departmentData?.userId,
     };
 
     const department = new Department(data);
@@ -54,7 +54,7 @@ class departmentService {
    */
   async getDepartmentById({ id }) {
     const result = await Department.findById(id);
-    if (!result || result.isDeleted) {
+    if (!result || result?.isDeleted) {
       throw new ApiError(httpStatus.NOT_FOUND, 'Department not found');
     }
     return result;
@@ -68,15 +68,15 @@ class departmentService {
    */
   async updateDepartment(departmentData) {
     const oldDepartment = await Department.findOne({
-      _id: departmentData.departmentId,
+      _id: departmentData?.departmentId,
       isDeleted: false,
     });
     if (!oldDepartment) {
       throw new ApiError(httpStatus.NOT_FOUND, 'No department found.');
     }
-    oldDepartment.name = departmentData.name;
-    oldDepartment.description = departmentData.description;
-    oldDepartment.edittedBy = departmentData.edittorId;
+    oldDepartment.name = departmentData?.name;
+    oldDepartment.description = departmentData?.description;
+    oldDepartment.edittedBy = departmentData?.edittorId;
     return await oldDepartment.save();
   }
 
@@ -89,7 +89,7 @@ class departmentService {
    */
   async deleteDepartment({ id }) {
     const result = await Department.findById(id);
-    if (!result || result.isDeleted) {
+    if (!result || result?.isDeleted) {
       throw new ApiError(httpStatus.NOT_FOUND, 'Department not found');
     }
     result.isDeleted = true;

@@ -58,7 +58,7 @@ class holidayService {
    */
   async getHolidayById({ id }) {
     const result = await Holiday.findById(id);
-    if (!result || result.isDeleted) {
+    if (!result || result?.isDeleted) {
       throw new ApiError(
         httpStatus.NOT_FOUND,
         'No holiday on given date found'
@@ -75,14 +75,14 @@ class holidayService {
    */
   async updateHoliday(holidayData) {
     const oldHoliday = await Holiday.findOne({
-      _id: holidayData.holidayId,
+      _id: holidayData?.holidayId,
       isDeleted: false,
     });
     if (!oldHoliday) {
       throw new ApiError(httpStatus.NOT_FOUND, 'No holiday found.');
     }
-    oldHoliday.name = holidayData.name;
-    oldHoliday.date = holidayData.date;
+    oldHoliday.name = holidayData?.name;
+    oldHoliday.date = holidayData?.date;
     return await oldHoliday.save();
   }
 
@@ -95,7 +95,7 @@ class holidayService {
    */
   async deleteHoliday({ id }) {
     const result = await Holiday.findById(id);
-    if (!result || result.isDeleted) {
+    if (!result || result?.isDeleted) {
       throw new ApiError(
         httpStatus.NOT_FOUND,
         'No holiday on given date found'

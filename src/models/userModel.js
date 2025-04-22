@@ -43,8 +43,10 @@ const userSchema = new Schema(
       trim: true,
     },
     department: {
-      type: String,
+      // type: String,
+      type: mongoose.Schema.Types.ObjectId,
       trim: true,
+      ref: 'Department',
     },
     hireDate: {
       type: Date,
@@ -85,14 +87,19 @@ const userSchema = new Schema(
         values: VALID_EMPLOYEE_STATUS,
         message: 'Invalid employee status: {VALUE}',
       },
-      default: EMPLOYEE_STATUS.ACTIVE,
+      default: EMPLOYEE_STATUS.PROBATION,
       required: true,
     },
     isDeleted: {
       type: Boolean,
       default: false,
-      select: false, // Hide by default unless explicitly queried
+      // select: false, // Hide by default unless explicitly queried
     },
+    workingDays: {
+      type: Number,
+      default: 6,
+    },
+    leaves: {},
     // Add other relevant HRMS fields as needed:
     // dateOfBirth: Date,
     // reportingManager: { type: Schema.Types.ObjectId, ref: 'User' },
