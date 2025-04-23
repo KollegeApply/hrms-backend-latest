@@ -14,6 +14,28 @@ const addressSchema = Joi.object({
   country: Joi.string().trim().optional().allow('', null),
 });
 
+const leavesSchema = Joi.object({
+  annualLeave: Joi.number().optional(),
+  bereavementLeaves: Joi.number().optional(),
+  birthdayLeave: Joi.number().optional(),
+  casualSickLeave: Joi.number().optional(),
+  marriageLeave: Joi.number().optional(),
+  total: Joi.number().optional(),
+});
+
+// Schema for validating MongoDB ObjectIds in parameters
+const mongoIdSchema = Joi.object({
+  id: Joi.string()
+    .trim()
+    .pattern(/^[0-9a-fA-F]{24}$/) // Basic ObjectId format check
+    .required()
+    .messages({
+      'string.pattern.base': 'Invalid ID format',
+      'string.empty': 'ID is required',
+      'any.required': 'ID is required',
+    }),
+});
+
 // Schema for creating a new user
 const createUserSchema = Joi.object({
   firstName: Joi.string().trim().min(1).required().messages({
@@ -37,12 +59,29 @@ const createUserSchema = Joi.object({
     'string.empty': 'Password is required',
     'any.required': 'Password is required',
   }),
-  employeeId: Joi.string().trim().optional().allow('', null), // Often assigned later or system-generated
+  employeeId: Joi.string().trim().allow('', null).optional(),
   jobTitle: Joi.string().trim().optional().allow('', null),
-  department: Joi.string().trim().optional().allow('', null),
+  department: Joi.string().trim().allow('').optional(),
   hireDate: Joi.date().iso().optional().allow(null), // Expect ISO format (YYYY-MM-DD)
   phoneNumber: Joi.string().trim().optional().allow('', null),
   address: addressSchema.optional(),
+  leaves: leavesSchema.optional(),
+  teamLeadId: Joi.string()
+    .trim()
+    .allow('')
+    // .pattern(/^[0-9a-fA-F]{24}$/)
+    .messages({
+      'any.required': 'ID is required',
+    })
+    .optional(),
+  subTeamLeadId: Joi.string()
+    .trim()
+    .allow('')
+    // .pattern(/^[0-9a-fA-F]{24}$/)
+    .messages({
+      'any.required': 'ID is required',
+    })
+    .optional(),
   role: Joi.string()
     .valid(...VALID_USER_ROLES)
     .optional()
@@ -73,6 +112,9 @@ const updateUserSchema = Joi.object({
   department: Joi.string().trim().optional().allow('', null),
   hireDate: Joi.date().iso().optional().allow(null),
   phoneNumber: Joi.string().trim().optional().allow('', null),
+  teamLeadId: Joi.string().hex(),
+  subTeamLeadId: Joi.string().hex().allow(null, ''),
+
   address: addressSchema.optional(),
   role: Joi.string()
     .valid(...VALID_USER_ROLES)
@@ -103,30 +145,18 @@ const loginSchema = Joi.object({
   }),
 }).options({ stripUnknown: true });
 
-// Schema for validating MongoDB ObjectIds in parameters
-const mongoIdSchema = Joi.object({
-  id: Joi.string()
-    .trim()
-    .pattern(/^[0-9a-fA-F]{24}$/) // Basic ObjectId format check
-    .required()
-    .messages({
-      'string.pattern.base': 'Invalid ID format',
-      'string.empty': 'ID is required',
-      'any.required': 'ID is required',
-    }),
-});
-
 // Schema for validating query parameters for fetching users
 const getAllUsersSchema = Joi.object({
   page: Joi.number().integer().positive().optional().default(1),
   limit: Joi.number().integer().positive().optional().default(10),
-  search: Joi.string().trim().optional().allow(''),
+  search: Joi.string().trim().allow('').optional(),
   role: Joi.string()
     .valid(...VALID_USER_ROLES)
     .optional(),
   status: Joi.string()
     .valid(...VALID_EMPLOYEE_STATUS)
     .optional(),
+  department: Joi.string().trim().allow('').optional(),
   sortBy: Joi.string().trim().optional().default('createdAt'), // Field to sort by
   sortOrder: Joi.string().valid('asc', 'desc').optional().default('desc'), // Sort direction
   isPaginated: Joi.boolean().optional().default(true), // Default to paginated results
@@ -180,6 +210,76 @@ const verifyOtpSchema = Joi.object({
   }),
 }).options({ stripUnknown: true });
 
+const bulkCreateUserRowSchema = Joi.object({
+  firstName: Joi.string().trim().min(1).required().messages({
+    'string.empty': 'FirstName is required',
+    'any.required': 'FirstName is required',
+  }),
+  lastName: Joi.string().trim().min(1).required().messages({
+    'string.empty': 'LastName is required',
+    'any.required': 'LastName is required',
+  }),
+  email: Joi.string().trim().email().required().messages({
+    'string.email': 'Invalid Email format',
+    'string.empty': 'Email is required',
+    'any.required': 'Email is required',
+  }),
+  password: Joi.string().min(8).required().messages({
+    'string.min': 'Password must be at least 8 characters long',
+    'string.empty': 'Password is required',
+    'any.required': 'Password is required',
+  }),
+  jobTitle: Joi.string().trim().optional().allow('', null),
+  department: Joi.string()
+    .trim()
+    .pattern(/^[0-9a-fA-F]{24}$/)
+    .optional()
+    .allow('', null)
+    .messages({
+      'string.pattern.base': 'Invalid Department ObjectId',
+    }),
+  hireDate: Joi.date().iso().optional().allow(null).messages({
+    // Expects YYYY-MM-DD
+    'date.format': 'HireDate must be in YYYY-MM-DD format',
+  }),
+  phoneNumber: Joi.string().trim().optional().allow('', null),
+  teamLeadId: Joi.string()
+    .trim()
+    // .pattern(/^[0-9a-fA-F]{24}$/)
+    // .required()
+    .messages({
+      'string.pattern.base': 'Invalid TeamLeadID ObjectId',
+      'string.empty': 'TeamLeadID is required',
+      'any.required': 'TeamLeadID is required',
+    }),
+  subTeamLeadId: Joi.string()
+    .trim()
+    // .pattern(/^[0-9a-fA-F]{24}$/)
+    // .optional()
+    .allow('', null)
+    .messages({
+      'string.pattern.base': 'Invalid SubTeamLeadID ObjectId',
+    }),
+  role: Joi.string()
+    .trim()
+    .valid(...VALID_USER_ROLES)
+    .required()
+    .messages({
+      'any.only': `Role must be one of [${VALID_USER_ROLES.join(', ')}]`,
+      'string.empty': 'Role is required',
+      'any.required': 'Role is required',
+    }),
+  status: Joi.string()
+    .trim()
+    .valid(...VALID_EMPLOYEE_STATUS)
+    .required()
+    .messages({
+      'any.only': `Status must be one of [${VALID_EMPLOYEE_STATUS.join(', ')}]`,
+      'string.empty': 'Status is required',
+      'any.required': 'Status is required',
+    }),
+}).options({ stripUnknown: true });
+
 module.exports = {
   createUserSchema,
   updateUserSchema,
@@ -189,4 +289,5 @@ module.exports = {
   changePasswordSchema,
   forgotPasswordSchema,
   verifyOtpSchema,
+  bulkCreateUserRowSchema,
 };

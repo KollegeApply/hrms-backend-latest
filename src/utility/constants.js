@@ -1,16 +1,17 @@
 const USER_ROLES = {
   ADMIN: 'admin',
+  SUBADMIN: 'subadmin',
   HR: 'hr',
-  MANAGER: 'manager',
   EMPLOYEE: 'employee',
+  TEAMLEAD: 'teamlead',
+  SUBTEAMLEAD: 'subteamlead',
 };
 
 const EMPLOYEE_STATUS = {
-  ACTIVE: 'active',
-  INACTIVE: 'inactive',
   PROBATION: 'probation',
   TERMINATED: 'terminated',
-  ON_LEAVE: 'on_leave',
+  ABSCONDED: 'absconded',
+  ONROLL: 'onroll',
 };
 
 const MAIL_HOST = 'smtp.gmail.com';
@@ -22,8 +23,47 @@ const MAIL_SERVICE = 'gmail';
 const MAIL_FROM = process.env.SMTP_FROM_EMAIL || 'noreply@yourcompany.com';
 const MAIL_USER = process.env.SMTP_USER;
 const MAIL_PASS = process.env.SMTP_PASS;
+const HR_EMAIL = 'hr@sportsdunia.com';
+const HR_MAIL_USER = process.env.HR_SMTP_USER;
+const HR_MAIL_PASS = process.env.HR_SMTP_PASS;
 
 const OTP_EXPIRY_MINUTES = 10;
+
+const RANK = {
+  admin: 1,
+  subadmin: 2,
+  hr: 3,
+  teamlead: 4,
+  subteamlead: 5,
+  employee: 6,
+};
+
+const USER_CSV_FILE_HEADERS = [
+  'firstName',
+  'lastName',
+  'email',
+  'password',
+  'jobTitle',
+  'department',
+  'hireDate',
+  'phoneNumber',
+  'teamLeadId',
+  'subTeamLeadId',
+  'role',
+  'status',
+  // Optional Address Fields
+  // 'AddressStreet',
+  // 'AddressCity',
+  // 'AddressState',
+  // 'AddressZipCode',
+  // 'AddressCountry',
+];
+
+const CSV_TYPES = [
+  'text/csv',
+  'application/vnd.ms-excel', // Common MIME type for CSV
+  'application/csv',
+];
 
 module.exports = {
   USER_ROLES,
@@ -37,5 +77,11 @@ module.exports = {
   MAIL_FROM,
   MAIL_USER,
   MAIL_PASS,
+  HR_MAIL_USER,
+  HR_MAIL_PASS,
   OTP_EXPIRY_MINUTES,
+  HR_EMAIL,
+  USER_CSV_FILE_HEADERS,
+  CSV_TYPES,
+  RANK,
 };
