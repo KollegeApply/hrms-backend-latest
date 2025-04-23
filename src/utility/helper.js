@@ -10,6 +10,8 @@ const {
   MAIL_FROM,
   MAIL_USER,
   MAIL_PASS,
+  HR_MAIL_USER,
+  HR_MAIL_PASS,
 } = require('./constants');
 const { OTP_EXPIRY_MINUTES } = require('./constants');
 
@@ -31,7 +33,7 @@ class Helper {
    * @param {string} mailData.message - Email body (HTML).
    * @returns {Promise<void>}
    */
-  static async sendEmail({ receiverEmails, subject, message }) {
+  static async sendEmail({ receiverEmails, subject, message, fromHr = false }) {
     if (!MAIL_USER || !MAIL_PASS) {
       logger.error(
         'SMTP credentials (MAIL_USER, MAIL_PASS) are not configured. Cannot send email.'
@@ -45,8 +47,8 @@ class Helper {
       secure: MAIL_SECURE, // Use true for 465, false for other ports like 587
       ...(MAIL_SERVICE && { service: MAIL_SERVICE }), // Add service if defined
       auth: {
-        user: MAIL_USER,
-        pass: MAIL_PASS,
+        user: fromHr ? HR_MAIL_USER : MAIL_USER,
+        pass: fromHr ? HR_MAIL_PASS : MAIL_PASS,
       },
     });
 
@@ -145,7 +147,7 @@ class Helper {
             <p style="color: #555; font-size: 16px; line-height: 1.6;">This OTP is valid for <strong>${OTP_EXPIRY_MINUTES} minutes</strong>.</p>
             <p style="color: #555; font-size: 16px; line-height: 1.6;">If you did not request a password reset, please ignore this email. Your password will remain unchanged.</p>
             <p style="color: #777; font-size: 14px; line-height: 1.5; margin-top: 30px;">For security reasons, do not share this OTP with anyone.</p>
-            <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Your Company HR Team</strong></p>
+            <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Support Team</strong></p>
         </div>
         <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
           This is an automated message. Please do not reply directly to this email. If you need help, contact HR.

@@ -116,7 +116,7 @@ async function validateUsersCsvFile(csvData) {
     }
 
     const email = value?.email?.toLowerCase();
-    const employeeId = value?.employeeId;
+    // const employeeId = value?.employeeId;
 
     if (seenEmails.has(email)) {
       invalidData.push({
@@ -128,15 +128,15 @@ async function validateUsersCsvFile(csvData) {
     }
     seenEmails.add(email);
 
-    if (employeeId && seenEmployeeIDs.has(employeeId)) {
-      invalidData.push({
-        '#': `Row ${rowNumber}`,
-        Reason: `Duplicate EmployeeID '${employeeId}' in CSV.`,
-        ...row,
-      });
-      continue;
-    }
-    if (employeeId) seenEmployeeIDs.add(employeeId);
+    // if (employeeId && seenEmployeeIDs.has(employeeId)) {
+    //   invalidData.push({
+    //     '#': `Row ${rowNumber}`,
+    //     Reason: `Duplicate EmployeeID '${employeeId}' in CSV.`,
+    //     ...row,
+    //   });
+    //   continue;
+    // }
+    // if (employeeId) seenEmployeeIDs.add(employeeId);
 
     // Map to model fields (simplified)
     validData.push({
@@ -144,7 +144,7 @@ async function validateUsersCsvFile(csvData) {
       lastName: value.lastName,
       email: value.email,
       password: value.password,
-      employeeId: value.employeeId || null,
+      // employeeId: value.employeeId || null,
       jobTitle: value.jobTitle || null,
       department: value.department || null,
       hireDate: value.hireDate || null,
@@ -158,4 +158,18 @@ async function validateUsersCsvFile(csvData) {
   return { validData, invalidData };
 }
 
-module.exports = { paginate, validateHeaders, validateUsersCsvFile };
+function autoGenerateEmpId(lastUser) {
+  let nextNumber = 1;
+  if (lastUser?.employeeId) {
+    const lastNumber = parseInt(lastUser?.employeeId?.split('_')[1], 10);
+    nextNumber = isNaN(lastNumber) ? 1 : lastNumber + 1;
+  }
+  return nextNumber;
+}
+
+module.exports = {
+  paginate,
+  validateHeaders,
+  validateUsersCsvFile,
+  autoGenerateEmpId,
+};

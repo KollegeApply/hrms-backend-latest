@@ -1,8 +1,8 @@
 const USER_ROLES = {
   ADMIN: 'admin',
+  SUBADMIN: 'subadmin',
   HR: 'hr',
   EMPLOYEE: 'employee',
-  CONTRACTOR: 'contractor',
   TEAMLEAD: 'teamlead',
   SUBTEAMLEAD: 'subteamlead',
 };
@@ -23,24 +23,34 @@ const MAIL_SERVICE = 'gmail';
 const MAIL_FROM = process.env.SMTP_FROM_EMAIL || 'noreply@yourcompany.com';
 const MAIL_USER = process.env.SMTP_USER;
 const MAIL_PASS = process.env.SMTP_PASS;
-const HR_EMAIL = 'fakeofake404@gmail.com';
+const HR_EMAIL = 'hr@sportsdunia.com';
+const HR_MAIL_USER = process.env.HR_SMTP_USER;
+const HR_MAIL_PASS = process.env.HR_SMTP_PASS;
 
 const OTP_EXPIRY_MINUTES = 10;
+
+const RANK = {
+  admin: 1,
+  subadmin: 2,
+  hr: 3,
+  teamlead: 4,
+  subteamlead: 5,
+  employee: 6,
+};
 
 const USER_CSV_FILE_HEADERS = [
   'firstName',
   'lastName',
   'email',
-  'password', // Important: Ensure secure handling/generation if needed
-  'employeeId',
+  'password',
   'jobTitle',
-  'department', // Assuming you upload the Department's MongoDB ObjectId
-  'hireDate', // Expected format: YYYY-MM-DD
+  'department',
+  'hireDate',
   'phoneNumber',
-  'teamLeadId', // Required: User's MongoDB ObjectId
-  'subTeamLeadId', // Optional: User's MongoDB ObjectId
-  'role', // Must match values in VALID_USER_ROLES
-  'status', // Must match values in VALID_EMPLOYEE_STATUS
+  'teamLeadId',
+  'subTeamLeadId',
+  'role',
+  'status',
   // Optional Address Fields
   // 'AddressStreet',
   // 'AddressCity',
@@ -67,8 +77,11 @@ module.exports = {
   MAIL_FROM,
   MAIL_USER,
   MAIL_PASS,
+  HR_MAIL_USER,
+  HR_MAIL_PASS,
   OTP_EXPIRY_MINUTES,
   HR_EMAIL,
   USER_CSV_FILE_HEADERS,
   CSV_TYPES,
+  RANK,
 };

@@ -108,7 +108,7 @@ const updateWfh = catchAsync(async (req, res) => {
   if (updated?.status === 'approved') {
     const sendMail = req?.body?.sendMail === true;
     if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
-      logger.info(`Update on leave request ${mailReciever?.email}`);
+      logger.info(`Update on WFH request ${mailReciever?.email}`);
       Helper.sendEmail({
         receiverEmails: [mailReciever?.email],
         subject: `Your WFH Request Has Been Approved`,

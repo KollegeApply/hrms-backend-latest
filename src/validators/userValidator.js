@@ -59,31 +59,29 @@ const createUserSchema = Joi.object({
     'string.empty': 'Password is required',
     'any.required': 'Password is required',
   }),
-  employeeId: Joi.string().trim().optional().allow('', null), // Often assigned later or system-generated
+  employeeId: Joi.string().trim().allow('', null).optional(),
   jobTitle: Joi.string().trim().optional().allow('', null),
-  department: Joi.string().trim().optional().allow('', null),
+  department: Joi.string().trim().allow('').optional(),
   hireDate: Joi.date().iso().optional().allow(null), // Expect ISO format (YYYY-MM-DD)
   phoneNumber: Joi.string().trim().optional().allow('', null),
   address: addressSchema.optional(),
   leaves: leavesSchema.optional(),
   teamLeadId: Joi.string()
     .trim()
-    .pattern(/^[0-9a-fA-F]{24}$/)
-    .required()
+    .allow('')
+    // .pattern(/^[0-9a-fA-F]{24}$/)
     .messages({
-      'string.pattern.base': 'Invalid ID format',
-      'string.empty': 'ID is required',
       'any.required': 'ID is required',
-    }),
+    })
+    .optional(),
   subTeamLeadId: Joi.string()
     .trim()
-    .pattern(/^[0-9a-fA-F]{24}$/)
-    .optional()
+    .allow('')
+    // .pattern(/^[0-9a-fA-F]{24}$/)
     .messages({
-      'string.pattern.base': 'Invalid ID format',
-      'string.empty': 'ID is required',
       'any.required': 'ID is required',
-    }),
+    })
+    .optional(),
   role: Joi.string()
     .valid(...VALID_USER_ROLES)
     .optional()
@@ -231,7 +229,6 @@ const bulkCreateUserRowSchema = Joi.object({
     'string.empty': 'Password is required',
     'any.required': 'Password is required',
   }),
-  employeeId: Joi.string().trim().optional().allow('', null),
   jobTitle: Joi.string().trim().optional().allow('', null),
   department: Joi.string()
     .trim()
@@ -248,8 +245,8 @@ const bulkCreateUserRowSchema = Joi.object({
   phoneNumber: Joi.string().trim().optional().allow('', null),
   teamLeadId: Joi.string()
     .trim()
-    .pattern(/^[0-9a-fA-F]{24}$/)
-    .required()
+    // .pattern(/^[0-9a-fA-F]{24}$/)
+    // .required()
     .messages({
       'string.pattern.base': 'Invalid TeamLeadID ObjectId',
       'string.empty': 'TeamLeadID is required',
@@ -257,8 +254,8 @@ const bulkCreateUserRowSchema = Joi.object({
     }),
   subTeamLeadId: Joi.string()
     .trim()
-    .pattern(/^[0-9a-fA-F]{24}$/)
-    .optional()
+    // .pattern(/^[0-9a-fA-F]{24}$/)
+    // .optional()
     .allow('', null)
     .messages({
       'string.pattern.base': 'Invalid SubTeamLeadID ObjectId',

@@ -7,7 +7,7 @@ const Helper = require('../utility/helper');
 const ApiError = require('../utility/ApiError'); // Ensure this utility exists
 const catchAsync = require('../utility/catchAsync'); // Ensure this utility exists
 const logger = require('../config/logger');
-const { CSV_TYPES } = require('../utility/constants');
+const { CSV_TYPES, RANK } = require('../utility/constants');
 const User = require('../models/userModel');
 
 /**
@@ -24,35 +24,48 @@ const generateToken = (user) => {
 // Wrap controller methods with catchAsync for cleaner error handling
 const createUser = catchAsync(async (req, res) => {
   // 1. Validate request body
+  if (req?.body?.role === 'subadmin') {
+    req.body.teamLeadId = '6808c6d86d2d1bdfd589c57a';
+  }
   const validatedData = await userValidator?.createUserSchema?.validateAsync(
     req?.body
   );
+  const currentUserRank = RANK[req?.user?.role];
+  const targetUserRank = RANK[validatedData?.role];
+  let user;
+  if (currentUserRank < targetUserRank) {
+    user = await userService.createUser(validatedData);
+    // sending mail
+    const sendMail = req?.body?.sendMail === true;
+    if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
+      logger.info(`Sending welcome email to ${user.email}`);
+      Helper.sendEmail({
+        receiverEmails: [user?.email],
+        subject: `Welcome to ${process?.env?.TEAM} – Let’s Get You Started!`,
+        message: Helper.getWelcomeEmail(
+          user?.firstName,
+          user?.email,
+          validatedData?.password, // !! SECURITY RISK: Avoid sending plain password
+          process?.env?.HRMS_FRONTEND_URL
+        ),
+        fromHr: true,
+      }).catch((err) =>
+        logger.error(`Failed to send welcome email to ${user?.email}:`, err)
+      );
+    }
 
-  const user = await userService.createUser(validatedData);
-
-  const sendMail = req?.body?.sendMail === true;
-  if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
-    logger.info(`Sending welcome email to ${user.email}`);
-    Helper.sendEmail({
-      receiverEmails: [user?.email],
-      subject: `Welcome to ${process?.env?.TEAM} – Let’s Get You Started!`,
-      message: Helper.getWelcomeEmail(
-        user?.firstName,
-        user?.email,
-        validatedData?.password, // !! SECURITY RISK: Avoid sending plain password
-        process?.env?.HRMS_FRONTEND_URL
-      ),
-    }).catch((err) =>
-      logger.error(`Failed to send welcome email to ${user?.email}:`, err)
-    ); // Log email sending errors but don't fail the request
+    // Send response
+    res.status(httpStatus?.CREATED).json({
+      status: true,
+      message: 'User created successfully.',
+      data: user, // User object already cleaned by toJSON
+    });
+  } else {
+    res.status(httpStatus?.FORBIDDEN).json({
+      status: false,
+      message: 'Your cannot create user with given role',
+    });
   }
-
-  // 4. Send response
-  res.status(httpStatus?.CREATED).json({
-    status: true,
-    message: 'User created successfully.',
-    data: user, // User object already cleaned by toJSON
-  });
 });
 
 const getAllUsers = catchAsync(async (req, res) => {
@@ -114,47 +127,60 @@ const updateUser = catchAsync(async (req, res) => {
       'No valid fields provided for update.'
     );
   }
+  console.log(oldUser);
 
-  const updatedUser = await userService?.updateUser(userId, validatedData);
+  const currentUserRank = RANK[req?.user?.role];
+  const clickedUserRank = RANK[oldUser?.role]; // to check before update whether. user-> user which needs to be updated
 
-  if (!updatedUser) {
-    throw new ApiError(
-      httpStatus.NOT_FOUND,
-      'User not found or update failed.'
-    );
-  }
-  // const oldUser = await User.findById(oldUserId);
-  console.log('oldUser is: ', oldUser);
-  console.log('updatedUser is: ', updatedUser);
-  if (oldUser?.status === 'probation' && updatedUser?.status === 'onroll') {
-    const today = new Date();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(today.getDate() + 1);
-    const sendMail = req?.body?.sendMail === true;
-    if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
-      logger.info(`Conversion from probation to onroll ${updatedUser?.email}`);
-      Helper.sendEmail({
-        receiverEmails: [updatedUser?.email],
-        subject: `You’ve Earned Full-Time Status! Congratulations !!`,
-        message: Helper.fullTimeConversion(
-          updatedUser?.firstName,
-          tomorrow.toISOString(),
-          updatedUser?.jobTitle
-        ),
-      }).catch((err) =>
-        logger.error(
-          `Failed to send conversion from probation to full-time email ${updatedUser?.email}:`,
-          err
-        )
+  if (currentUserRank < clickedUserRank) {
+    const updatedUser = await userService?.updateUser(userId, validatedData);
+
+    if (!updatedUser) {
+      throw new ApiError(
+        httpStatus.NOT_FOUND,
+        'User not found or update failed.'
       );
     }
-  }
 
-  res?.status(httpStatus.OK).json({
-    status: true,
-    message: 'User updated successfully.',
-    data: updatedUser, // User object already cleaned by toJSON
-  });
+    // sending mail
+    if (oldUser?.status === 'probation' && updatedUser?.status === 'onroll') {
+      const today = new Date();
+      const tomorrow = new Date(today);
+      tomorrow.setDate(today.getDate() + 1);
+      const sendMail = req?.body?.sendMail === true;
+      if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
+        logger.info(
+          `Conversion from probation to onroll ${updatedUser?.email}`
+        );
+        Helper.sendEmail({
+          receiverEmails: [updatedUser?.email],
+          subject: `You’ve Earned Full-Time Status! Congratulations !!`,
+          message: Helper.fullTimeConversion(
+            updatedUser?.firstName,
+            tomorrow.toISOString(),
+            updatedUser?.jobTitle
+          ),
+          fromHr: true,
+        }).catch((err) =>
+          logger.error(
+            `Failed to send conversion from probation to full-time email ${updatedUser?.email}:`,
+            err
+          )
+        );
+      }
+    }
+
+    res.status(httpStatus.OK).json({
+      status: true,
+      message: 'User updated successfully.',
+      data: updatedUser, // User object already cleaned by toJSON
+    });
+  } else {
+    res.status(httpStatus.FORBIDDEN).json({
+      status: false,
+      message: 'Your cannot update this user',
+    });
+  }
 });
 
 const deleteUser = catchAsync(async (req, res) => {
@@ -164,21 +190,31 @@ const deleteUser = catchAsync(async (req, res) => {
   if (!Helper.isValidMongoId(userId)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid user ID format.');
   }
+  const user = await User.findById(userId);
+  const currentUserRank = RANK[req?.user?.role];
+  const targetedUserRank = RANK[user?.role];
 
-  // 2. Call service to delete user (soft delete)
-  const success = await userService.deleteUser(userId);
+  // check for hierarchy
+  if (currentUserRank < targetedUserRank) {
+    // 2. Call service to delete user (soft delete)
+    const success = await userService.deleteUser(userId);
 
-  // 3. Handle not found
-  if (!success) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
+    // 3. Handle not found
+    if (!success) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
+    }
+
+    // 4. Send response (HTTP 204 No Content is also suitable for successful deletions)
+    res?.status(httpStatus.OK).json({
+      status: true,
+      message: 'User deleted successfully.',
+    });
+  } else {
+    res.status(httpStatus.FORBIDDEN).json({
+      status: false,
+      message: 'Your cannot delete this user',
+    });
   }
-
-  // 4. Send response (HTTP 204 No Content is also suitable for successful deletions)
-  res?.status(httpStatus.OK).json({
-    status: true,
-    message: 'User deleted successfully.',
-  });
-  // Or: res.status(httpStatus.NO_CONTENT).send();
 });
 
 const login = catchAsync(async (req, res) => {
@@ -287,6 +323,8 @@ const bulkUpload = async (req, res) => {
       message,
       isErrorForUser = false,
     } = await userService.bulkUpload(usersFile, activity);
+
+    // console.log("data is fsbkueirsufb:", data);
 
     // Send response back
     return res?.status(code || 200).send({

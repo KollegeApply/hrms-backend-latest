@@ -19,7 +19,7 @@ router.post('/login', userController.login);
 router.post(
   '/',
   authenticateUser,
-  authorizeRole([USER_ROLES.ADMIN, USER_ROLES.HR]), // Only Admin and HR can create users
+  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]), // Only Admin and HR can create users
   userController.createUser
 );
 
@@ -27,7 +27,7 @@ router.post(
 router.post(
   '/bulk-create',
   authenticateUser,
-  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR]), // Only Admin and HR can create users
+  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]), // Only Admin and HR can create users
   userController?.bulkUpload
 );
 
@@ -42,7 +42,9 @@ router.get(
   (req, res, next) => {
     if (
       req.user.id === req?.params?.id ||
-      [USER_ROLES?.ADMIN, USER_ROLES?.HR].includes(req?.user?.role)
+      [USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN].includes(
+        req?.user?.role
+      )
     ) {
       return next();
     }
@@ -60,7 +62,9 @@ router.put(
   (req, res, next) => {
     if (
       req.user.id === req?.params?.id ||
-      [USER_ROLES?.ADMIN, USER_ROLES?.HR].includes(req?.user?.role)
+      [USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN].includes(
+        req?.user?.role
+      )
     ) {
       return next();
     }
@@ -73,7 +77,7 @@ router.put(
 router.delete(
   '/:id',
   authenticateUser,
-  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR]), // Only Admin and HR can delete users
+  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]), // Only Admin and HR can delete users
   userController?.deleteUser
 );
 

@@ -57,7 +57,7 @@ const userSchema = new Schema(
     },
     teamLeadId: {
       type: mongoose.Schema.Types.ObjectId,
-      required: true,
+      // required: true,
       ref: 'User',
     },
     subTeamLeadId: {

@@ -15,7 +15,7 @@ const router = express.Router();
 router.post(
   '/',
   authenticateUser,
-  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR]), // Only Admin and HR can create users
+  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]), // Only Admin and HR can create users
   holidayController?.createHoliday
 );
 
@@ -29,7 +29,7 @@ router.get('/:id', authenticateUser, holidayController?.getHolidayById);
 router.put(
   '/:id',
   authenticateUser,
-  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR]), // Only Admin and HR can delete users
+  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]), // Only Admin and HR can delete users
   holidayController.updateHoliday
 );
 
@@ -37,7 +37,7 @@ router.put(
 router.delete(
   '/:id',
   authenticateUser,
-  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR]), // Only Admin and HR can delete users
+  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]), // Only Admin and HR can delete users
   holidayController.deleteHoliday
 );
 

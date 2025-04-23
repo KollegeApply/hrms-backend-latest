@@ -6,6 +6,7 @@ const {
   paginate,
   validateHeaders,
   validateUsersCsvFile,
+  autoGenerateEmpId,
 } = require('../utility/common'); // Ensure common.js is created
 const ApiError = require('../utility/ApiError'); // You might need to create this utility
 const { default: httpStatus } = require('http-status'); // Install http-status: npm install http-status
@@ -196,12 +197,14 @@ class UserService {
     }
 
     //check if tl exist in db
-    try {
-      const tlExist = await this.getUserById(userData?.teamLeadId);
-      if (!tlExist)
-        throw new ApiError(httpStatus.NOT_FOUND, 'Team lead not found');
-    } catch (err) {
-      throw new ApiError(err);
+    if (userData?.teamLeadId) {
+      try {
+        const tlExist = await this.getUserById(userData?.teamLeadId);
+        if (!tlExist)
+          throw new ApiError(httpStatus.NOT_FOUND, 'Team lead not found');
+      } catch (err) {
+        throw new ApiError(err);
+      }
     }
 
     // check if subTL exist in db
@@ -212,12 +215,21 @@ class UserService {
       throw new ApiError(httpStatus.NOT_FOUND, 'Sub Team Lead not found');
     }
 
+    // auto-generating employeeId. format : SD_001
+    const lastUser = await User.findOne({ employeeId: { $regex: /^SD_\d+$/ } })
+      .sort({ employeeId: -1 })
+      .select('employeeId')
+      .lean();
+    const nextNumber = autoGenerateEmpId(lastUser);
+    const paddedNumber = String(nextNumber).padStart(3, '0');
+
     // Hash the password
     const hashedPassword = await bcrypt.hash(userData?.password, 10); // 10 is the salt rounds
 
     // Create and save the new user
     const user = new User({
       ...userData,
+      employeeId: `SD_${paddedNumber}`,
       password: hashedPassword,
       email: userData?.email?.toLowerCase(), // Store email in lowercase
     });
@@ -592,24 +604,19 @@ class UserService {
 
       // Check DB Duplicates
       const emailsToCheck = validData.map((u) => u?.email);
-      const employeeIdsToCheck = validData.map((u) => u?.employeeId); // Filter falsy IDs
+      // const employeeIdsToCheck = validData.map((u) => u?.employeeId); // Filter falsy IDs
 
       const existingUsers = await User.find({
-        isDeleted: false,
-        $or: [
-          { email: { $in: emailsToCheck } },
-          ...(employeeIdsToCheck?.length > 0
-            ? [{ employeeId: { $in: employeeIdsToCheck } }]
-            : []),
-        ],
+        // isDeleted: false,
+        email: { $in: emailsToCheck },
       })
-        .select('email employeeId')
+        .select('email')
         .lean();
 
       const existingEmails = new Set(existingUsers?.map((u) => u?.email));
-      const existingEmployeeIds = new Set(
-        existingUsers.filter((u) => u.employeeId)?.map((u) => u?.employeeId)
-      );
+      // const existingEmployeeIds = new Set(
+      //   existingUsers.filter((u) => u.employeeId)?.map((u) => u?.employeeId)
+      // );
 
       // Filter out existing users and add them to invalidData
       const usersToInsert = [];
@@ -617,12 +624,13 @@ class UserService {
         let reason = '';
         if (existingEmails.has(user?.email)) {
           reason = `Email '${user?.email}' already exists in DB.`;
-        } else if (
-          user?.employeeId &&
-          existingEmployeeIds.has(user?.employeeId)
-        ) {
-          reason = `EmployeeID '${user?.employeeId}' already exists in DB.`;
         }
+        // else if (
+        //   user?.employeeId &&
+        //   existingEmployeeIds.has(user?.employeeId)
+        // ) {
+        //   reason = `EmployeeID '${user?.employeeId}' already exists in DB.`;
+        // }
 
         if (reason) {
           // Find original CSV row for context (simplified lookup)
@@ -634,7 +642,7 @@ class UserService {
             Reason: reason,
             ...(originalCsvRow || {
               Email: user?.email,
-              EmployeeID: user?.employeeId,
+              // EmployeeID: user?.employeeId,
             }),
           });
         } else {
@@ -656,10 +664,21 @@ class UserService {
       // Hash Passwords
       const saltRounds = 10;
       const usersReadyForInsert = [];
+      const lastUser = await User.findOne({
+        employeeId: { $regex: /^SD_\d+$/ },
+      })
+        .sort({ employeeId: -1 })
+        .select('employeeId')
+        .lean();
+      let nextNumber = autoGenerateEmpId(lastUser);
+      // const paddedNumber = String(nextNumber).padStart(3, '0');
       for (const user of usersToInsert) {
         try {
           if (!user.password)
             throw new Error('Missing password prior to hashing.');
+
+          const paddedNumber = String(nextNumber++).padStart(3, '0');
+          user.employeeId = `SD_${paddedNumber}`;
           user.password = await bcrypt.hash(user?.password, saltRounds);
           usersReadyForInsert?.push(user);
         } catch (hashError) {
@@ -684,6 +703,33 @@ class UserService {
           });
           createdCount = result?.length;
           console.log(`${activity} Inserted ${createdCount} users.`);
+
+          for (const user of result) {
+            // await sendUserWelcomeEmail(user); // customize this function as needed
+
+            if (
+              process?.env?.NODE_ENV === 'p' &&
+              process?.env?.HRMS_FRONTEND_URL
+            ) {
+              logger.info(`Sending welcome email to ${user?.email}`);
+              Helper.sendEmail({
+                receiverEmails: [user?.email],
+                subject: `Welcome to ${process?.env?.TEAM} – Let’s Get You Started!`,
+                message: Helper.getWelcomeEmail(
+                  user?.firstName,
+                  user?.email,
+                  user?.password, // !! SECURITY RISK: Avoid sending plain password
+                  process?.env?.HRMS_FRONTEND_URL
+                ),
+                fromHr: true,
+              }).catch((err) =>
+                logger.error(
+                  `Failed to send welcome email to ${user?.email}:`,
+                  err
+                )
+              ); // Log email sending errors but don't fail the request
+            }
+          }
         } catch (dbError) {
           console.error(`${activity} Error during User.insertMany:`, dbError);
           invalidData.push({

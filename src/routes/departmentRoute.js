@@ -11,7 +11,7 @@ const router = express.Router();
 router.post(
   '/',
   authenticateUser,
-  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR]),
+  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]),
   departmentController?.createDepartment
 );
 
@@ -25,14 +25,14 @@ router.get('/:id', authenticateUser, departmentController?.getDepartmentById);
 router.put(
   '/:id',
   authenticateUser,
-  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR]), // Only Admin and HR can delete users
+  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]), // Only Admin and HR can delete users
   departmentController?.updateDepartment
 );
 
 router.delete(
   '/:id',
   authenticateUser,
-  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR]),
+  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]),
   departmentController?.deleteDepartment
 );
 

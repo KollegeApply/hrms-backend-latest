@@ -26,7 +26,9 @@ const authenticateUser = (req, res, next) => {
 
     // Attach user information (payload) to the request object
     req.user = decoded; // Decoded payload usually contains { id: '...', role: '...' }
-    logger.info(`User authenticated: ${req.user.id}, Role: ${req.user.role}`);
+    logger.info(
+      `User authenticated: ${req?.user?.id}, Role: ${req?.user?.role}`
+    );
     next(); // Proceed to the next middleware or route handler
   } catch (error) {
     logger.error('Authentication failed: Invalid token', error);
