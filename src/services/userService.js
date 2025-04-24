@@ -357,6 +357,11 @@ class UserService {
       return null; // User not found
     }
 
+    if (user?.status === 'terminated' || user?.status === 'absconded') {
+      logger.warn(`User is terminated or absconded`);
+      return null;
+    }
+
     // Compare provided password with the stored hash
     // console.log('Plain password:', password);
     // console.log('Hashed password in DB:', user.password);
@@ -671,14 +676,16 @@ class UserService {
         .select('employeeId')
         .lean();
       let nextNumber = autoGenerateEmpId(lastUser);
+      let passMap = {};
       // const paddedNumber = String(nextNumber).padStart(3, '0');
       for (const user of usersToInsert) {
         try {
           if (!user.password)
             throw new Error('Missing password prior to hashing.');
-
           const paddedNumber = String(nextNumber++).padStart(3, '0');
           user.employeeId = `SD_${paddedNumber}`;
+          passMap[user?.firstName] = user?.password;
+          // passMap.set(user?.firstName, user?.password);
           user.password = await bcrypt.hash(user?.password, saltRounds);
           usersReadyForInsert?.push(user);
         } catch (hashError) {
@@ -701,6 +708,7 @@ class UserService {
           const result = await User.insertMany(usersReadyForInsert, {
             ordered: false,
           });
+          // console.log(result);
           createdCount = result?.length;
           console.log(`${activity} Inserted ${createdCount} users.`);
 
@@ -708,17 +716,18 @@ class UserService {
             // await sendUserWelcomeEmail(user); // customize this function as needed
 
             if (
-              process?.env?.NODE_ENV === 'p' &&
+              process?.env?.NODE_ENV === 'production' &&
               process?.env?.HRMS_FRONTEND_URL
             ) {
-              logger.info(`Sending welcome email to ${user?.email}`);
+              logger.info(`Sending welcome email to ${user.email}`);
               Helper.sendEmail({
                 receiverEmails: [user?.email],
                 subject: `Welcome to ${process?.env?.TEAM} – Let’s Get You Started!`,
                 message: Helper.getWelcomeEmail(
                   user?.firstName,
                   user?.email,
-                  user?.password, // !! SECURITY RISK: Avoid sending plain password
+                  passMap[user?.firstName],
+                  // validatedData?.password,
                   process?.env?.HRMS_FRONTEND_URL
                 ),
                 fromHr: true,
@@ -727,7 +736,7 @@ class UserService {
                   `Failed to send welcome email to ${user?.email}:`,
                   err
                 )
-              ); // Log email sending errors but don't fail the request
+              );
             }
           }
         } catch (dbError) {

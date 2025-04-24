@@ -5,8 +5,9 @@ const ApiError = require('../utility/ApiError');
 const catchAsync = require('../utility/catchAsync');
 const logger = require('../config/logger');
 const Helper = require('../utility/helper');
-const { HR_EMAIL } = require('../utility/constants');
+const { HR_EMAIL, LEAVETYPES } = require('../utility/constants');
 const User = require('../models/userModel');
+const { formatDateToKolkata } = require('../utility/common');
 
 const createLeave = catchAsync(async (req, res) => {
   const date = req?.body?.date;
@@ -26,10 +27,11 @@ const createLeave = catchAsync(async (req, res) => {
   const user = await User?.findById(req?.user?.id)
     .populate('teamLeadId', 'email')
     .populate('subTeamLeadId', 'email');
+  // console.log('user data containing tl and stl is: ', user);
 
   const sendMail = req?.body?.sendMail === true;
   if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
-    logger.info(`Sending leave email to ${user?.teamLead}`);
+    logger.info(`Sending leave email to ${user?.teamLeadId}`);
     Helper.sendEmail({
       receiverEmails: [
         HR_EMAIL,
@@ -37,15 +39,15 @@ const createLeave = catchAsync(async (req, res) => {
         user?.subTeamLeadId?.email,
       ],
       subject: 'Applied for leave',
-      message: Helper.getWelcomeEmail(
-        data?.leaveReason,
-        data?.date,
-        user?.role,
-        validatedData?.password, // !! SECURITY RISK: Avoid sending plain password
-        process?.env?.HRMS_FRONTEND_URL
+      message: Helper.WfhLeaveApplication(
+        user?.firstName,
+        'Leave',
+        LEAVETYPES[leaveType],
+        formatDateToKolkata(date),
+        leaveReason
       ),
     }).catch((err) =>
-      logger.error(`Failed to send welcome email to ${user?.email}:`, err)
+      logger.error(`Failed to send leave email to ${user?.teamLeadId}:`, err)
     );
   }
   res.status(httpStatus.CREATED).json({
@@ -121,8 +123,8 @@ const updateLeave = catchAsync(async (req, res) => {
         message: Helper.leaveWFHApproval(
           mailReciever?.firstName,
           'leave',
-          updated?.date,
-          updated?.leaveType,
+          formatDateToKolkata(updated?.date),
+          LEAVETYPES[updated?.leaveType],
           updated?.leaveReason
         ),
       }).catch((err) =>
@@ -143,8 +145,8 @@ const updateLeave = catchAsync(async (req, res) => {
         message: Helper.leaveWFHReject(
           mailReciever?.firstName,
           'leave',
-          updated?.date,
-          updated?.leaveType,
+          formatDateToKolkata(updated?.date),
+          LEAVETYPES[updated?.leaveType],
           updated?.leaveReason
         ),
       }).catch((err) =>

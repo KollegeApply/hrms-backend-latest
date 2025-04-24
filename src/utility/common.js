@@ -1,7 +1,7 @@
 // src/utility/common.js
 const mongoose = require('mongoose');
 const { bulkCreateUserRowSchema } = require('../validators/userValidator');
-
+const { format } = require('date-fns-tz');
 /**
  * Paginates Mongoose query results.
  * @param {mongoose.Model} model - The Mongoose model to query.
@@ -167,9 +167,16 @@ function autoGenerateEmpId(lastUser) {
   return nextNumber;
 }
 
+function formatDateToKolkata(dateStr) {
+  const timeZone = 'Asia/Kolkata';
+  const date = new Date(dateStr);
+  return format(date, 'dd MMMM yyyy', { timeZone });
+}
+
 module.exports = {
   paginate,
   validateHeaders,
   validateUsersCsvFile,
   autoGenerateEmpId,
+  formatDateToKolkata,
 };

@@ -7,6 +7,7 @@ const logger = require('../config/logger');
 const Helper = require('../utility/helper');
 const HR_EMAIL = require('../utility/constants');
 const User = require('../models/userModel');
+const { formatDateToKolkata } = require('../utility/common');
 
 const createWfh = catchAsync(async (req, res) => {
   const date = req?.body?.date;
@@ -28,23 +29,23 @@ const createWfh = catchAsync(async (req, res) => {
 
   const sendMail = req?.body?.sendMail === true;
   if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
-    logger.info(`Sending WFH email to ${user?.teamLead}`);
+    logger.info(`Sending wfh email to ${user?.teamLeadId}`);
     Helper.sendEmail({
       receiverEmails: [
         HR_EMAIL,
         user?.teamLeadId?.email,
         user?.subTeamLeadId?.email,
       ],
-      subject: 'Applied for WFH',
-      message: Helper.getWelcomeEmail(
-        data?.leaveReason,
-        data?.date,
-        user?.role,
-        validatedData?.password, // !! SECURITY RISK: Avoid sending plain password
-        process?.env?.HRMS_FRONTEND_URL
+      subject: 'Applied for wfh',
+      message: Helper.WfhLeaveApplication(
+        user?.firstName,
+        'WFH',
+        '',
+        formatDateToKolkata(date),
+        wfhReason
       ),
     }).catch((err) =>
-      logger.error(`Failed to send welcome email to ${user?.email}:`, err)
+      logger.error(`Failed to send wfh email to ${user?.teamLeadId}:`, err)
     );
   }
 
@@ -115,7 +116,7 @@ const updateWfh = catchAsync(async (req, res) => {
         message: Helper.leaveWFHApproval(
           mailReciever?.firstName,
           'WFH',
-          updated?.date,
+          formatDateToKolkata(updated?.date),
           'Work From Home',
           updated?.wfhReason
         ),
@@ -137,7 +138,7 @@ const updateWfh = catchAsync(async (req, res) => {
         message: Helper.leaveWFHReject(
           mailReciever?.firstName,
           'WFH',
-          updated?.date,
+          formatDateToKolkata(updated?.date),
           'Work From Home',
           updated?.wfhReason
         ),

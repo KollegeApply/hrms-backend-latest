@@ -15,10 +15,8 @@ const createDepartmentSchema = Joi.object({
     'string.empty': 'Department name should not be empty.',
     'any.required': 'Department name is required.',
   }),
-  description: Joi.string().trim().min(1).required().messages({
-    'string.base': 'Department description must be a validate date.',
-    'string.empty': 'Department description should not be empty.',
-    'any.required': 'Department description is required.',
+  description: Joi.string().trim().optional().allow('', null).messages({
+    'string.base': 'Department description must be string.',
   }),
   userId: objectIdSchema.required().messages({
     'any.required': 'UserId is required.',
@@ -34,10 +32,8 @@ const updateDepartmentSchema = Joi.object({
     'string.empty': 'Department name should not be empty.',
     'any.required': 'Department name is required.',
   }),
-  description: Joi.string().trim().min(1).required().messages({
-    'string.base': 'Department description must be a validate date.',
-    'string.empty': 'Department description should not be empty.',
-    'any.required': 'Department description is required.',
+  description: Joi.string().trim().optional().allow('', null).messages({
+    'string.base': 'Department description must be string.',
   }),
   edittorId: objectIdSchema.required().messages({
     'any.required': 'edittorId is required.',
