@@ -33,7 +33,7 @@ const createUser = catchAsync(async (req, res) => {
   const currentUserRank = RANK[req?.user?.role];
   const targetUserRank = RANK[validatedData?.role];
   let user;
-  if (currentUserRank < targetUserRank) {
+  if (targetUserRank != 1 && currentUserRank < 4) {
     user = await userService.createUser(validatedData);
     // sending mail
     const sendMail = req?.body?.sendMail === true;
@@ -45,7 +45,7 @@ const createUser = catchAsync(async (req, res) => {
         message: Helper.getWelcomeEmail(
           user?.firstName,
           user?.email,
-          validatedData?.password, // !! SECURITY RISK: Avoid sending plain password
+          validatedData?.password,
           process?.env?.HRMS_FRONTEND_URL
         ),
         fromHr: true,

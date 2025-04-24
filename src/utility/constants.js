@@ -14,13 +14,24 @@ const EMPLOYEE_STATUS = {
   ONROLL: 'onroll',
 };
 
+const LEAVETYPES = {
+  casualSickLeave: 'Casual Sick Leave',
+  annualLeave: 'Annual Leave',
+  bereavementLeaves: 'Bereavement Leave',
+  marriageLeave: 'Marriage Leave',
+  birthdayLeave: 'Birthday Leave',
+};
+
 const MAIL_HOST = 'smtp.gmail.com';
 const MAIL_PORT = 465;
 const MAIL_SECURE = true;
 const MAIL_SERVICE = 'gmail';
 
 // Derive from environment variables if set, otherwise use defaults
-const MAIL_FROM = process.env.SMTP_FROM_EMAIL || 'noreply@yourcompany.com';
+const MAIL_FROM_HR =
+  process.env.SMTP_FROM_EMAIL_HR || 'noreply@yourcompany.com';
+const MAIL_FROM_SUPPORT =
+  process.env.SMTP_FROM_EMAIL_SUPPORT || 'noreply@yourcompany.com';
 const MAIL_USER = process.env.SMTP_USER;
 const MAIL_PASS = process.env.SMTP_PASS;
 const HR_EMAIL = 'hr@sportsdunia.com';
@@ -74,7 +85,8 @@ module.exports = {
   MAIL_PORT,
   MAIL_SECURE,
   MAIL_SERVICE,
-  MAIL_FROM,
+  MAIL_FROM_HR,
+  MAIL_FROM_SUPPORT,
   MAIL_USER,
   MAIL_PASS,
   HR_MAIL_USER,
@@ -84,4 +96,5 @@ module.exports = {
   USER_CSV_FILE_HEADERS,
   CSV_TYPES,
   RANK,
+  LEAVETYPES,
 };

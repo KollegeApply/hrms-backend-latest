@@ -7,7 +7,8 @@ const {
   MAIL_PORT,
   MAIL_SECURE,
   MAIL_SERVICE,
-  MAIL_FROM,
+  MAIL_FROM_HR,
+  MAIL_FROM_SUPPORT,
   MAIL_USER,
   MAIL_PASS,
   HR_MAIL_USER,
@@ -53,7 +54,9 @@ class Helper {
     });
 
     const mailOptions = {
-      from: `"HR" <${MAIL_FROM}>`, // Customize sender name
+      from: fromHr
+        ? `"HR" <${MAIL_FROM_HR}>`
+        : `"Support" <${MAIL_FROM_SUPPORT}>`, // Customize sender name
       to: receiverEmails.join(','),
       subject: subject,
       html: message,
@@ -156,7 +159,7 @@ class Helper {
     `;
   }
 
-  static leaveWFHApproval(userName, requestType, date, leaveType, reason) {
+  static leaveWFHApproval(userName, requestType, date, leaveType = '', reason) {
     return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
   <div style="text-align: center; margin-bottom: 20px;">
@@ -174,7 +177,7 @@ class Helper {
     <div style="background-color: #eef; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #66f;">
       <h2 style="color: #333; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Request Details</h2>
       <ul style="list-style: none; padding: 0; margin: 0;">
-        <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${leaveType}</li>
+        ${requestType === 'leave' ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${leaveType}</li>` : ''}
         <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Date:</strong> ${date}</li>
         <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>
       </ul>
@@ -292,6 +295,54 @@ class Helper {
     This is an automated message. Please do not reply directly to this email.
   </div>
 </div>
+
+    `;
+  }
+
+  static WfhLeaveApplication(
+    userName,
+    requestType,
+    leaveType = '',
+    date,
+    reason
+  ) {
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+  <div style="text-align: center; margin-bottom: 20px;">
+    <h2 style="color: #333;">${requestType} Request Notification</h2>
+  </div>
+
+  <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+    <p style="color: #555; font-size: 16px; line-height: 1.6;">
+      Hello Team,
+    </p>
+
+    <p style="color: #555; font-size: 16px; line-height: 1.6;">
+      <strong>${userName}</strong> has requested for <strong>${requestType}</strong> for the following period:
+    </p>
+
+    <div style="background-color: #eef4ff; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #3399ff;">
+      <h3 style="color: #333; font-size: 17px; margin-top: 0; margin-bottom: 15px;">Request Details</h3>
+      <ul style="list-style: none; padding: 0; margin: 0;">
+        <li style="color: #555; font-size: 15px; margin-bottom: 8px;"><strong>Type:</strong> ${requestType}</li>
+        ${requestType === 'Leave' ? `<li style="color: #555; font-size: 15px; margin-bottom: 8px;"><strong>Leave Type:</strong> ${leaveType}</li>` : ''}
+        <li style="color: #555; font-size: 15px; margin-bottom: 8px;"><strong>Date:</strong> ${date}</li>
+        <li style="color: #555; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>
+      </ul>
+    </div>
+
+    <p style="color: #555; font-size: 16px; line-height: 1.6;">
+      Kindly review and take necessary actions.
+    </p>
+
+    <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>${process?.env?.TEAM} Support Team</strong></p>
+  </div>
+
+  <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
+    This is an automated notification. Please do not reply to this email directly.
+  </div>
+</div>
+
 
     `;
   }
