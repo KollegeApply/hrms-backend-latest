@@ -325,6 +325,14 @@ const attendanceService = {
         999
       );
 
+      // const existingAttendance = await Attendance.find({
+      //   user: userId,
+      //   date:{ $gte: todayStart, $lte: todayEnd },
+      //   checkOutTime: null,
+      //   status: 'present'
+      // });
+      // if
+
       const attendance = await Attendance.findOne({
         user: userId,
         date: { $gte: todayStart, $lte: todayEnd },

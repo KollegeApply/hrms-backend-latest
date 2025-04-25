@@ -324,7 +324,6 @@ class Helper {
     <div style="background-color: #eef4ff; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #3399ff;">
       <h3 style="color: #333; font-size: 17px; margin-top: 0; margin-bottom: 15px;">Request Details</h3>
       <ul style="list-style: none; padding: 0; margin: 0;">
-        <li style="color: #555; font-size: 15px; margin-bottom: 8px;"><strong>Type:</strong> ${requestType}</li>
         ${requestType === 'Leave' ? `<li style="color: #555; font-size: 15px; margin-bottom: 8px;"><strong>Leave Type:</strong> ${leaveType}</li>` : ''}
         <li style="color: #555; font-size: 15px; margin-bottom: 8px;"><strong>Date:</strong> ${date}</li>
         <li style="color: #555; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>

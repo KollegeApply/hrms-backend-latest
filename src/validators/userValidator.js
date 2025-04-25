@@ -61,14 +61,14 @@ const createUserSchema = Joi.object({
   }),
   employeeId: Joi.string().trim().allow('', null).optional(),
   jobTitle: Joi.string().trim().optional().allow('', null),
-  department: Joi.string().trim().allow('').optional(),
+  department: Joi.string().trim().allow('', null).optional(),
   hireDate: Joi.date().iso().optional().allow(null), // Expect ISO format (YYYY-MM-DD)
   phoneNumber: Joi.string().trim().optional().allow('', null),
   address: addressSchema.optional(),
   leaves: leavesSchema.optional(),
   teamLeadId: Joi.string()
     .trim()
-    .allow('')
+    .allow('', null)
     // .pattern(/^[0-9a-fA-F]{24}$/)
     .messages({
       'any.required': 'ID is required',
@@ -76,7 +76,7 @@ const createUserSchema = Joi.object({
     .optional(),
   subTeamLeadId: Joi.string()
     .trim()
-    .allow('')
+    .allow('', null)
     // .pattern(/^[0-9a-fA-F]{24}$/)
     .messages({
       'any.required': 'ID is required',
@@ -238,28 +238,17 @@ const bulkCreateUserRowSchema = Joi.object({
     .messages({
       'string.pattern.base': 'Invalid Department ObjectId',
     }),
-  hireDate: Joi.date().iso().optional().allow(null).messages({
+  hireDate: Joi.date().optional().allow('', null).iso().messages({
     // Expects YYYY-MM-DD
     'date.format': 'HireDate must be in YYYY-MM-DD format',
   }),
   phoneNumber: Joi.string().trim().optional().allow('', null),
-  teamLeadId: Joi.string()
-    .trim()
-    // .pattern(/^[0-9a-fA-F]{24}$/)
-    // .required()
-    .messages({
-      'string.pattern.base': 'Invalid TeamLeadID ObjectId',
-      'string.empty': 'TeamLeadID is required',
-      'any.required': 'TeamLeadID is required',
-    }),
-  subTeamLeadId: Joi.string()
-    .trim()
-    // .pattern(/^[0-9a-fA-F]{24}$/)
-    // .optional()
-    .allow('', null)
-    .messages({
-      'string.pattern.base': 'Invalid SubTeamLeadID ObjectId',
-    }),
+  teamLeadId: Joi.string().trim().optional().allow('', null).messages({
+    'string.pattern.base': 'Invalid TeamLeadID ObjectId',
+  }),
+  subTeamLeadId: Joi.string().trim().optional().allow('', null).messages({
+    'string.pattern.base': 'Invalid SubTeamLeadID ObjectId',
+  }),
   role: Joi.string()
     .trim()
     .valid(...VALID_USER_ROLES)
