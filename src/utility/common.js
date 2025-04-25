@@ -90,7 +90,7 @@ async function validateUsersCsvFile(csvData) {
   const validData = [];
   const invalidData = [];
   const seenEmails = new Set();
-  const seenEmployeeIDs = new Set();
+  // const seenEmployeeIDs = new Set();
 
   for (let i = 0; i < csvData.length; i++) {
     const row = csvData[i];
@@ -149,7 +149,7 @@ async function validateUsersCsvFile(csvData) {
       department: value.department || null,
       hireDate: value.hireDate || null,
       phoneNumber: value.phoneNumber || null,
-      teamLeadId: value.teamLeadId,
+      teamLeadId: value.teamLeadId || null,
       subTeamLeadId: value.subTeamLeadId || null,
       role: value.role,
       status: value.status,

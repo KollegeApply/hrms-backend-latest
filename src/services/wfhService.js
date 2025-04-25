@@ -127,7 +127,7 @@ class wfhService {
     if (!result || result?.isDeleted) {
       throw new ApiError(httpStatus.NOT_FOUND, 'No WFH on given date found');
     }
-    result.isDeleted = true;
+    // result.isDeleted = true;
     result.status = 'revoked';
     return await result.save();
   }

@@ -598,6 +598,33 @@ class UserService {
       // Validate Rows & Internal Duplicates
       let { validData, invalidData } = await validateUsersCsvFile(usersCsvJson);
 
+      const augmentedValidationErrors = invalidData.map((item) => {
+        const userEmail =
+          item?.Email ||
+          item?.email ||
+          (item?.originalRow ? item?.originalRow?.Email : null);
+
+        const processedItem = { ...item };
+
+        if (userEmail && typeof userEmail === 'string') {
+          const trimmedEmail = userEmail.trim();
+          processedItem.Email = trimmedEmail;
+          if (
+            typeof processedItem?.Reason === 'string' &&
+            !processedItem.Reason.includes(trimmedEmail)
+          ) {
+            processedItem.Reason = `Email '${trimmedEmail}': ${processedItem.Reason}`;
+          }
+        }
+        if (!processedItem['#']) {
+          processedItem['#'] = 'Validation/Internal Duplicate';
+        }
+
+        return processedItem;
+      });
+
+      invalidData = augmentedValidationErrors;
+
       if (validData.length === 0) {
         return {
           status: true,
