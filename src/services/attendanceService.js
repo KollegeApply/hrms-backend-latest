@@ -62,7 +62,7 @@ const attendanceService = {
     }
   },
 
-  async createAttendance(userId, status, reason, date, updateIn) {
+  async createAttendance(userId, status, Id, date, updateIn) {
     try {
       const existingAttendace = await Attendance.findOne({
         user: userId,
@@ -71,7 +71,11 @@ const attendanceService = {
       if (existingAttendace) {
         existingAttendace.status =
           updateIn === 'leave' ? 'leave_applied' : 'wfh_applied';
-        existingAttendace.reason = reason;
+        if (updateIn === 'leave') {
+          existingAttendace.leaveId = Id;
+        } else if (updateIn === 'wfh') {
+          existingAttendace.wfhId = Id;
+        }
         await existingAttendace.save();
         return {
           status: 'success',
@@ -83,7 +87,8 @@ const attendanceService = {
       const newAttendance = new Attendance({
         user: userId,
         status: updateIn === 'leave' ? 'leave_applied' : 'wfh_applied',
-        reason: reason,
+        leaveId: updateIn === 'leave' ? Id : undefined,
+        wfhId: updateIn === 'wfh' ? Id : undefined,
         date: date,
       });
       await newAttendance.save();
@@ -243,7 +248,6 @@ const attendanceService = {
       let dateQuery = {};
 
       if (startDateStr && endDateStr) {
-        // Attempt to parse YYYY-MM-DD format using date-fns for reliability
         const parsedStart = parseISO(startDateStr);
         const parsedEnd = parseISO(endDateStr);
 
@@ -282,11 +286,12 @@ const attendanceService = {
       }
       let query = { date: dateQuery };
 
-      if (role !== 'hr' && role !== 'manager' && role !== 'admin') {
+      if (role !== 'hr' && role !== 'subadmin' && role !== 'admin') {
         query.user = userId;
       }
       const attendance = await Attendance.find(query)
         .populate('user', 'firstName lastName employeeId')
+        .populate('leaveId')
         .sort({ date: -1, checkInTime: -1 });
       return {
         status: 'success',

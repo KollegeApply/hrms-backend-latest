@@ -1,4 +1,5 @@
 const Leave = require('../models/leaveModel');
+const Holiday = require('../models/holidayModel');
 const User = require('../models/userModel');
 const ApiError = require('../utility/ApiError');
 const { default: httpStatus } = require('http-status');
@@ -15,11 +16,23 @@ class leaveService {
     const existingLeave = await Leave.findOne({
       date: leaveData?.date,
       userId: leaveData?.userId,
+      status: { $nin: ['revoked', 'rejected'] },
       isDeleted: false,
     });
 
     if (existingLeave) {
       throw new ApiError(httpStatus.CONFLICT, 'A leave is already declared.');
+    }
+    const holidayOnSameDate = await Holiday.findOne({
+      date: leaveData?.date,
+      isDeleted: false,
+    });
+    //if its already a holiday or a sunday
+    if (holidayOnSameDate || leaveData?.date?.getDay() === 0) {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        `It's already a holiday on this date`
+      );
     }
     const user = await User.findById(leaveData?.userId);
     const incomingLeaveType = leaveData?.leaveType;
@@ -123,6 +136,12 @@ class leaveService {
     if (!oldLeave) {
       throw new ApiError(httpStatus.NOT_FOUND, 'Leave not found.');
     }
+    if (oldLeave?.status !== 'pending') {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        'Seems like status of leave has already been changed. Refresh page to see changes.'
+      );
+    }
     oldLeave.status = leaveData.status;
     if (leaveData.status === 'approved') {
       oldLeave.approvedBy = leaveData.edittorId;
@@ -130,7 +149,8 @@ class leaveService {
         const markAttendance = await attendanceService.createAttendance(
           oldLeave.userId,
           leaveData.status,
-          leaveData.reason,
+          oldLeave._id,
+          // leaveData.reason,
           oldLeave.date,
           'leave'
         );
@@ -177,7 +197,12 @@ class leaveService {
     if (!result || result.isDeleted) {
       throw new ApiError(httpStatus.NOT_FOUND, 'No leave on given date found');
     }
-    // result.isDeleted = true;
+    if (result?.status === 'rejected') {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        'You cannot delete a rejected leave.'
+      );
+    }
     result.status = 'revoked';
     return await result.save();
   }

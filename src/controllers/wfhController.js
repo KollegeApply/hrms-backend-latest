@@ -172,6 +172,33 @@ const deleteWfh = catchAsync(async (req, res) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'Wfh not found.');
   }
 
+  const user = await User?.findById(req?.user?.id)
+    .populate('teamLeadId', 'email')
+    .populate('subTeamLeadId', 'email');
+
+  const sendMail = req?.body?.sendMail === true;
+  if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
+    logger.info(`Sending revoke email to ${user?.teamLeadId}`);
+    Helper.sendEmail({
+      receiverEmails: [
+        HR_EMAIL,
+        user?.teamLeadId?.email,
+        user?.subTeamLeadId?.email,
+      ],
+      subject: 'Revoked WFH application',
+      message: Helper.WfhLeaveRevoked(
+        user?.firstName,
+        'WFH',
+        formatDateToKolkata(validatedData?.date)
+      ),
+    }).catch((err) =>
+      logger.error(
+        `Failed to send revoke email to ${user?.teamLeadId} and others:`,
+        err
+      )
+    );
+  }
+
   res?.status(httpStatus.OK).json({
     status: true,
     message: 'Wfh deleted successfully.',

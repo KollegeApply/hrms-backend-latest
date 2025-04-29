@@ -27,12 +27,20 @@ const attendanceSchema = new Schema(
       enum: ['present', 'leave_applied', 'wfh_applied'],
       default: 'present',
     },
-    leaveReason: {
-      type: String,
+    leaveId: {
+      type: Schema.Types.ObjectId,
+      ref: 'Leaves',
     },
-    wfhReason: {
-      type: String,
+    wfhId: {
+      type: Schema.Types.ObjectId,
+      ref: 'WFH',
     },
+    // leaveReason: {
+    //   type: String,
+    // },
+    // wfhReason: {
+    //   type: String,
+    // },
     date: {
       type: Date,
       required: true,
