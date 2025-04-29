@@ -3,6 +3,7 @@ const WFH = require('../models/wfhModel');
 const ApiError = require('../utility/ApiError');
 const { default: httpStatus } = require('http-status');
 const attendanceService = require('./attendanceService');
+const Holiday = require('../models/holidayModel');
 
 class wfhService {
   /**
@@ -23,6 +24,17 @@ class wfhService {
       throw new ApiError(
         httpStatus.CONFLICT,
         'A wfh on the same date is already declared.'
+      );
+    }
+    const holidayOnSameDate = await Holiday.findOne({
+      date: wfhData?.date,
+      isDeleted: false,
+    });
+    //if its already a holiday or a sunday
+    if (holidayOnSameDate || wfhData?.date?.getDay() === 0) {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        `It's already a holiday on this date`
       );
     }
     const newWfh = new WFH(wfhData);
@@ -94,6 +106,12 @@ class wfhService {
     if (!oldWfh) {
       throw new ApiError(httpStatus.NOT_FOUND, 'WFH not found.');
     }
+    if (oldWfh?.status !== 'pending') {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        'Seems like status of wfh has already been changed. Refresh page to see changes.'
+      );
+    }
     oldWfh.status = wfhData?.status;
     if (wfhData?.status === 'approved') {
       oldWfh.approvedBy = wfhData?.edittorId;
@@ -101,11 +119,11 @@ class wfhService {
         const markWFH = await attendanceService.createAttendance(
           oldWfh?.userId,
           wfhData?.status,
-          wfhData?.reason,
+          oldWfh?._id,
           oldWfh?.date,
           'wfh'
         );
-        console.log(markWFH);
+        // console.log(markWFH);
       } catch (err) {
         console.log(err);
       }
@@ -127,7 +145,12 @@ class wfhService {
     if (!result || result?.isDeleted) {
       throw new ApiError(httpStatus.NOT_FOUND, 'No WFH on given date found');
     }
-    // result.isDeleted = true;
+    if (result?.status === 'rejected') {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        'You cannot delete a rejected WFH.'
+      );
+    }
     result.status = 'revoked';
     return await result.save();
   }

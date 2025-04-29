@@ -345,6 +345,47 @@ class Helper {
 
     `;
   }
+
+  static WfhLeaveRevoked(userName, requestType, date) {
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+  <div style="text-align: center; margin-bottom: 20px;">
+    <h2 style="color: #333;">${requestType} Request Revoked Notification</h2>
+  </div>
+
+  <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+    <p style="color: #555; font-size: 16px; line-height: 1.6;">
+      Hello Team,
+    </p>
+
+    <p style="color: #555; font-size: 16px; line-height: 1.6;">
+      <strong>${userName}</strong> has revoked their previously approved ${requestType} request. Please find the details below:
+    </p>
+
+    <div style="background-color: #fce8e6; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #ff4c4c;">
+      <h3 style="color: #333; font-size: 17px; margin-top: 0; margin-bottom: 15px;">Revocation Details</h3>
+      <ul style="list-style: none; padding: 0; margin: 0;">
+        <li style="color: #555; font-size: 15px; margin-bottom: 8px;"><strong>Employee Name:</strong> ${userName}</li>
+        <li style="color: #555; font-size: 15px; margin-bottom: 8px;"><strong>Revocation Date:</strong> ${date}</li>
+      </ul>
+    </div>
+
+    <p style="color: #555; font-size: 16px; line-height: 1.6;">
+      Kindly take note of the updated status and adjust any necessary schedules.
+    </p>
+
+    <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>KollegeApply Support Team</strong></p>
+  </div>
+
+  <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
+    This is an automated message. Please do not reply directly to this email.
+  </div>
+</div>
+
+
+
+    `;
+  }
 }
 
 module.exports = Helper;

@@ -124,10 +124,10 @@ class UserService {
    */
   async getUserById(id) {
     logger.info(`Fetching user by ID: ${id}`);
-    const user = await User.findOne({ _id: id, isDeleted: false }).populate(
-      'department',
-      'name'
-    );
+    const user = await User.findOne({ _id: id, isDeleted: false })
+      .populate('department', 'name')
+      .populate('teamLeadId', 'firstName lastName')
+      .populate('subTeamLeadId', 'firstName lastName');
     if (!user) {
       logger.warn(`User not found with ID: ${id}`);
     }

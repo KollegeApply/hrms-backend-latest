@@ -42,7 +42,7 @@ const createLeave = catchAsync(async (req, res) => {
       message: Helper.WfhLeaveApplication(
         user?.firstName,
         'Leave',
-        LEAVETYPES[leaveType],
+        LEAVETYPES[leaveType] || 'Monthly Leave',
         formatDateToKolkata(date),
         leaveReason
       ),
@@ -173,6 +173,32 @@ const deleteLeave = catchAsync(async (req, res) => {
   const leave = await leaveService?.deleteLeave(validatedData);
   if (!leave) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Leave not found.');
+  }
+  const user = await User?.findById(req?.user?.id)
+    .populate('teamLeadId', 'email')
+    .populate('subTeamLeadId', 'email');
+
+  const sendMail = req?.body?.sendMail === true;
+  if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
+    logger.info(`Sending revoke email to ${user?.teamLeadId}`);
+    Helper.sendEmail({
+      receiverEmails: [
+        HR_EMAIL,
+        user?.teamLeadId?.email,
+        user?.subTeamLeadId?.email,
+      ],
+      subject: 'Revoked leave application',
+      message: Helper.WfhLeaveRevoked(
+        user?.firstName,
+        'Leave',
+        formatDateToKolkata(validatedData?.date)
+      ),
+    }).catch((err) =>
+      logger.error(
+        `Failed to send revoke email to ${user?.teamLeadId} and others:`,
+        err
+      )
+    );
   }
 
   res?.status(httpStatus.OK).json({
