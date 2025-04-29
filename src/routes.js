@@ -6,6 +6,7 @@ const departmentRoutes = require('./routes/departmentRoute');
 const attendanceRoutes = require('./routes/attendanceRoute');
 const leaveRoutes = require('./routes/leaveRoute');
 const wfhRoutes = require('./routes/wfhRoute');
+const thirdPartyRoutes = require('./routes/thirdpartyRoute')
 // const otherRoutes = require('./routes/otherRoutes'); // Example for future routes
 
 const router = express.Router();
@@ -36,6 +37,10 @@ const defaultRoutes = [
   {
     path: `/api/${apiVersion}/wfh`,
     route: wfhRoutes,
+  },
+  {
+    path: `/api/${apiVersion}/thirdParty`,
+    route: thirdPartyRoutes,
   },
   // Add other route configurations here
   // {
