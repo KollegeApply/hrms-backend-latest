@@ -46,6 +46,6 @@ const leaveSchema = new Schema(
 // Index for faster querying of attendance by user and date
 leaveSchema.index({ userId: 1, date: 1 });
 
-const Attendance = mongoose.model('Leaves', leaveSchema);
+const Leave = mongoose.model('Leaves', leaveSchema);
 
-module.exports = Attendance;
+module.exports = Leave;

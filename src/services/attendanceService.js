@@ -14,7 +14,7 @@ const getCurrentMonthRange = () => {
 };
 
 const attendanceService = {
-  async markCheckIn(userId, latitude, longitude) {
+  async markCheckIn(userId, latitude, longitude, checkInMode) {
     try {
       const now = new Date();
       const today = new Date(
@@ -42,6 +42,7 @@ const attendanceService = {
         user: userId,
         checkInTime: now,
         checkInLocation: { latitude, longitude },
+        checkInMode: checkInMode,
         date: today,
       });
 
@@ -330,28 +331,19 @@ const attendanceService = {
         999
       );
 
-      // const existingAttendance = await Attendance.find({
-      //   user: userId,
-      //   date:{ $gte: todayStart, $lte: todayEnd },
-      //   checkOutTime: null,
-      //   status: 'present'
-      // });
-      // if
-
       const attendance = await Attendance.findOne({
         user: userId,
         date: { $gte: todayStart, $lte: todayEnd },
-        checkOutTime: null,
-        status: 'present',
-      }).select('checkInTime'); // Only select the checkInTime field
+      }).select('checkInTime status');
 
       if (attendance) {
         return {
           status: 'success',
           statusCode: 200,
           data: {
-            isCheckedIn: true,
+            isCheckedIn: !!attendance.checkInTime,
             checkInTime: attendance.checkInTime,
+            status: attendance.status, // can be 'present', 'leave_applied', or 'wfh_applied'
           },
         };
       } else {
@@ -361,6 +353,7 @@ const attendanceService = {
           data: {
             isCheckedIn: false,
             checkInTime: null,
+            status: 'absent', // optional fallback
           },
         };
       }
