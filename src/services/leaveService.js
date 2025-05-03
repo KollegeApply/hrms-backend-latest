@@ -4,6 +4,8 @@ const User = require('../models/userModel');
 const ApiError = require('../utility/ApiError');
 const { default: httpStatus } = require('http-status');
 const attendanceService = require('./attendanceService');
+const Attendance = require('../models/attendanceModel');
+const { mongoose } = require('mongoose');
 
 class leaveService {
   /**
@@ -13,6 +15,8 @@ class leaveService {
    * @throws {ApiError} - If a Leave already exists on the given date.
    */
   async createLeave(leaveData) {
+    console.log('leaveData:', leaveData.date);
+
     const existingLeave = await Leave.findOne({
       date: leaveData?.date,
       userId: leaveData?.userId,
@@ -34,6 +38,31 @@ class leaveService {
         `It's already a holiday on this date`
       );
     }
+
+    const leaveDate = new Date(leaveData?.date);
+    leaveDate.setHours(0, 0, 0, 0);
+
+    const endOfLeaveDate = new Date(leaveData?.date);
+    endOfLeaveDate.setHours(23, 59, 59, 999);
+
+    const userId = new mongoose.Types.ObjectId(leaveData?.userId);
+
+    // console.log('userId:', userId);
+
+    // Prevent leave if attendance already exists with present, leave or WFH
+    const existingAttendance = await Attendance.findOne({
+      user: userId,
+      date: { $gte: leaveDate, $lte: endOfLeaveDate },
+      status: { $in: ['present', 'leave_applied', 'wfh_applied'] },
+    });
+
+    if (existingAttendance) {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        'Attendance already marked (Check-In/WFH/Leave) for this date.'
+      );
+    }
+
     const user = await User.findById(leaveData?.userId);
     const incomingLeaveType = leaveData?.leaveType;
     if (user?.status === 'onroll') {

@@ -4,6 +4,7 @@ const ApiError = require('../utility/ApiError');
 const { default: httpStatus } = require('http-status');
 const attendanceService = require('./attendanceService');
 const Holiday = require('../models/holidayModel');
+const Attendance = require('../models/attendanceModel');
 
 class wfhService {
   /**
@@ -37,6 +38,28 @@ class wfhService {
         `It's already a holiday on this date`
       );
     }
+
+    // Convert to day boundaries
+    const leaveDate = new Date(wfhData?.date);
+    leaveDate.setHours(0, 0, 0, 0);
+
+    const endOfLeaveDate = new Date(wfhData?.date);
+    endOfLeaveDate.setHours(23, 59, 59, 999);
+
+    // Block if attendance already exists for this date
+    const existingAttendance = await Attendance.findOne({
+      user: wfhData?.userId,
+      date: { $gte: leaveDate, $lte: endOfLeaveDate },
+      status: { $in: ['present', 'leave_applied', 'wfh_applied'] },
+    });
+
+    if (existingAttendance) {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        'Attendance already marked (Check-In/Leave/WFH) for this date.'
+      );
+    }
+
     const newWfh = new WFH(wfhData);
     return await newWfh.save();
   }

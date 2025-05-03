@@ -19,13 +19,32 @@ const { default: mongoose } = require('mongoose');
 const csv = require('csvtojson');
 const Department = require('../models/departmentModel');
 
+const ON_ROLL_LEAVES = {
+  annualLeave: 16,
+  casualSickLeave: 8,
+  bereavementLeaves: 3,
+  marriageLeave: 5,
+  birthdayLeave: 1,
+  total: 33,
+};
+
+const PROBATION_LEAVE = {
+  perMonth: 1,
+};
+
 class UserService {
   /**
    * Get users with pagination and filtering.
+   *
    * @param {object} queryOptions - Options from the validated query parameters.
+   * @param {object} currentUser - The currently logged-in user's data.
+   * @param {string} currentUser.id - The ID of the current user.
+   * @param {string} currentUser.role - The role of the current user (e.g., 'admin', 'teamlead').
    * @returns {Promise<object>} - Paginated user data or list of all users.
    */
-  async getAllUsers(queryOptions) {
+  
+
+  async getAllUsers(queryOptions, currentUser) {
     const {
       page,
       limit,
@@ -54,11 +73,11 @@ class UserService {
     if (search && typeof search === 'string' && search?.trim()?.length > 0) {
       const searchTerm = search?.trim();
       // Simple search across multiple fields (adjust fields as needed)
-      const searchRegex = new RegExp(search, 'i'); // Case-insensitive search
+      const searchRegex = new RegExp(searchTerm, 'i'); // Case-insensitive search
       query.$or = [
         { firstName: searchRegex },
         { lastName: searchRegex },
-        // { email: searchRegex },
+        { email: searchRegex },
         { employeeId: searchRegex },
         // { jobTitle: searchRegex },
         // { department: searchRegex },
@@ -72,6 +91,9 @@ class UserService {
     if (status) {
       query.status = status;
     }
+
+    // Restrict user from seeing their own record
+    query._id = { $ne: currentUser.id };
 
     // Define sorting
     const sort = {};
@@ -196,14 +218,21 @@ class UserService {
       throw new ApiError(httpStatus.CONFLICT, 'Employee ID is already in use.');
     }
 
-    //check if tl exist in db
+    // Check if team lead exists in DB
     if (userData?.teamLeadId) {
       try {
         const tlExist = await this.getUserById(userData?.teamLeadId);
-        if (!tlExist)
+        if (!tlExist) {
           throw new ApiError(httpStatus.NOT_FOUND, 'Team lead not found');
+        }
       } catch (err) {
-        throw new ApiError(err);
+        if (err instanceof ApiError) {
+          throw err;
+        }
+        throw new ApiError(
+          httpStatus.INTERNAL_SERVER_ERROR,
+          'Failed to validate team lead'
+        );
       }
     }
 
@@ -225,6 +254,7 @@ class UserService {
 
     // Hash the password
     const hashedPassword = await bcrypt.hash(userData?.password, 10); // 10 is the salt rounds
+
 
     // Create and save the new user
     const user = new User({

@@ -21,6 +21,7 @@ const leavesSchema = Joi.object({
   casualSickLeave: Joi.number().optional(),
   marriageLeave: Joi.number().optional(),
   total: Joi.number().optional(),
+  perMonth: Joi.number().optional(),
 });
 
 // Schema for validating MongoDB ObjectIds in parameters
@@ -272,6 +273,7 @@ const bulkCreateUserRowSchema = Joi.object({
 module.exports = {
   createUserSchema,
   updateUserSchema,
+  leavesSchema,
   loginSchema,
   mongoIdSchema,
   getAllUsersSchema,

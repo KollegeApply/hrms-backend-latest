@@ -21,15 +21,19 @@ const generateToken = (user) => {
   return jwt.sign(payload, process?.env?.SECRET_KEY, { expiresIn: '1d' });
 };
 
+
+
 // Wrap controller methods with catchAsync for cleaner error handling
 const createUser = catchAsync(async (req, res) => {
   // 1. Validate request body
   if (req?.body?.role === 'subadmin') {
     req.body.teamLeadId = '6808c6d86d2d1bdfd589c57a';
   }
+  console.log('Request Body:', req?.body);
   const validatedData = await userValidator?.createUserSchema?.validateAsync(
     req?.body
   );
+  console.log('Validated Data:', validatedData?.leaves);
   const currentUserRank = RANK[req?.user?.role];
   const targetUserRank = RANK[validatedData?.role];
   let user;
@@ -74,8 +78,13 @@ const getAllUsers = catchAsync(async (req, res) => {
     req?.query
   );
 
+  // Aceess current user id
+  const currentUser = req?.user;
+
+  console.log('Current User ID:', currentUser);
+
   // 2. Call service to get users
-  const result = await userService?.getAllUsers(validatedQuery); // Service handles pagination logic
+  const result = await userService?.getAllUsers(validatedQuery, currentUser); // Service handles pagination logic
 
   // 3. Send response
   res?.status(httpStatus.OK).json({

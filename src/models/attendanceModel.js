@@ -41,6 +41,10 @@ const attendanceSchema = new Schema(
     // wfhReason: {
     //   type: String,
     // },
+    checkInMode: {
+      type: String,
+      enum: ['on-site', 'off-site'],
+    },
     date: {
       type: Date,
       required: true,

@@ -43,6 +43,6 @@ const wfhSchema = new Schema(
 // Index for faster querying of attendance by user and date
 wfhSchema.index({ userId: 1, date: 1 });
 
-const Attendance = mongoose.model('WFH', wfhSchema);
+const WFH = mongoose.model('WFH', wfhSchema);
 
-module.exports = Attendance;
+module.exports = WFH;
