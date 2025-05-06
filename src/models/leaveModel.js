@@ -15,8 +15,8 @@ const leaveSchema = new Schema(
     leaveType: {
       type: String,
     },
-    date: {
-      type: Date,
+    dates: {
+      type: [Date],
       required: true,
     },
     status: {
@@ -44,7 +44,7 @@ const leaveSchema = new Schema(
 );
 
 // Index for faster querying of attendance by user and date
-leaveSchema.index({ userId: 1, date: 1 });
+leaveSchema.index({ userId: 1, dates: 1 });
 
 const Leave = mongoose.model('Leaves', leaveSchema);
 

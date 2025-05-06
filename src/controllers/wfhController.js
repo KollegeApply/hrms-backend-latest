@@ -30,6 +30,19 @@ const createWfh = catchAsync(async (req, res) => {
   const sendMail = req?.body?.sendMail === true;
   if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
     logger.info(`Sending wfh email to ${user?.teamLeadId}`);
+
+    // Check if date is valid before formatting
+    const parsedDate = new Date(date);
+    if (isNaN(parsedDate)) {
+      logger.error('Invalid date format passed to WfhLeaveApplication');
+      return res
+        .status(400)
+        .json({ status: false, message: 'Invalid time value' });
+    }
+
+    const fromDate = parsedDate;
+    const toDate = parsedDate;
+
     Helper.sendEmail({
       receiverEmails: [
         HR_EMAIL,
@@ -37,13 +50,13 @@ const createWfh = catchAsync(async (req, res) => {
         user?.subTeamLeadId?.email,
       ],
       subject: 'Applied for wfh',
-      message: Helper.WfhLeaveApplication(
-        user?.firstName,
-        'WFH',
-        '',
-        formatDateToKolkata(date),
-        wfhReason
-      ),
+      message: Helper.WfhLeaveApplication({
+        userName: user?.firstName,
+        requestType: 'WFH',
+        fromDate: fromDate,
+        toDate: toDate,
+        reason: wfhReason,
+      }),
     }).catch((err) =>
       logger.error(`Failed to send wfh email to ${user?.teamLeadId}:`, err)
     );

@@ -112,7 +112,7 @@ const attendanceService = {
     }
   },
 
-  async markCheckOut(userId, latitude, longitude) {
+  async markCheckOut(userId, latitude, longitude, checkOutMode) {
     try {
       const now = new Date();
       const today = new Date(
@@ -138,6 +138,7 @@ const attendanceService = {
 
       attendance.checkOutTime = now;
       attendance.checkOutLocation = { latitude, longitude };
+      attendance.checkOutMode = checkOutMode;
       await attendance.save();
       return {
         status: 'success',
@@ -264,9 +265,9 @@ const attendanceService = {
             };
           }
 
-          console.log(
-            `Using date range: ${startDate.toISOString()} to ${endDate.toISOString()}`
-          );
+          // console.log(
+          //   `Using date range: ${startDate.toISOString()} to ${endDate.toISOString()}`
+          // );
           dateQuery = { $gte: startDate, $lte: endDate };
         } else {
           return {
@@ -334,16 +335,20 @@ const attendanceService = {
       const attendance = await Attendance.findOne({
         user: userId,
         date: { $gte: todayStart, $lte: todayEnd },
-      }).select('checkInTime status');
+      })
+        .select('checkInTime status checkInMode')
+        .lean();
 
       if (attendance) {
         return {
           status: 'success',
           statusCode: 200,
           data: {
-            isCheckedIn: !!attendance.checkInTime,
+            isCheckedIn: attendance.checkInTime && !attendance.checkOutTime,
             checkInTime: attendance.checkInTime,
             status: attendance.status, // can be 'present', 'leave_applied', or 'wfh_applied'
+            checkInMode: attendance.checkInMode,
+            checkOutMode: attendance.checkOutMode,
           },
         };
       } else {
@@ -354,6 +359,8 @@ const attendanceService = {
             isCheckedIn: false,
             checkInTime: null,
             status: 'absent', // optional fallback
+            checkInMode: null, // optional fallback
+            checkOutMode: null,
           },
         };
       }
@@ -366,6 +373,44 @@ const attendanceService = {
         status: 'error',
         statusCode: 500,
         message: "Failed to fetch today's check-in status.",
+      };
+    }
+  },
+
+  async bulkCreateOrUpdateLeaveAttendance(userId, leaveId, dates) {
+    try {
+      if (!Array.isArray(dates) || dates.length === 0) {
+        throw new Error('No dates provided for bulk leave attendance.');
+      }
+
+      const attendanceOps = dates.map((date) => ({
+        updateOne: {
+          filter: { user: userId, date },
+          update: {
+            $set: {
+              user: userId,
+              date,
+              status: 'leave_applied',
+              leaveId,
+            },
+          },
+          upsert: true,
+        },
+      }));
+
+      await Attendance.bulkWrite(attendanceOps);
+
+      return {
+        status: 'success',
+        statusCode: 200,
+        message: 'Bulk attendance updated successfully.',
+      };
+    } catch (err) {
+      console.error('Error in bulk attendance update:', err);
+      return {
+        status: 'error',
+        statusCode: 500,
+        message: 'Failed to perform bulk attendance update.',
       };
     }
   },

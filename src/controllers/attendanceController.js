@@ -4,8 +4,6 @@ exports.markCheckIn = async (req, res) => {
   const { latitude, longitude, checkInMode } = req.body;
   const userId = req?.user?.id;
 
-  // Add any input validation here (e.g., are latitude and longitude valid numbers?)
-
   const result = await attendanceService.markCheckIn(
     userId,
     latitude,
@@ -19,15 +17,14 @@ exports.markCheckIn = async (req, res) => {
 };
 
 exports.markCheckOut = async (req, res) => {
-  const { latitude, longitude } = req.body;
+  const { latitude, longitude, checkOutMode } = req.body;
   const userId = req?.user?.id;
-
-  // Add any input validation here
 
   const result = await attendanceService.markCheckOut(
     userId,
     latitude,
-    longitude
+    longitude,
+    checkOutMode
   );
   return res.status(result.statusCode).json({
     message: result?.message,
