@@ -21,53 +21,35 @@ const createLeave = catchAsync(async (req, res) => {
     leaveType: leaveType,
   });
 
-  // Pass validated data to the service
   const data = await leaveService?.createLeave(validatedData);
 
-  // Populate user data
   const user = await User?.findById(req?.user?.id)
     .populate('teamLeadId', 'email')
     .populate('subTeamLeadId', 'email');
 
-  // Define sendMail flag
   const sendMail = req?.body?.sendMail === true;
   if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
-    let leaveMessage = '';
-    const fromDate = new Date(from);
-    const toDate = new Date(to);
-
-    // If leave is for a single day
-    if (fromDate.toDateString() === toDate.toDateString()) {
-      leaveMessage = `Leave applied for: ${fromDate.toDateString()}`;
-    }
-    // If leave is for multiple days
-    else {
-      leaveMessage = `Leave applied from ${fromDate.toDateString()} to ${toDate.toDateString()}`;
-    }
-
-    // Sending leave email with the appropriate message
     logger.info(`Sending leave email to ${user?.teamLeadId}`);
     Helper.sendEmail({
       receiverEmails: [
-        HR_EMAIL,
+        'aj1943372@gmail.com',
         user?.teamLeadId?.email,
         user?.subTeamLeadId?.email,
       ],
       subject: 'Leave Applied',
       message: Helper.WfhLeaveApplication(
         user?.firstName,
-        'Leave',
+        'leave',
         LEAVETYPES[leaveType] || 'Monthly Leave',
-        formatDateToKolkata(fromDate),
-        leaveReason,
-        leaveMessage
+        new Date(from),
+        new Date(to),
+        leaveReason
       ),
     }).catch((err) =>
       logger.error(`Failed to send leave email to ${user?.teamLeadId}:`, err)
     );
   }
 
-  // Respond with success
   res.status(httpStatus.CREATED).json({
     status: true,
     message: 'Leave created successfully!',
@@ -128,7 +110,6 @@ const updateLeave = catchAsync(async (req, res) => {
     );
   }
 
-  // Get the mail receiver details
   const mailReciever = await User.findById(updated?.userId);
 
   // Handle email sending for approved leave

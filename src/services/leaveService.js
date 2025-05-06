@@ -24,134 +24,128 @@ class leaveService {
       throw new ApiError(400, 'Invalid leave date(s).');
     }
 
+    const userObjId = new mongoose.Types.ObjectId(userId);
+
     // Generate full list of leave dates
     const generateDateRange = (start, end) => {
       const dates = [];
       const current = new Date(start);
       while (current <= end) {
-        dates.push(new Date(current)); // push a copy
+        const copy = new Date(current);
+        copy.setHours(0, 0, 0, 0);
+        dates.push(copy);
         current.setDate(current.getDate() + 1);
       }
       return dates;
     };
 
-    let leaveDates = generateDateRange(startDate, endDate);
-    let validLeaveDates = [];
+    const leaveDates = generateDateRange(startDate, endDate);
 
-    // Loop through each date and apply checks
-    for (let date of leaveDates) {
-      const userObjId = new mongoose.Types.ObjectId(userId);
-      const startOfDay = new Date(date);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(date);
-      endOfDay.setHours(23, 59, 59, 999);
-
-      // Check if the date is a holiday or a Sunday
-      const holidayOnSameDate = await Holiday.findOne({
-        date,
+    // Batch fetch holidays, attendance, and existing leaves
+    const [holidays, existingLeaves, existingAttendance] = await Promise.all([
+      Holiday.find({
+        date: { $in: leaveDates },
         isDeleted: false,
-      });
-
-      // If it's Sunday or a holiday, skip the date
-      if (date.getDay() === 0 || holidayOnSameDate) {
-        continue; // Skip Sunday or holiday
-      }
-
-      // Check if there is already an approved leave or WFH on the same day
-      const existingApprovedLeave = await Leave.findOne({
+      }),
+      Leave.find({
         userId: userObjId,
-        dates: { $in: [date] },
-        status: { $in: ['approved'] },
+        dates: { $in: leaveDates },
+        status: { $in: ['approved', 'pending'] },
         isDeleted: false,
-      });
-
-      if (existingApprovedLeave) {
-        throw new ApiError(
-          409,
-          `Leave already approved on ${date.toDateString()}`
-        );
-      }
-
-      // Check if attendance is already marked for this day
-      const existingAttendance = await Attendance.findOne({
+      }),
+      Attendance.find({
         user: userObjId,
-        date: { $gte: startOfDay, $lte: endOfDay },
+        date: {
+          $gte: new Date(leaveDates[0]),
+          $lte: new Date(leaveDates[leaveDates.length - 1]),
+        },
         status: { $in: ['present', 'leave_applied', 'wfh_applied'] },
-      });
+      }),
+    ]);
 
-      if (existingAttendance) {
-        throw new ApiError(
-          409,
-          `Attendance already marked on ${date.toDateString()}`
-        );
+    const holidayDates = new Set(holidays.map((h) => h.date.toDateString()));
+    const existingLeaveDates = new Set(
+      existingLeaves.flatMap((l) => l.dates.map((d) => d.toDateString()))
+    );
+    const attendanceDates = new Set(
+      existingAttendance.map((a) => a.date.toDateString())
+    );
+
+    const rejectedReasons = [];
+
+    const validLeaveDates = leaveDates.filter((date) => {
+      const dateStr = date.toDateString();
+
+      if (date.getDay() === 0) {
+        rejectedReasons.push({ date: dateStr, reason: 'Sunday' });
+        return false;
       }
 
-      // Add valid date to the validLeaveDates array
-      validLeaveDates.push(date);
-    }
+      if (holidayDates.has(dateStr)) {
+        rejectedReasons.push({ date: dateStr, reason: 'Holiday' });
+        return false;
+      }
 
-    // Check if validLeaveDates is empty
+      if (existingLeaveDates.has(dateStr)) {
+        rejectedReasons.push({
+          date: dateStr,
+          reason: 'Leave already applied/approved',
+        });
+        return false;
+      }
+
+      if (attendanceDates.has(dateStr)) {
+        rejectedReasons.push({
+          date: dateStr,
+          reason: 'Attendance already marked',
+        });
+        return false;
+      }
+
+      return true;
+    });
+
     if (validLeaveDates.length === 0) {
+      const reasonMessages = rejectedReasons
+        .map((r) => `- ${r.date}: ${r.reason}`)
+        .join('<br>');
+
       throw new ApiError(
         400,
-        'No leave can be applied for the selected dates due to holidays, Sundays, or existing attendance records.'
+        `No valid leave dates.<br>Reason:<br>${reasonMessages}`
       );
     }
 
-    // Validation: Ensure leave date is not already applied
-    for (const date of validLeaveDates) {
-      const userObjId = new mongoose.Types.ObjectId(userId);
-      const existingLeave = await Leave.findOne({
-        userId: userObjId,
-        dates: { $in: [date] },
-        status: { $nin: ['revoked', 'rejected'] },
-        isDeleted: false,
-      });
-
-      if (existingLeave) {
-        throw new ApiError(
-          409,
-          `Leave already applied on ${date.toDateString()}`
-        );
-      }
-    }
-
-    // Leave limit check remains the same
+    // Fetch user only once
     const user = await User.findById(userId);
     if (!user) throw new ApiError(404, 'User not found.');
 
     if (user.status === 'onroll') {
-      const totalAllowed = user?.leaves?.[leaveType];
+      const totalAllowed = user?.leaves?.[leaveType] || 0;
       const usedLeaves = await Leave.find({
         isDeleted: false,
         userId,
         leaveType,
-        status: 'approved',
+        status: { $in: ['approved', 'pending'] },
       });
 
-      // Flatten all leave dates into a single array to count the total number of leave days
-      const usedLeaveDays = usedLeaves.reduce((acc, leave) => {
-        // Spread all the dates from the leave document into the accumulator
-        acc.push(...leave.dates);
-        return acc;
-      }, []);
+      const usedLeaveCount = usedLeaves.reduce((count, leave) => {
+        return count + (leave.dates?.length || 0);
+      }, 0);
 
-      const usedLeaveCount = usedLeaveDays?.length;
-
-      console.log('used leaves', usedLeaveCount);
-
-      if (usedLeaveCount + leaveDates.length > totalAllowed) {
+      if (usedLeaveCount + validLeaveDates.length > totalAllowed) {
         throw new ApiError(409, 'Leave quota exceeded.');
       }
     }
 
     if (user.status === 'probation') {
-      const hireDate = new Date(user?.hireDate);
+      const hireDate = new Date(user.hireDate);
       const now = new Date();
       const monthsDiff =
         (now.getFullYear() - hireDate.getFullYear()) * 12 +
         now.getMonth() -
         hireDate.getMonth();
+
       if (monthsDiff < 1) {
         throw new ApiError(
           409,
@@ -170,12 +164,12 @@ class leaveService {
       }
     }
 
-    // All validations passed, save the leave
+    // Save the new leave
     const newLeave = new Leave({
       userId,
       leaveReason,
       leaveType,
-      dates: validLeaveDates, // Store the valid dates only (excluding Sundays/holidays)
+      dates: validLeaveDates,
     });
 
     return await newLeave.save();
@@ -245,19 +239,26 @@ class leaveService {
       oldLeave.approvedBy = leaveData.edittorId;
 
       try {
+        // Check if we have multiple leaves to process
         if (Array.isArray(oldLeave.dates) && oldLeave.dates.length > 0) {
-          for (const singleDate of oldLeave.dates) {
-            await attendanceService.createAttendance(
-              oldLeave.userId,
-              leaveData.status,
-              oldLeave._id,
-              singleDate,
-              'leave'
-            );
-          }
+          // This will handle multiple leave records
+          const leaveRecords = Array.isArray(leaveData.leaves)
+            ? leaveData.leaves
+            : [oldLeave];
+
+          // Use Promise.all to handle multiple records in parallel
+          await Promise.all(
+            leaveRecords.map(async (leave) => {
+              await attendanceService.bulkCreateOrUpdateLeaveAttendance(
+                leave.userId,
+                leave._id,
+                leave.dates
+              );
+            })
+          );
         }
       } catch (err) {
-        console.error('Error marking attendance:', err);
+        console.error('Error marking bulk attendance:', err);
       }
     } else if (leaveData.status === 'rejected') {
       oldLeave.rejectedBy = leaveData.edittorId;
@@ -292,38 +293,58 @@ class leaveService {
    * @throws {ApiError} - If the leave doesn't exist or is already deleted.
    */
   async deleteLeave({ id }) {
-    const result = await Leave.findById(id);
+    try {
+      const result = await Leave.findById(id);
 
-    if (!result || result.isDeleted) {
-      throw new ApiError(httpStatus.NOT_FOUND, 'No leave on given date found');
-    }
+      if (!result || result.isDeleted) {
+        throw new ApiError(
+          httpStatus.NOT_FOUND,
+          'Leave not found or already deleted'
+        );
+      }
 
-    if (result?.status === 'rejected') {
+      if (result.status === 'rejected') {
+        throw new ApiError(
+          httpStatus.CONFLICT,
+          'Cannot delete a rejected leave'
+        );
+      }
+
+      // Only delete attendance records if leave is approved
+      if (result.status === 'approved') {
+        // Create an array of attendance deletion operations for the given dates
+        const attendanceOps = result.dates.map((date) => {
+          const startOfDay = new Date(date);
+          startOfDay.setHours(0, 0, 0, 0);
+          const endOfDay = new Date(date);
+          endOfDay.setHours(23, 59, 59, 999);
+
+          return {
+            deleteOne: {
+              filter: {
+                user: result.userId,
+                date: { $gte: startOfDay, $lte: endOfDay },
+                status: 'leave_applied',
+                leaveId: result._id,
+              },
+            },
+          };
+        });
+
+        // Perform bulk deletion of attendance records
+        await Attendance.bulkWrite(attendanceOps);
+      }
+
+      // Update the leave status to 'revoked'
+      result.status = 'revoked';
+      return await result.save();
+    } catch (err) {
+      console.error('Error deleting leave:', err);
       throw new ApiError(
-        httpStatus.CONFLICT,
-        'You cannot delete a rejected leave.'
+        httpStatus.INTERNAL_SERVER_ERROR,
+        'Failed to delete leave'
       );
     }
-
-    if (result.status === 'approved') {
-      // Delete associated attendance records for those dates
-      for (const date of result.dates) {
-        const startOfDay = new Date(date);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(date);
-        endOfDay.setHours(23, 59, 59, 999);
-
-        await Attendance.deleteOne({
-          user: result.userId,
-          date: { $gte: startOfDay, $lte: endOfDay },
-          status: 'leave_applied',
-          leaveId: result._id,
-        });
-      }
-    }
-
-    result.status = 'revoked';
-    return await result.save();
   }
 }
 

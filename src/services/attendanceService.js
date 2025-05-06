@@ -344,7 +344,7 @@ const attendanceService = {
             isCheckedIn: !!attendance.checkInTime,
             checkInTime: attendance.checkInTime,
             status: attendance.status, // can be 'present', 'leave_applied', or 'wfh_applied'
-            checkInMode: attendance.checkInMode, 
+            checkInMode: attendance.checkInMode,
           },
         };
       } else {
@@ -368,6 +368,44 @@ const attendanceService = {
         status: 'error',
         statusCode: 500,
         message: "Failed to fetch today's check-in status.",
+      };
+    }
+  },
+
+  async bulkCreateOrUpdateLeaveAttendance(userId, leaveId, dates) {
+    try {
+      if (!Array.isArray(dates) || dates.length === 0) {
+        throw new Error('No dates provided for bulk leave attendance.');
+      }
+
+      const attendanceOps = dates.map((date) => ({
+        updateOne: {
+          filter: { user: userId, date },
+          update: {
+            $set: {
+              user: userId,
+              date,
+              status: 'leave_applied',
+              leaveId,
+            },
+          },
+          upsert: true,
+        },
+      }));
+
+      await Attendance.bulkWrite(attendanceOps);
+
+      return {
+        status: 'success',
+        statusCode: 200,
+        message: 'Bulk attendance updated successfully.',
+      };
+    } catch (err) {
+      console.error('Error in bulk attendance update:', err);
+      return {
+        status: 'error',
+        statusCode: 500,
+        message: 'Failed to perform bulk attendance update.',
       };
     }
   },
