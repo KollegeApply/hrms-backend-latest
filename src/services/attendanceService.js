@@ -264,9 +264,9 @@ const attendanceService = {
             };
           }
 
-          console.log(
-            `Using date range: ${startDate.toISOString()} to ${endDate.toISOString()}`
-          );
+          // console.log(
+          //   `Using date range: ${startDate.toISOString()} to ${endDate.toISOString()}`
+          // );
           dateQuery = { $gte: startDate, $lte: endDate };
         } else {
           return {
@@ -334,7 +334,7 @@ const attendanceService = {
       const attendance = await Attendance.findOne({
         user: userId,
         date: { $gte: todayStart, $lte: todayEnd },
-      }).select('checkInTime status');
+      }).select('checkInTime status checkInMode');
 
       if (attendance) {
         return {
@@ -344,6 +344,7 @@ const attendanceService = {
             isCheckedIn: !!attendance.checkInTime,
             checkInTime: attendance.checkInTime,
             status: attendance.status, // can be 'present', 'leave_applied', or 'wfh_applied'
+            checkInMode: attendance.checkInMode, 
           },
         };
       } else {
@@ -354,6 +355,7 @@ const attendanceService = {
             isCheckedIn: false,
             checkInTime: null,
             status: 'absent', // optional fallback
+            checkInMode: null, // optional fallback
           },
         };
       }

@@ -93,7 +93,7 @@ class UserService {
     }
 
     // Restrict user from seeing their own record
-    query._id = { $ne: currentUser.id };
+    // query._id = { $ne: currentUser.id };
 
     // Define sorting
     const sort = {};

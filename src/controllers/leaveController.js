@@ -10,27 +10,42 @@ const User = require('../models/userModel');
 const { formatDateToKolkata } = require('../utility/common');
 
 const createLeave = catchAsync(async (req, res) => {
-  const date = req?.body?.date;
-  const leaveReason = req?.body?.leaveReason;
-  const leaveType = req?.body?.leaveType;
+  const { from, to, leaveReason, leaveType } = req.body;
   const userId = req?.user?.id;
 
   const validatedData = await leaveValidator?.createLeaveSchema?.validateAsync({
-    date: date,
+    from: from,
+    to: to,
     leaveReason: leaveReason,
     userId: userId,
     leaveType: leaveType,
   });
 
+  // Pass validated data to the service
   const data = await leaveService?.createLeave(validatedData);
 
+  // Populate user data
   const user = await User?.findById(req?.user?.id)
     .populate('teamLeadId', 'email')
     .populate('subTeamLeadId', 'email');
-  // console.log('user data containing tl and stl is: ', user);
 
+  // Define sendMail flag
   const sendMail = req?.body?.sendMail === true;
   if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
+    let leaveMessage = '';
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+
+    // If leave is for a single day
+    if (fromDate.toDateString() === toDate.toDateString()) {
+      leaveMessage = `Leave applied for: ${fromDate.toDateString()}`;
+    }
+    // If leave is for multiple days
+    else {
+      leaveMessage = `Leave applied from ${fromDate.toDateString()} to ${toDate.toDateString()}`;
+    }
+
+    // Sending leave email with the appropriate message
     logger.info(`Sending leave email to ${user?.teamLeadId}`);
     Helper.sendEmail({
       receiverEmails: [
@@ -38,18 +53,21 @@ const createLeave = catchAsync(async (req, res) => {
         user?.teamLeadId?.email,
         user?.subTeamLeadId?.email,
       ],
-      subject: 'Applied for leave',
+      subject: 'Leave Applied',
       message: Helper.WfhLeaveApplication(
         user?.firstName,
         'Leave',
         LEAVETYPES[leaveType] || 'Monthly Leave',
-        formatDateToKolkata(date),
-        leaveReason
+        formatDateToKolkata(fromDate),
+        leaveReason,
+        leaveMessage
       ),
     }).catch((err) =>
       logger.error(`Failed to send leave email to ${user?.teamLeadId}:`, err)
     );
   }
+
+  // Respond with success
   res.status(httpStatus.CREATED).json({
     status: true,
     message: 'Leave created successfully!',
@@ -110,22 +128,59 @@ const updateLeave = catchAsync(async (req, res) => {
     );
   }
 
-  // const userDetail = await User.findById(user.id);
+  // Get the mail receiver details
   const mailReciever = await User.findById(updated?.userId);
-  // console.log(userDetail);
+
+  // Handle email sending for approved leave
   if (updated?.status === 'approved') {
     const sendMail = req?.body?.sendMail === true;
     if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
       logger.info(`Update on leave request ${mailReciever?.email}`);
+
+      // Determine leave message and date formatting
+      let leaveMessage = '';
+      const leaveDates = updated?.dates;
+
+      if (
+        !leaveDates ||
+        (Array.isArray(leaveDates) && leaveDates.length === 0)
+      ) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          'Invalid or missing leave date'
+        );
+      }
+
+      if (Array.isArray(leaveDates)) {
+        const sortedDates = leaveDates
+          .map((d) => new Date(d))
+          .sort((a, b) => a - b);
+        const fromDate = sortedDates[0];
+        const toDate = sortedDates[sortedDates.length - 1];
+
+        if (fromDate.toDateString() === toDate.toDateString()) {
+          leaveMessage = `Leave approved for: ${fromDate.toDateString()}`;
+        } else {
+          leaveMessage = `Leave approved from ${fromDate.toDateString()} to ${toDate.toDateString()}`;
+        }
+      } else {
+        const singleDate = new Date(leaveDates);
+        leaveMessage = `Leave approved for: ${singleDate.toDateString()}`;
+      }
+
+      // Send approval email
       Helper.sendEmail({
         receiverEmails: [mailReciever?.email],
         subject: `Your Leave Request Has Been Approved`,
         message: Helper.leaveWFHApproval(
           mailReciever?.firstName,
           'leave',
-          formatDateToKolkata(updated?.date),
+          Array.isArray(leaveDates)
+            ? leaveDates.map(formatDateToKolkata).join(', ')
+            : formatDateToKolkata(leaveDates),
           LEAVETYPES[updated?.leaveType],
-          updated?.leaveReason
+          updated?.leaveReason,
+          leaveMessage
         ),
       }).catch((err) =>
         logger.error(
@@ -135,19 +190,57 @@ const updateLeave = catchAsync(async (req, res) => {
       );
     }
   }
+
+  // Handle email sending for rejected leave
   if (updated?.status === 'rejected') {
     const sendMail = req?.body?.sendMail === true;
     if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
       logger.info(`Update on leave request ${mailReciever?.email}`);
+
+      // Determine leave message and date formatting
+      let leaveMessage = '';
+      const leaveDates = updated?.date;
+
+      if (
+        !leaveDates ||
+        (Array.isArray(leaveDates) && leaveDates.length === 0)
+      ) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          'Invalid or missing leave date'
+        );
+      }
+
+      if (Array.isArray(leaveDates)) {
+        const sortedDates = leaveDates
+          .map((d) => new Date(d))
+          .sort((a, b) => a - b);
+        const fromDate = sortedDates[0];
+        const toDate = sortedDates[sortedDates.length - 1];
+
+        if (fromDate.toDateString() === toDate.toDateString()) {
+          leaveMessage = `Leave declined for: ${fromDate.toDateString()}`;
+        } else {
+          leaveMessage = `Leave declined from ${fromDate.toDateString()} to ${toDate.toDateString()}`;
+        }
+      } else {
+        const singleDate = new Date(leaveDates);
+        leaveMessage = `Leave declined for: ${singleDate.toDateString()}`;
+      }
+
+      // Send rejection email
       Helper.sendEmail({
         receiverEmails: [mailReciever?.email],
         subject: `Your Leave Request Has Been Declined`,
         message: Helper.leaveWFHReject(
           mailReciever?.firstName,
           'leave',
-          formatDateToKolkata(updated?.date),
+          Array.isArray(leaveDates)
+            ? leaveDates.map(formatDateToKolkata).join(', ')
+            : formatDateToKolkata(leaveDates),
           LEAVETYPES[updated?.leaveType],
-          updated?.leaveReason
+          updated?.leaveReason,
+          leaveMessage
         ),
       }).catch((err) =>
         logger.error(

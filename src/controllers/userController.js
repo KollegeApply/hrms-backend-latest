@@ -81,7 +81,7 @@ const getAllUsers = catchAsync(async (req, res) => {
   // Aceess current user id
   const currentUser = req?.user;
 
-  console.log('Current User ID:', currentUser);
+  // console.log('Current User ID:', currentUser);
 
   // 2. Call service to get users
   const result = await userService?.getAllUsers(validatedQuery, currentUser); // Service handles pagination logic

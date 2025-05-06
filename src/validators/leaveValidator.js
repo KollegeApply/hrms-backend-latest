@@ -10,9 +10,12 @@ const objectIdSchema = Joi.string()
   .message({ 'any.invalid': 'Invalid MongoDB ObjectId' });
 
 const createLeaveSchema = Joi.object({
-  date: Joi.date().required().messages({
-    'string.base': 'Leave date must be a validate date.',
-    'any.required': 'Leave date is required.',
+  from: Joi.date().required().messages({
+    'date.base': 'Leave start date must be a valid date.',
+    'any.required': 'Leave start date is required.',
+  }),
+  to: Joi.date().optional().allow(null).messages({
+    'date.base': 'Leave end date must be a valid date.',
   }),
   leaveReason: Joi.string().trim().min(1).required().messages({
     'string.base': 'Leave reason should be a string.',
