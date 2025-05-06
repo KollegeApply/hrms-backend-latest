@@ -32,19 +32,19 @@ const createLeave = catchAsync(async (req, res) => {
     logger.info(`Sending leave email to ${user?.teamLeadId}`);
     Helper.sendEmail({
       receiverEmails: [
-        'aj1943372@gmail.com',
+        HR_EMAIL,
         user?.teamLeadId?.email,
         user?.subTeamLeadId?.email,
       ],
       subject: 'Leave Applied',
-      message: Helper.WfhLeaveApplication(
-        user?.firstName,
-        'leave',
-        LEAVETYPES[leaveType] || 'Monthly Leave',
-        new Date(from),
-        new Date(to),
-        leaveReason
-      ),
+      message: Helper.WfhLeaveApplication({
+        username: user?.firstName,
+        requestType: 'leave',
+        leaveType: LEAVETYPES[leaveType] || 'Monthly Leave',
+        fromDate: new Date(from),
+        toDate: new Date(to),
+        reason: leaveReason,
+      }),
     }).catch((err) =>
       logger.error(`Failed to send leave email to ${user?.teamLeadId}:`, err)
     );
@@ -119,7 +119,6 @@ const updateLeave = catchAsync(async (req, res) => {
       logger.info(`Update on leave request ${mailReciever?.email}`);
 
       // Determine leave message and date formatting
-      let leaveMessage = '';
       const leaveDates = updated?.dates;
 
       if (
@@ -132,21 +131,16 @@ const updateLeave = catchAsync(async (req, res) => {
         );
       }
 
+      let formattedLeaveDates = '';
       if (Array.isArray(leaveDates)) {
         const sortedDates = leaveDates
           .map((d) => new Date(d))
           .sort((a, b) => a - b);
-        const fromDate = sortedDates[0];
-        const toDate = sortedDates[sortedDates.length - 1];
-
-        if (fromDate.toDateString() === toDate.toDateString()) {
-          leaveMessage = `Leave approved for: ${fromDate.toDateString()}`;
-        } else {
-          leaveMessage = `Leave approved from ${fromDate.toDateString()} to ${toDate.toDateString()}`;
-        }
+        const from = formatDateToKolkata(sortedDates[0]);
+        const to = formatDateToKolkata(sortedDates[sortedDates.length - 1]);
+        formattedLeaveDates = from === to ? from : `${from} to ${to}`;
       } else {
-        const singleDate = new Date(leaveDates);
-        leaveMessage = `Leave approved for: ${singleDate.toDateString()}`;
+        formattedLeaveDates = formatDateToKolkata(leaveDates);
       }
 
       // Send approval email
@@ -156,12 +150,9 @@ const updateLeave = catchAsync(async (req, res) => {
         message: Helper.leaveWFHApproval(
           mailReciever?.firstName,
           'leave',
-          Array.isArray(leaveDates)
-            ? leaveDates.map(formatDateToKolkata).join(', ')
-            : formatDateToKolkata(leaveDates),
+          formattedLeaveDates,
           LEAVETYPES[updated?.leaveType],
-          updated?.leaveReason,
-          leaveMessage
+          updated?.leaveReason
         ),
       }).catch((err) =>
         logger.error(
@@ -179,8 +170,7 @@ const updateLeave = catchAsync(async (req, res) => {
       logger.info(`Update on leave request ${mailReciever?.email}`);
 
       // Determine leave message and date formatting
-      let leaveMessage = '';
-      const leaveDates = updated?.date;
+      const leaveDates = updated?.dates;
 
       if (
         !leaveDates ||
@@ -192,21 +182,16 @@ const updateLeave = catchAsync(async (req, res) => {
         );
       }
 
+      let formattedLeaveDates = '';
       if (Array.isArray(leaveDates)) {
         const sortedDates = leaveDates
           .map((d) => new Date(d))
           .sort((a, b) => a - b);
-        const fromDate = sortedDates[0];
-        const toDate = sortedDates[sortedDates.length - 1];
-
-        if (fromDate.toDateString() === toDate.toDateString()) {
-          leaveMessage = `Leave declined for: ${fromDate.toDateString()}`;
-        } else {
-          leaveMessage = `Leave declined from ${fromDate.toDateString()} to ${toDate.toDateString()}`;
-        }
+        const from = formatDateToKolkata(sortedDates[0]);
+        const to = formatDateToKolkata(sortedDates[sortedDates.length - 1]);
+        formattedLeaveDates = from === to ? from : `${from} to ${to}`;
       } else {
-        const singleDate = new Date(leaveDates);
-        leaveMessage = `Leave declined for: ${singleDate.toDateString()}`;
+        formattedLeaveDates = formatDateToKolkata(leaveDates);
       }
 
       // Send rejection email
@@ -216,12 +201,9 @@ const updateLeave = catchAsync(async (req, res) => {
         message: Helper.leaveWFHReject(
           mailReciever?.firstName,
           'leave',
-          Array.isArray(leaveDates)
-            ? leaveDates.map(formatDateToKolkata).join(', ')
-            : formatDateToKolkata(leaveDates),
+          formattedLeaveDates,
           LEAVETYPES[updated?.leaveType],
-          updated?.leaveReason,
-          leaveMessage
+          updated?.leaveReason
         ),
       }).catch((err) =>
         logger.error(
@@ -244,17 +226,43 @@ const deleteLeave = catchAsync(async (req, res) => {
   const validatedData = await leaveValidator?.leaveIdSchema?.validateAsync({
     id: req?.params?.id,
   });
+
   const leave = await leaveService?.deleteLeave(validatedData);
   if (!leave) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Leave not found.');
   }
+
   const user = await User?.findById(req?.user?.id)
     .populate('teamLeadId', 'email')
     .populate('subTeamLeadId', 'email');
 
-  const sendMail = req?.body?.sendMail === true;
+  const sendMail = req?.query?.sendMail === 'true';
   if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
-    logger.info(`Sending revoke email to ${user?.teamLeadId}`);
+    logger.info(`Sending revoke email to ${user?.teamLeadId?.email}`);
+
+    // Format leave date(s)
+    let formattedLeaveDates = '';
+    const leaveDates = leave?.dates;
+
+    if (!leaveDates || (Array.isArray(leaveDates) && leaveDates.length === 0)) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Invalid or missing leave date'
+      );
+    }
+
+    if (Array.isArray(leaveDates)) {
+      const sortedDates = leaveDates
+        .map((d) => new Date(d))
+        .sort((a, b) => a - b);
+      const from = formatDateToKolkata(sortedDates[0]);
+      const to = formatDateToKolkata(sortedDates[sortedDates.length - 1]);
+      formattedLeaveDates = from === to ? from : `${from} to ${to}`;
+    } else {
+      formattedLeaveDates = formatDateToKolkata(leaveDates);
+    }
+
+    // Send email
     Helper.sendEmail({
       receiverEmails: [
         HR_EMAIL,
@@ -264,12 +272,12 @@ const deleteLeave = catchAsync(async (req, res) => {
       subject: 'Revoked leave application',
       message: Helper.WfhLeaveRevoked(
         user?.firstName,
-        'Leave',
-        formatDateToKolkata(validatedData?.date)
+        'leave',
+        formattedLeaveDates
       ),
     }).catch((err) =>
       logger.error(
-        `Failed to send revoke email to ${user?.teamLeadId} and others:`,
+        `Failed to send revoke email to ${user?.teamLeadId?.email} and others:`,
         err
       )
     );

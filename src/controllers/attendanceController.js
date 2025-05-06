@@ -17,13 +17,14 @@ exports.markCheckIn = async (req, res) => {
 };
 
 exports.markCheckOut = async (req, res) => {
-  const { latitude, longitude } = req.body;
+  const { latitude, longitude, checkOutMode } = req.body;
   const userId = req?.user?.id;
 
   const result = await attendanceService.markCheckOut(
     userId,
     latitude,
-    longitude
+    longitude,
+    checkOutMode
   );
   return res.status(result.statusCode).json({
     message: result?.message,

@@ -206,46 +206,46 @@ class Helper {
     `;
   }
 
-  static leaveWFHReject(userName, requestType, date, leaveType, reason) {
+  static WfhLeaveRevoked(
+    userName,
+    requestType,
+    date,
+    leaveType = '',
+    reason = ''
+  ) {
     return `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
-  <div style="text-align: center; margin-bottom: 20px;">
-    <h1 style="color: #d9534f;">${requestType} Request Declined</h1>
-  </div>
-  <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
-    <p style="color: #555; font-size: 16px; line-height: 1.6;">
-      Hi <strong>${userName}</strong>,
-    </p>
-
-    <p style="color: #555; font-size: 16px; line-height: 1.6;">
-      We regret to inform you that your <strong>${requestType}</strong> request on <strong>${date}</strong>  has been declined.
-    </p>
-
-    <div style="background-color: #ffecec; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #d9534f;">
-      <h2 style="color: #b52b27; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Reason Provided</h2>
-      <p style="color: #555; font-size: 15px; line-height: 1.6; margin: 0;">
-        ${reason}
-      </p>
-    </div>
-
-    <p style="color: #555; font-size: 16px; line-height: 1.6;">
-      We completely understand if this is disappointing, and we’re happy to work with you on finding an alternative date or a solution that works for you.
-    </p>
-
-    <p style="color: #555; font-size: 16px; line-height: 1.6;">
-      Let us know if you'd like to discuss further.
-    </p>
-
-    <p style="color: #555; font-size: 16px; line-height: 1.6;">
-      Thank you for your understanding.
-    </p>
-
-    <p style="color: #777; font-size: 14px; line-height: 1.5;">Regards,<br><strong>Team ${process?.env?.TEAM}</strong></p>
-  </div>
-  <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
-    This is an automated message. Please do not reply directly to this email.
-  </div>
-</div>
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h1 style="color: #333;">${requestType} Request Revoked</h1>
+        </div>
+        <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+          <p style="color: #555; font-size: 16px; line-height: 1.6;">
+            Hello Team,
+          </p>
+  
+          <p style="color: #555; font-size: 16px; line-height: 1.6;">
+            <strong>${userName}</strong> has revoked their ${requestType} request. Please see the details below:
+          </p>
+  
+          <div style="background-color: #ffecec; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #ff4c4c;">
+            <h2 style="color: #333; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Revocation Details</h2>
+            <ul style="list-style: none; padding: 0; margin: 0;">
+              ${requestType === 'leave' ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Leave Type:</strong> ${leaveType}</li>` : ''}
+              <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Date(s):</strong> ${Array.isArray(date) ? date.join(', ') : date}</li>
+              ${reason ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>` : ''}
+            </ul>
+          </div>
+  
+          <p style="color: #555; font-size: 16px; line-height: 1.6;">
+            Please make note of the change and adjust any responsibilities or schedules accordingly.
+          </p>
+  
+          <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Team ${process?.env?.TEAM}</strong></p>
+        </div>
+        <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
+          This is an automated message. Please do not reply directly to this email.
+        </div>
+      </div>
     `;
   }
 
@@ -300,27 +300,31 @@ class Helper {
     `;
   }
 
-  static WfhLeaveApplication(
+  static WfhLeaveApplication({
     userName,
     requestType,
     leaveType = '',
     fromDate,
     toDate,
-    reason
-  ) {
+    reason,
+  }) {
     // Format the dates for the email
     const fromFormatted = formatDateToKolkata(fromDate);
     const toFormatted = formatDateToKolkata(toDate);
 
     let leaveMessage = '';
 
-    // If leave is for a single day
-    if (fromDate.toDateString() === toDate.toDateString()) {
-      leaveMessage = `Leave applied for: ${fromFormatted}`;
-    }
-    // If leave is for multiple days
-    else {
-      leaveMessage = `Leave applied from ${fromFormatted} to ${toFormatted}`;
+    if (leaveType) {
+      // If leave is for a single day
+      if (fromDate.toDateString() === toDate.toDateString()) {
+        leaveMessage = `Leave applied for: ${fromFormatted}`;
+      }
+      // If leave is for multiple days
+      else {
+        leaveMessage = `Leave applied from ${fromFormatted} to ${toFormatted}`;
+      }
+    } else {
+      leaveMessage = `${fromFormatted}`;
     }
 
     return `
@@ -361,44 +365,46 @@ class Helper {
     `;
   }
 
-  static WfhLeaveRevoked(userName, requestType, date) {
+  static leaveWFHReject(userName, requestType, date, leaveType, reason) {
     return `
-    <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
-  <div style="text-align: center; margin-bottom: 20px;">
-    <h2 style="color: #333;">${requestType} Request Revoked Notification</h2>
-  </div>
-
-  <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
-    <p style="color: #555; font-size: 16px; line-height: 1.6;">
-      Hello Team,
-    </p>
-
-    <p style="color: #555; font-size: 16px; line-height: 1.6;">
-      <strong>${userName}</strong> has revoked their previously approved ${requestType} request. Please find the details below:
-    </p>
-
-    <div style="background-color: #fce8e6; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #ff4c4c;">
-      <h3 style="color: #333; font-size: 17px; margin-top: 0; margin-bottom: 15px;">Revocation Details</h3>
-      <ul style="list-style: none; padding: 0; margin: 0;">
-        <li style="color: #555; font-size: 15px; margin-bottom: 8px;"><strong>Employee Name:</strong> ${userName}</li>
-        <li style="color: #555; font-size: 15px; margin-bottom: 8px;"><strong>Revocation Date:</strong> ${date}</li>
-      </ul>
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #d9534f;">${requestType} Request Declined</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Hi <strong>${userName}</strong>,
+        </p>
+  
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          We regret to inform you that your <strong>${leaveType}</strong> ${requestType.toLowerCase()} request for <strong>${date}</strong> has been declined.
+        </p>
+  
+        <div style="background-color: #ffecec; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #d9534f;">
+          <h2 style="color: #b52b27; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Reason Provided</h2>
+          <p style="color: #555; font-size: 15px; line-height: 1.6; margin: 0;">
+            ${reason}
+          </p>
+        </div>
+  
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          We completely understand if this is disappointing, and we’re happy to work with you on finding an alternative date or a solution that works for you.
+        </p>
+  
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Let us know if you'd like to discuss further.
+        </p>
+  
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Thank you for your understanding.
+        </p>
+  
+        <p style="color: #777; font-size: 14px; line-height: 1.5;">Regards,<br><strong>Team ${process?.env?.TEAM}</strong></p>
+      </div>
+      <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
+        This is an automated message. Please do not reply directly to this email.
+      </div>
     </div>
-
-    <p style="color: #555; font-size: 16px; line-height: 1.6;">
-      Kindly take note of the updated status and adjust any necessary schedules.
-    </p>
-
-    <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>KollegeApply Support Team</strong></p>
-  </div>
-
-  <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
-    This is an automated message. Please do not reply directly to this email.
-  </div>
-</div>
-
-
-
     `;
   }
 }

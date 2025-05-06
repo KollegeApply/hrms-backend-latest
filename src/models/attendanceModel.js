@@ -45,6 +45,10 @@ const attendanceSchema = new Schema(
       type: String,
       enum: ['on-site', 'off-site'],
     },
+    checkOutMode: {
+      type: String,
+      enum: ['on-site', 'off-site'],
+    },
     date: {
       type: Date,
       required: true,

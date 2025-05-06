@@ -112,7 +112,7 @@ const attendanceService = {
     }
   },
 
-  async markCheckOut(userId, latitude, longitude) {
+  async markCheckOut(userId, latitude, longitude, checkOutMode) {
     try {
       const now = new Date();
       const today = new Date(
@@ -138,6 +138,7 @@ const attendanceService = {
 
       attendance.checkOutTime = now;
       attendance.checkOutLocation = { latitude, longitude };
+      attendance.checkOutMode = checkOutMode;
       await attendance.save();
       return {
         status: 'success',
@@ -334,17 +335,20 @@ const attendanceService = {
       const attendance = await Attendance.findOne({
         user: userId,
         date: { $gte: todayStart, $lte: todayEnd },
-      }).select('checkInTime status checkInMode');
+      })
+        .select('checkInTime status checkInMode')
+        .lean();
 
       if (attendance) {
         return {
           status: 'success',
           statusCode: 200,
           data: {
-            isCheckedIn: !!attendance.checkInTime,
+            isCheckedIn: attendance.checkInTime && !attendance.checkOutTime,
             checkInTime: attendance.checkInTime,
             status: attendance.status, // can be 'present', 'leave_applied', or 'wfh_applied'
             checkInMode: attendance.checkInMode,
+            checkOutMode: attendance.checkOutMode,
           },
         };
       } else {
@@ -356,6 +360,7 @@ const attendanceService = {
             checkInTime: null,
             status: 'absent', // optional fallback
             checkInMode: null, // optional fallback
+            checkOutMode: null,
           },
         };
       }
