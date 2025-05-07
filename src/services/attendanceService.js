@@ -336,7 +336,7 @@ const attendanceService = {
         user: userId,
         date: { $gte: todayStart, $lte: todayEnd },
       })
-        .select('checkInTime status checkInMode')
+        .select('checkInTime status checkInMode checkOutMode checkOutTime')
         .lean();
 
       if (attendance) {
@@ -344,7 +344,8 @@ const attendanceService = {
           status: 'success',
           statusCode: 200,
           data: {
-            isCheckedIn: attendance.checkInTime && !attendance.checkOutTime,
+            isCheckedIn:
+              attendance.checkInTime && attendance.checkOutTime ? false : true,
             checkInTime: attendance.checkInTime,
             status: attendance.status, // can be 'present', 'leave_applied', or 'wfh_applied'
             checkInMode: attendance.checkInMode,
