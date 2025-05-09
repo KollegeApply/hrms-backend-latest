@@ -72,6 +72,11 @@ const userSchema = new Schema(
       zipCode: String,
       country: String,
     },
+    workType: {
+      type: String,
+      enum: ['WFH', 'WFO'],
+      required: true,
+    },
     role: {
       type: String,
       enum: {

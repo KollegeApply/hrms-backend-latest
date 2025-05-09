@@ -38,7 +38,7 @@ const createLeave = catchAsync(async (req, res) => {
       ],
       subject: 'Leave Applied',
       message: Helper.WfhLeaveApplication({
-        username: user?.firstName,
+        userName: user?.firstName,
         requestType: 'leave',
         leaveType: LEAVETYPES[leaveType] || 'Monthly Leave',
         fromDate: new Date(from),

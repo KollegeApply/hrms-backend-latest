@@ -42,8 +42,8 @@ const attendanceService = {
         user: userId,
         checkInTime: now,
         checkInLocation: { latitude, longitude },
-        checkInMode: checkInMode,
         date: today,
+        ...(checkInMode && { checkInMode }),
       });
 
       await attendance.save();
@@ -138,7 +138,10 @@ const attendanceService = {
 
       attendance.checkOutTime = now;
       attendance.checkOutLocation = { latitude, longitude };
-      attendance.checkOutMode = checkOutMode;
+
+      if (checkOutMode) {
+        attendance.checkOutMode = checkOutMode;
+      }
       await attendance.save();
       return {
         status: 'success',
@@ -292,7 +295,7 @@ const attendanceService = {
         query.user = userId;
       }
       const attendance = await Attendance.find(query)
-        .populate('user', 'firstName lastName employeeId')
+        .populate('user', 'firstName lastName employeeId workType')
         .populate('leaveId')
         .sort({ date: -1, checkInTime: -1 });
       return {

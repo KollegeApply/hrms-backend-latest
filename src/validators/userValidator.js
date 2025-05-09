@@ -97,6 +97,10 @@ const createUserSchema = Joi.object({
       // Default is set in model
       'any.only': `Status must be one of [${VALID_EMPLOYEE_STATUS.join(', ')}]`,
     }),
+  workType: Joi.string().trim().min(1).required().messages({
+    'string.empty': 'Work type is required',
+    'any.required': 'Work type is required',
+  }),
 }).options({ stripUnknown: true }); // Remove fields not defined in the schema
 
 // Schema for updating an existing user
@@ -129,6 +133,9 @@ const updateUserSchema = Joi.object({
     .messages({
       'any.only': `Status must be one of [${VALID_EMPLOYEE_STATUS.join(', ')}]`,
     }),
+  workType: Joi.string().trim().optional().allow('', null).messages({
+    'string.empty': 'Work type cannot be empty',
+  }),
 })
   .min(1)
   .options({ stripUnknown: true }); // Require at least one field to update

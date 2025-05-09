@@ -308,6 +308,7 @@ class Helper {
     toDate,
     reason,
   }) {
+
     // Format the dates for the email
     const fromFormatted = formatDateToKolkata(fromDate);
     const toFormatted = formatDateToKolkata(toDate);
