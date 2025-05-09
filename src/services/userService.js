@@ -42,7 +42,6 @@ class UserService {
    * @param {string} currentUser.role - The role of the current user (e.g., 'admin', 'teamlead').
    * @returns {Promise<object>} - Paginated user data or list of all users.
    */
-  
 
   async getAllUsers(queryOptions, currentUser) {
     const {
@@ -255,7 +254,6 @@ class UserService {
     // Hash the password
     const hashedPassword = await bcrypt.hash(userData?.password, 10); // 10 is the salt rounds
 
-
     // Create and save the new user
     const user = new User({
       ...userData,
@@ -263,6 +261,15 @@ class UserService {
       password: hashedPassword,
       email: userData?.email?.toLowerCase(), // Store email in lowercase
     });
+
+    if (!['WFH', 'WFO'].includes(userData?.workType)) {
+      logger.warn(`Invalid workType: ${userData?.workType}`);
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Invalid workType. Allowed values are "wfh" or "wfo".'
+      );
+    }
+
     const savedUser = await user.save();
     logger.info(`User created successfully with ID: ${savedUser?.id}`);
 
@@ -319,6 +326,15 @@ class UserService {
 
     // Prevent password update through this method (should have a dedicated password reset/change flow)
     delete updateData?.password;
+
+    const validWorkTypes = ['WFO', 'WFH'];
+    if (updateData?.workType && !validWorkTypes.includes(updateData.workType)) {
+      logger.warn(`Update failed: Invalid work type ${updateData.workType}`);
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Invalid work type. Valid options are WFO and WFH.'
+      );
+    }
 
     if (
       updateData?.status === 'onroll' &&

@@ -21,19 +21,15 @@ const generateToken = (user) => {
   return jwt.sign(payload, process?.env?.SECRET_KEY, { expiresIn: '1d' });
 };
 
-
-
 // Wrap controller methods with catchAsync for cleaner error handling
 const createUser = catchAsync(async (req, res) => {
   // 1. Validate request body
   if (req?.body?.role === 'subadmin') {
     req.body.teamLeadId = '6808c6d86d2d1bdfd589c57a';
   }
-  console.log('Request Body:', req?.body);
   const validatedData = await userValidator?.createUserSchema?.validateAsync(
     req?.body
   );
-  console.log('Validated Data:', validatedData?.leaves);
   const currentUserRank = RANK[req?.user?.role];
   const targetUserRank = RANK[validatedData?.role];
   let user;
@@ -67,7 +63,7 @@ const createUser = catchAsync(async (req, res) => {
   } else {
     res.status(httpStatus?.FORBIDDEN).json({
       status: false,
-      message: 'Your cannot create user with given role',
+      message: 'You cannot create user with given role',
     });
   }
 });
@@ -136,12 +132,11 @@ const updateUser = catchAsync(async (req, res) => {
       'No valid fields provided for update.'
     );
   }
-  console.log(oldUser);
 
-  const currentUserRank = RANK[req?.user?.role];
-  const clickedUserRank = RANK[oldUser?.role]; // to check before update whether. user-> user which needs to be updated
+  const currentUserId = req?.user?.id;
+  const clickedUserId = userId;
 
-  if (currentUserRank < clickedUserRank) {
+  if (currentUserId !== clickedUserId) {
     const updatedUser = await userService?.updateUser(userId, validatedData);
 
     if (!updatedUser) {
@@ -187,7 +182,7 @@ const updateUser = catchAsync(async (req, res) => {
   } else {
     res.status(httpStatus.FORBIDDEN).json({
       status: false,
-      message: 'Your cannot update this user',
+      message: 'You cannot update this user',
     });
   }
 });
@@ -221,7 +216,7 @@ const deleteUser = catchAsync(async (req, res) => {
   } else {
     res.status(httpStatus.FORBIDDEN).json({
       status: false,
-      message: 'Your cannot delete this user',
+      message: 'You cannot delete this user',
     });
   }
 });
