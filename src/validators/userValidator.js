@@ -83,6 +83,13 @@ const createUserSchema = Joi.object({
       'any.required': 'ID is required',
     })
     .optional(),
+  hrPocId: Joi.string() // Added for HR POC
+    .trim()
+    .allow('', null)
+    .messages({
+      'string.pattern.base': 'Invalid ID format',
+    })
+    .optional(),
   role: Joi.string()
     .valid(...VALID_USER_ROLES)
     .optional()
@@ -119,7 +126,7 @@ const updateUserSchema = Joi.object({
   phoneNumber: Joi.string().trim().optional().allow('', null),
   teamLeadId: Joi.string().hex(),
   subTeamLeadId: Joi.string().hex().allow(null, ''),
-
+  hrPocId: Joi.string().hex().allow(null, ''),
   address: addressSchema.optional(),
   role: Joi.string()
     .valid(...VALID_USER_ROLES)

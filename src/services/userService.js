@@ -148,7 +148,8 @@ class UserService {
     const user = await User.findOne({ _id: id, isDeleted: false })
       .populate('department', 'name')
       .populate('teamLeadId', 'firstName lastName')
-      .populate('subTeamLeadId', 'firstName lastName');
+      .populate('subTeamLeadId', 'firstName lastName')
+      .populate('hrPocId', 'firstName lastName email');
     if (!user) {
       logger.warn(`User not found with ID: ${id}`);
     }
@@ -241,6 +242,11 @@ class UserService {
       !(await this.getUserById(userData?.subTeamLeadId))
     ) {
       throw new ApiError(httpStatus.NOT_FOUND, 'Sub Team Lead not found');
+    }
+
+    // check if Hr exist in db
+    if (userData?.hrId && !(await this.getUserById(userData?.hrId))) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'HR not found');
     }
 
     // auto-generating employeeId. format : SD_001
