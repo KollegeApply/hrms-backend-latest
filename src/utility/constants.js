@@ -22,6 +22,11 @@ const LEAVETYPES = {
   birthdayLeave: 'Birthday Leave',
 };
 
+const REQUEST_TYPES = {
+  backDatedCheckIn: 'Backdated Check In',
+  ticket: 'Ticket'
+}
+
 const MAIL_HOST = 'smtp.gmail.com';
 const MAIL_PORT = 465;
 const MAIL_SECURE = true;
@@ -79,6 +84,7 @@ const CSV_TYPES = [
 module.exports = {
   USER_ROLES,
   EMPLOYEE_STATUS,
+  REQUEST_TYPES,
   VALID_USER_ROLES: Object.values(USER_ROLES),
   VALID_EMPLOYEE_STATUS: Object.values(EMPLOYEE_STATUS),
   MAIL_HOST,

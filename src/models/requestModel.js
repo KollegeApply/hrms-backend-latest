@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const {REQUEST_TYPES} = require('../utility/constants')
 const { Schema } = mongoose;
 
 const requestSchema = new Schema(
@@ -10,8 +11,13 @@ const requestSchema = new Schema(
     },
     requestType: {
       type: String,
-      enum: ["retroactive-check-in", "ticket"],
+      enum: {
+        values: REQUEST_TYPES,
+        message: 'Invalid request type: {VALUE}',
+            },
+      default: REQUEST_TYPES.backDatedCheckIn,
       required: true,
+
     },
     requestDescription: {
       type: String,
