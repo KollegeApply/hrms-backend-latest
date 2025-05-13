@@ -242,9 +242,13 @@ class UserService {
     ) {
       throw new ApiError(httpStatus.NOT_FOUND, 'Sub Team Lead not found');
     }
+    //
+    const orgInitials = process.env.ORG_INITIALS;
+    const regex = new RegExp(`^${orgInitials}_\\d+$`);
 
-    // auto-generating employeeId. format : SD_001
-    const lastUser = await User.findOne({ employeeId: { $regex: /^SD_\d+$/ } })
+    // auto-generating employeeId. format : (ORG_INITIALS)_001 
+    // for example, if orgInitials=SD/KAP, then employeeId: SD_001/KAP_001
+    const lastUser = await User.findOne({ employeeId: { $regex: regex } })
       .sort({ employeeId: -1 })
       .select('employeeId')
       .lean();
@@ -257,7 +261,7 @@ class UserService {
     // Create and save the new user
     const user = new User({
       ...userData,
-      employeeId: `SD_${paddedNumber}`,
+      employeeId: `${process.env.ORG_INITIALS}_${paddedNumber}`,
       password: hashedPassword,
       email: userData?.email?.toLowerCase(), // Store email in lowercase
     });
@@ -738,12 +742,15 @@ class UserService {
           data: invalidData,
         };
       }
+      
+      const orgInitials = process.env.ORG_INITIALS;
+      const regex = new RegExp(`^${orgInitials}_\\d+$`);
 
       // Hash Passwords
       const saltRounds = 10;
       const usersReadyForInsert = [];
       const lastUser = await User.findOne({
-        employeeId: { $regex: /^SD_\d+$/ },
+        employeeId: { $regex: regex },
       })
         .sort({ employeeId: -1 })
         .select('employeeId')
@@ -756,7 +763,7 @@ class UserService {
           if (!user.password)
             throw new Error('Missing password prior to hashing.');
           const paddedNumber = String(nextNumber++).padStart(3, '0');
-          user.employeeId = `SD_${paddedNumber}`;
+          user.employeeId = `${process.env.ORG_INITIALS}_${paddedNumber}`;
           passMap[user?.firstName] = user?.password;
           // passMap.set(user?.firstName, user?.password);
           user.password = await bcrypt.hash(user?.password, saltRounds);

@@ -34,7 +34,7 @@ const MAIL_FROM_SUPPORT =
   process.env.SMTP_FROM_EMAIL_SUPPORT || 'noreply@yourcompany.com';
 const MAIL_USER = process.env.SMTP_USER;
 const MAIL_PASS = process.env.SMTP_PASS;
-const HR_EMAIL = 'hr@sportsdunia.com';
+const HR_EMAIL = process.env.HR_EMAIL;
 const HR_MAIL_USER = process.env.HR_SMTP_USER;
 const HR_MAIL_PASS = process.env.HR_SMTP_PASS;
 
