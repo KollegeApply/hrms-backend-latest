@@ -30,6 +30,8 @@ const createLeave = catchAsync(async (req, res) => {
   const sendMail = req?.body?.sendMail === true;
   if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
     logger.info(`Sending leave email to ${user?.teamLeadId}`);
+    console.log(
+      `Sending leave email to ${user?.teamLeadId?.email} and ${user?.subTeamLeadId?.email}`)
     Helper.sendEmail({
       receiverEmails: [
         HR_EMAIL,

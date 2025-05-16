@@ -167,22 +167,6 @@ function autoGenerateEmpId(lastUser) {
   return nextNumber;
 }
 
-
-
-const getSundaysInMonth = (month, year) => {
-  let sundays = 0;
-  let date = new Date(year, month, 1);
-  
-  // Loop through the days of the month to count Sundays
-  while (date.getMonth() === month) {
-    if (date.getDay() === 0) { // 0 represents Sunday
-      sundays++;
-    }
-    date.setDate(date.getDate() + 1);
-  }
-  return sundays;
-};
-
 function formatDateToKolkata(dateStr) {
   const timeZone = 'Asia/Kolkata';
   const date = new Date(dateStr);
@@ -195,5 +179,4 @@ module.exports = {
   validateUsersCsvFile,
   autoGenerateEmpId,
   formatDateToKolkata,
-  getSundaysInMonth,
 };

@@ -6,7 +6,7 @@ const catchAsync = require('../utility/catchAsync');
 
 // Monthly Stats
 const getMonthlyStats = catchAsync(async (req, res) => {
-  const { userId } = req.user;
+  const userId = req.user.id;
 
   const validatedData = await statsValidator.monthlyStatsSchema.validateAsync({
     userId,
@@ -26,41 +26,41 @@ const getMonthlyStats = catchAsync(async (req, res) => {
 });
 
 // Yearly Stats
-// const getYearlyStats = catchAsync(async (req, res) => {
-//   const { userId } = req.user;
+const getYearlyStats = catchAsync(async (req, res) => {
+  const userId = req.user.id;
 
-//   const validatedData = await statsValidator.yearlyStatsSchema.validateAsync({
-//     userId,
-//   });
+  const validatedData = await statsValidator.yearlyStatsSchema.validateAsync({
+    userId,
+  });
 
-//   const data = await statsService.getYearlyStats(validatedData);
+  const data = await statsService.getYearlyStats(validatedData);
 
-//   res?.status(httpStatus.OK).json({
-//     status: true,
-//     message: 'Yearly stats retrieved successfully.',
-//     data,
-//   });
-// });
+  res?.status(httpStatus.OK).json({
+    status: true,
+    message: 'Yearly stats retrieved successfully.',
+    data,
+  });
+});
 
 // // Leave Stats
-// const getLeaveStats = catchAsync(async (req, res) => {
-//   const { userId } = req.user;
+const getLeaveStats = catchAsync(async (req, res) => {
+  const userId = req.user.id;
 
-//   const validatedData = await statsValidator.leaveStatsSchema.validateAsync({
-//     userId,
-//   });
+  const validatedData = await statsValidator.leaveStatsSchema.validateAsync({
+    userId,
+  });
 
-//   const data = await statsService.getLeaveStats(validatedData);
+  const data = await statsService.getLeaveStats(validatedData);
 
-//   res?.status(httpStatus.OK).json({
-//     status: true,
-//     message: 'Leave stats retrieved successfully.',
-//     data,
-//   });
-// });
+  res?.status(httpStatus.OK).json({
+    status: true,
+    message: 'Leave stats retrieved successfully.',
+    data,
+  });
+});
 
 module.exports = {
   getMonthlyStats,
-//   getYearlyStats,
-//   getLeaveStats,
+  getYearlyStats,
+  getLeaveStats,
 };

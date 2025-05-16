@@ -35,8 +35,10 @@ const createUser = catchAsync(async (req, res) => {
   let user;
   if (targetUserRank != 1 && currentUserRank < 4) {
     user = await userService.createUser(validatedData);
+    console.log('User created:', user);
     // sending mail
     const sendMail = req?.body?.sendMail === true;
+    console.log('sendMail:', sendMail);
     if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
       logger.info(`Sending welcome email to ${user.email}`);
       Helper.sendEmail({

@@ -245,8 +245,23 @@ class UserService {
     }
 
     // check if Hr exist in db
-    if (userData?.hrId && !(await this.getUserById(userData?.hrId))) {
-      throw new ApiError(httpStatus.NOT_FOUND, 'HR not found');
+    if (userData?.hrPocId === '') {
+      userData.hrPocId = undefined; // Prevent Mongoose casting error
+    } else if (userData?.hrPocId) {
+      try {
+        const hrExist = await this.getUserById(userData?.hrPocId);
+        if (!hrExist) {
+          throw new ApiError(httpStatus.NOT_FOUND, 'HR not found');
+        }
+      } catch (err) {
+        if (err instanceof ApiError) {
+          throw err;
+        }
+        throw new ApiError(
+          httpStatus.INTERNAL_SERVER_ERROR,
+          'Failed to validate HR'
+        );
+      }
     }
 
     // auto-generating employeeId. format : SD_001
@@ -359,6 +374,33 @@ class UserService {
       };
     }
 
+    // Handle empty string for hrPocId
+    if (updateData?.hrPocId === '') {
+      updateData.hrPocId = undefined;
+    } else if (updateData?.hrPocId) {
+      // Optionally, you could validate the existence of the HR here if needed
+      try {
+        const hrExist = await this.getUserById(updateData?.hrPocId);
+        if (!hrExist) {
+          logger.warn(
+            `Update failed: HR not found with ID: ${updateData?.hrPocId}`
+          );
+          throw new ApiError(httpStatus.NOT_FOUND, 'HR not found');
+        }
+      } catch (err) {
+        if (err instanceof ApiError) {
+          throw err;
+        }
+        logger.error(
+          `Error validating HR with ID ${updateData?.hrPocId}: ${err}`
+        );
+        throw new ApiError(
+          httpStatus.INTERNAL_SERVER_ERROR,
+          'Failed to validate HR'
+        );
+      }
+    }
+
     // Apply updates
     Object.assign(user, updateData);
     const updatedUser = await user.save();
@@ -409,8 +451,8 @@ class UserService {
       return null; // User not found
     }
 
-    if (user?.status === 'terminated' || user?.status === 'absconded') {
-      logger.warn(`User is terminated or absconded`);
+    if (user?.status === 'terminated' || user?.status === 'absconded' || user?.status === 'resigned') {
+      logger.warn(`User is terminated or absconded or resigned`);
       return null;
     }
 
