@@ -336,6 +336,7 @@ const attendanceService = {
         user: userId,
         date: { $gte: todayStart, $lte: todayEnd },
       })
+        .sort({ checkInTime: -1 })
         .select('checkInTime status checkInMode checkOutMode checkOutTime')
         .lean();
 
