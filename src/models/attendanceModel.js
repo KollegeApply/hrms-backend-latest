@@ -24,8 +24,12 @@ const attendanceSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ['present', 'leave_applied', 'wfh_applied'],
+      enum: ['present', 'leave_applied', 'wfh_applied', 'pending'],
       default: 'present',
+    },
+    backdatedId: {
+      type: Schema.Types.ObjectId,
+      ref: "Request"
     },
     leaveId: {
       type: Schema.Types.ObjectId,

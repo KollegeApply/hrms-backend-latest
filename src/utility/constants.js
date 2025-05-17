@@ -1,10 +1,10 @@
 const USER_ROLES = {
   ADMIN: 'admin',
   SUBADMIN: 'subadmin',
-  HR: 'hr',
   EMPLOYEE: 'employee',
   TEAMLEAD: 'teamlead',
   SUBTEAMLEAD: 'subteamlead',
+  HR: 'hr',
 };
 
 const EMPLOYEE_STATUS = {
@@ -24,7 +24,12 @@ const LEAVETYPES = {
 
 const REQUEST_TYPES = {
   backDatedCheckIn: 'Backdated Check In',
-  ticket: 'Ticket'
+  ticket: 'Ticket',
+};
+
+const BACKDATED_REQUEST_TYPES = {
+    full: "Full Day",
+    half: "Half Day"
 }
 
 const MAIL_HOST = 'smtp.gmail.com';
@@ -85,6 +90,7 @@ module.exports = {
   USER_ROLES,
   EMPLOYEE_STATUS,
   REQUEST_TYPES,
+  BACKDATED_REQUEST_TYPES,
   VALID_USER_ROLES: Object.values(USER_ROLES),
   VALID_EMPLOYEE_STATUS: Object.values(EMPLOYEE_STATUS),
   MAIL_HOST,

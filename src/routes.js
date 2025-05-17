@@ -7,7 +7,7 @@ const attendanceRoutes = require('./routes/attendanceRoute');
 const leaveRoutes = require('./routes/leaveRoute');
 const wfhRoutes = require('./routes/wfhRoute');
 const thirdPartyRoutes = require('./routes/thirdpartyRoute')
-const requestRoutes = require('./routes/requestRoute')
+const requestRoutes_backdated = require('./routes/requestRoutes/backDatedCheckInRoutes.js')
 // const otherRoutes = require('./routes/otherRoutes'); // Example for future routes
 
 const router = express.Router();
@@ -44,14 +44,9 @@ const defaultRoutes = [
     route: thirdPartyRoutes,
   },
   {
-    path: `/api/${apiVersion}/request`,
-    route: requestRoutes
+    path: `/api/${apiVersion}/request/backdated-check-in`,
+    route: requestRoutes_backdated
   }
-  // Add other route configurations here
-  // {
-  //   path: `/api/${apiVersion}/departments`,
-  //   route: departmentRoutes,
-  // },
 ];
 
 defaultRoutes.forEach((route) => {

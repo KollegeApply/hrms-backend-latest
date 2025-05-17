@@ -1,4 +1,9 @@
+const logger = require('../config/logger');
 const attendanceService = require('../services/attendanceService');
+const requestService = require('../services/requestService');
+const ApiError = require('../utility/ApiError');
+const mongoose = require('mongoose');
+// const VALID_USER_ROLES = require('../utility/constants')
 
 exports.markCheckIn = async (req, res) => {
   const { latitude, longitude, checkInMode } = req.body;
@@ -66,18 +71,35 @@ exports.applyForWFH = async (req, res) => {
 
 exports.getAttendance = async (req, res) => {
   try {
-    const userId = req?.user?.id;
+    const { userId } = req?.params;
     const role = req?.user?.role;
-    const { startDate, endDate } = req.query;
-
+    const { userRole, startDate, endDate } = req.query;
     const result = await attendanceService.getAttendance(
       userId,
       role,
       startDate,
       endDate
     );
-
-    return res.status(result.statusCode).json(result.data);
+    if (userRole === 'hr' || userRole === 'admin' || userRole === 'subadmin' || userRole == 'teamlead') {
+      const requestReponse = await requestService.getAllRequests();
+      return res.status(result.statusCode || 200).json({
+        result: {
+          attendance: result.data,
+          requests: requestReponse
+        }
+      });
+    } else {
+      const requestResponse = await requestService.getRequestsByUser({
+        userId: new mongoose.Types.ObjectId(userId),
+      });
+      return res.status(result.statusCode || 200).json({
+      // Default to 200 if no statusCode from service
+      result: {
+        attendance: result.data,
+        requests: requestResponse,
+      }, // Maintaining variable name
+    });
+    }
   } catch (error) {
     console.error('Error in getAttendance controller:', error);
     return res

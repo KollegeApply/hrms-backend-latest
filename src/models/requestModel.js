@@ -1,6 +1,21 @@
 const mongoose = require('mongoose');
-const {REQUEST_TYPES} = require('../utility/constants')
+const { REQUEST_TYPES } = require('../utility/constants');
+const { BACKDATED_REQUEST_TYPES} = require('../utility/constants');
 const { Schema } = mongoose;
+
+const backDatedCheckInSchema = new Schema( 
+  {
+    backdatedCheckInType: {
+      type: String,
+      enum: [BACKDATED_REQUEST_TYPES.full, BACKDATED_REQUEST_TYPES.half],
+      default: BACKDATED_REQUEST_TYPES.full
+    },
+    date: {       // Date of Check In
+      type: Date,
+      required: true
+    },
+  }
+);
 
 const requestSchema = new Schema(
   {
@@ -12,23 +27,24 @@ const requestSchema = new Schema(
     requestType: {
       type: String,
       enum: {
-        values: REQUEST_TYPES,
+        values: Object.values(REQUEST_TYPES),
         message: 'Invalid request type: {VALUE}',
-            },
+      },
       default: REQUEST_TYPES.backDatedCheckIn,
       required: true,
-
+    },
+    backDatedCheckIn: {
+      type: backDatedCheckInSchema,
+      required: false
     },
     requestDescription: {
       type: String,
       required: true,
       trim: true,
-      minlength: 10,
-      maxlength: 1000,
+      maxlength: 1500,
     },
     reviewedAt: {
       type: Date,
-      required: false,
     },
     status: {
       type: String,
@@ -37,8 +53,8 @@ const requestSchema = new Schema(
       required: true,
     },
     reviewedBy: {
-        type: Schema.Types.ObjectId,
-        ref: 'User'
+      type: Schema.Types.ObjectId,
+      ref: 'User',
     },
     isDeleted: {
       type: Boolean,
@@ -50,7 +66,7 @@ const requestSchema = new Schema(
   }
 );
 
-requestSchema.index({ userId: 1, reviewedDate: 1 });
+// requestSchema.index({ userId: 1, reviewedAt: 1 });
 
 const Request = mongoose.model('Request', requestSchema);
 

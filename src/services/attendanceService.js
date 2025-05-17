@@ -297,6 +297,7 @@ const attendanceService = {
       const attendance = await Attendance.find(query)
         .populate('user', 'firstName lastName employeeId workType')
         .populate('leaveId')
+        .populate('backdatedId')
         .sort({ date: -1, checkInTime: -1 });
       return {
         status: 'success',
@@ -339,6 +340,7 @@ const attendanceService = {
         user: userId,
         date: { $gte: todayStart, $lte: todayEnd },
       })
+        .sort({checkInTime:-1})
         .select('checkInTime status checkInMode checkOutMode checkOutTime')
         .lean();
 

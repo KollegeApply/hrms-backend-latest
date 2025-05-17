@@ -1,10 +1,10 @@
 const express = require('express');
-const requestController = require('../controllers/requestController');
+const requestController = require('../../controllers/requestController');
 const {
   authenticateUser,
   authorizeRole,
-} = require('../middleware/authMiddleware');
-const { USER_ROLES } = require('../utility/constants'); // Import roles for authorization
+} = require('../../middleware/authMiddleware');
+const { USER_ROLES } = require('../../utility/constants'); // Import roles for authorization
 
 const router = express.Router();
 
@@ -22,19 +22,19 @@ router.get(
 // Get request by ID (for individual access or admin check)
 router.get('/:id', authenticateUser, requestController?.getRequestById);
 
-// Get all requests for a specific user (self or admin)
-router.get(
-  '/user/:userId',
-  authenticateUser,
-  requestController?.getRequestsByUser
-);
+// // Get all requests for a specific user (self or admin)
+// router.get(
+//   '/user/:userId',
+//   authenticateUser,
+//   requestController?.getRequestsByUser
+// );
 
 // Update request status (approve/reject) — restricted
 router.patch(
-  '/:id/status',
+  '/:id',
   authenticateUser,
   authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]),
-  requestController?.updateRequestStatus
+  requestController?.updateRequest
 );
 
 // Delete request (soft delete) — restricted

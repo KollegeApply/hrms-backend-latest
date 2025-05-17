@@ -44,7 +44,7 @@ mongoose
 const signals = ['SIGINT', 'SIGTERM', 'SIGQUIT'];
 signals.forEach((signal) => {
   process.on(signal, async () => {
-    logger.info(`\n${signal} received. Closing connections...`);
+    logger.info(`\n${signal} received. Closing co nnections...`);
     try {
       await mongoose.connection.close();
       logger.info('MongoDB connection closed.');
