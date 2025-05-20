@@ -30,29 +30,29 @@ const createRequest = catchAsync(async (req, res) => {
 
   logger.info('Trig');
 
-  const sendMail = req?.body?.sendMail === true;
-  if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
-    logger.info(`Sending request email to ${user?.teamLeadId}`);
-    Helper.sendEmail({
-      receiverEmails: [
-        HR_EMAIL,
-        user?.teamLeadId?.email,
-        user?.subTeamLeadId?.email,
-      ],
-      subject: 'Request Generated',
-      message: Helper.WfhLeaveApplication({
-        userName: user?.firstName,
-        requestType: 'leave',
-        leaveType: LEAVETYPES[leaveType] || 'Monthly Leave',
-        fromDate: new Date(),
-        toDate: new Date(),
-        reason: requestDescription,
-      }),
-      fromh,
-    }).catch((err) =>
-      logger.error(`Failed to send leave email to ${user?.teamLeadId}:`, err)
-    );
-  }
+  // const sendMail = req?.body?.sendMail === true;
+  // if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
+  //   logger.info(`Sending request email to ${user?.teamLeadId}`);
+  //   Helper.sendEmail({
+  //     receiverEmails: [
+  //       HR_EMAIL,
+  //       user?.teamLeadId?.email,
+  //       user?.subTeamLeadId?.email,
+  //     ],
+  //     subject: 'Request Generated',
+  //     message: Helper.WfhLeaveApplication({
+  //       userName: user?.firstName,
+  //       requestType: 'leave',
+  //       leaveType: LEAVETYPES[leaveType] || 'Monthly Leave',
+  //       fromDate: new Date(),
+  //       toDate: new Date(),
+  //       reason: requestDescription,
+  //     }),
+  //     fromh,
+  //   }).catch((err) =>
+  //     logger.error(`Failed to send leave email to ${user?.teamLeadId}:`, err)
+  //   );
+  // }
 
   res.status(StatusCodes.CREATED).json({
     status: true,

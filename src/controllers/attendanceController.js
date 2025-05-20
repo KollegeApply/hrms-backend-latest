@@ -80,25 +80,30 @@ exports.getAttendance = async (req, res) => {
       startDate,
       endDate
     );
-    if (userRole === 'hr' || userRole === 'admin' || userRole === 'subadmin' || userRole == 'teamlead') {
+    if (
+      userRole === 'hr' ||
+      userRole === 'admin' ||
+      userRole === 'subadmin' ||
+      userRole == 'teamlead'
+    ) {
       const requestReponse = await requestService.getAllRequests();
       return res.status(result.statusCode || 200).json({
         result: {
           attendance: result.data,
-          requests: requestReponse
-        }
+          requests: requestReponse,
+        },
       });
     } else {
       const requestResponse = await requestService.getRequestsByUser({
         userId: new mongoose.Types.ObjectId(userId),
       });
       return res.status(result.statusCode || 200).json({
-      // Default to 200 if no statusCode from service
-      result: {
-        attendance: result.data,
-        requests: requestResponse,
-      }, // Maintaining variable name
-    });
+        // Default to 200 if no statusCode from service
+        result: {
+          attendance: result.data,
+          requests: requestResponse,
+        }, // Maintaining variable name
+      });
     }
   } catch (error) {
     console.error('Error in getAttendance controller:', error);
