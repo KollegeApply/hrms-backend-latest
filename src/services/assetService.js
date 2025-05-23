@@ -15,7 +15,7 @@ class AssetsService {
       assetId,
       assetName,
       assignee,
-      serialNo,
+      serialNumber,
       specifications,
       status = 'assigned',
       assignedBy,
@@ -46,7 +46,7 @@ class AssetsService {
       assetId,
       assetName,
       assignee,
-      serialNo,
+      serialNumber,
       specifications,
       status: status,
       assignedBy,
@@ -104,6 +104,10 @@ class AssetsService {
 
     const updateFields = {};
     if (status === 'cancelled') {
+      if (existingAsset.status === 'cancelled') {
+        logger.error(`Asset is already cancelled: ${assetId}`);
+        throw new Error('Asset is already cancelled');
+      }
       if (existingAsset.status !== 'assigned') {
         logger.error(
           `Asset can only be cancelled when in 'assigned' status. Current status: ${existingAsset.status}`
@@ -183,8 +187,68 @@ class AssetsService {
       logger.error(`Failed to reject asset: ${assetId}`);
       throw new Error('Failed to reject asset');
     }
-    logger.info(`Asset ${assetId} not acknowledged successfully:`, updatedAssignment);
+    logger.info(
+      `Asset ${assetId} not acknowledged successfully:`,
+      updatedAssignment
+    );
     return updatedAssignment;
+  }
+
+  async returnAsset(assetId, userId) {
+    const updatedAssignment = await Assets.findOneAndUpdate(
+      { _id: assetId, assignee: userId },
+      { $set: { status: 'return_requested' } },
+      { new: true }
+    );
+    if (!updatedAssignment) {
+      logger.error(`Failed to return request asset: ${assetId}`);
+      throw new Error('Failed to return request asset');
+    }
+    logger.info(
+      `Asset ${assetId} return request successfully:`,
+      updatedAssignment
+    );
+    return updatedAssignment;
+  }
+
+  async fetchAssetRequests() {
+    try {
+      const requests = await Assets.find({
+        status: 'return_requested',
+      }).populate('assignee', 'firstName lastName employeeId email');
+      logger.info('Pending asset requests fetched successfully:', requests);
+      return requests;
+    } catch (error) {
+      logger.error('Error fetching pending asset requests:', error);
+      throw error;
+    }
+  }
+
+  async updateAssetRequestStatus(requestId, newStatus) {
+    try {
+      const request = await Assets.findByIdAndUpdate(
+        requestId,
+        { status: newStatus },
+        { new: true }
+      ).populate('assignee', 'firstName lastName employeeId email');
+
+      if (!request) {
+        logger.error(`Asset request not found: ${requestId}`);
+        throw new Error('Asset request not found');
+      }
+
+      logger.info(
+        `Asset request ${requestId} updated to ${newStatus}:`,
+        request
+      );
+      return request;
+    } catch (error) {
+      logger.error(
+        `Error updating asset request ${requestId} to ${newStatus}:`,
+        error
+      );
+      throw error;
+    }
   }
 }
 

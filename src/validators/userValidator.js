@@ -1,4 +1,3 @@
-// src/validators/userValidator.js
 const Joi = require('joi');
 const {
   VALID_USER_ROLES,
@@ -15,13 +14,53 @@ const addressSchema = Joi.object({
 });
 
 const leavesSchema = Joi.object({
-  annualLeave: Joi.number().optional(),
-  bereavementLeaves: Joi.number().optional(),
-  birthdayLeave: Joi.number().optional(),
-  casualSickLeave: Joi.number().optional(),
-  marriageLeave: Joi.number().optional(),
-  total: Joi.number().optional(),
+  annualLeave: Joi.object({
+    // For On-Roll Employees
+    total: Joi.number().optional(), // Total annual leave for the year
+    available: Joi.number().optional(), // Available annual leave
+    quarters: Joi.array()
+      .items(
+        Joi.object({
+          quarter: Joi.number().valid(1, 2, 3, 4).required(), // Quarter number (1-4)
+          available: Joi.number().optional(), // Available leave at the start of the quarter
+          used: Joi.number().optional(), // Leave used in the quarter
+        })
+      )
+      .optional(),
+  }).optional(),
+  casualSickLeave: Joi.object({
+    // For On-Roll Employees
+    total: Joi.number().optional(),
+    available: Joi.number().optional(),
+    quarters: Joi.array()
+      .items(
+        Joi.object({
+          quarter: Joi.number().valid(1, 2, 3, 4).required(),
+          available: Joi.number().optional(),
+          used: Joi.number().optional(),
+        })
+      )
+      .optional(),
+  }).optional(),
+  bereavementLeave: Joi.object({
+    // No quarterly tracking, just total
+    total: Joi.number().optional(),
+    available: Joi.number().optional(),
+  }).optional(),
+  marriageLeave: Joi.object({
+    total: Joi.number().optional(),
+    available: Joi.number().optional(),
+  }).optional(),
+  birthdayLeave: Joi.object({
+    total: Joi.number().optional(),
+    available: Joi.number().optional(),
+  }).optional(),
+  carryForwardLeave: Joi.object({
+    total: Joi.number().optional(),
+    used: Joi.number().optional(),
+  }).optional(),
   perMonth: Joi.number().optional(),
+  total: Joi.number().optional(),
 });
 
 // Schema for validating MongoDB ObjectIds in parameters
@@ -84,13 +123,11 @@ const createUserSchema = Joi.object({
     })
     .optional(),
   hrPocId: Joi.string()
+    .trim()
     .allow('', null)
-    .when(Joi.string().min(1), {
-      then: Joi.string()
-        .pattern(/^[0-9a-fA-F]{24}$/)
-        .messages({
-          'string.pattern.base': 'Invalid ObjectId format',
-        }),
+    // .pattern(/^[0-9a-fA-F]{24}$/)
+    .messages({
+      'any.required': 'ID is required',
     })
     .optional(),
 
@@ -289,6 +326,14 @@ const bulkCreateUserRowSchema = Joi.object({
     }),
 }).options({ stripUnknown: true });
 
+
+const getUserHistorySchema = Joi.object({
+  userId: Joi.string().trim().required().messages({
+    'string.empty': 'UserId is required',
+    'any.required': 'UserId is required',
+  }),
+}).options({ stripUnknown: true });
+
 module.exports = {
   createUserSchema,
   updateUserSchema,
@@ -300,4 +345,5 @@ module.exports = {
   forgotPasswordSchema,
   verifyOtpSchema,
   bulkCreateUserRowSchema,
+  getUserHistorySchema
 };

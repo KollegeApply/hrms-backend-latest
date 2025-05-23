@@ -54,6 +54,15 @@ const assignedAssetSchema = new Schema(
         message: "Acknowledged date can only be set if status is 'acknowledged'.",
       },
     },
+    returnRequestDate:{
+      type: Date,
+      validate: {
+        validator: function () {
+          return this.status === 'acknowledged';
+        },
+        message: "Return request date can only be set if status is 'acknowledged'.",
+      },  
+    },
     returnDate: {
       type: Date,
       validate: {

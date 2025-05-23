@@ -25,7 +25,7 @@ const assetAssignmentSchema = Joi.object({
     'string.empty': 'Assignee (Employee ID) is required',
     'any.required': 'Assignee (Employee ID)  is required',
   }),
-  serialNo: Joi.string().optional().allow(''),
+  serialNumber: Joi.string().optional().allow(''),
   specifications: Joi.string().optional().allow(''),
   assignedBy: Joi.string().required().messages({
     'string.empty': 'Assigned By (User ID) is required',
@@ -91,6 +91,33 @@ const rejectAssetSchema = Joi.object({
   }),
 }).options({ stripUnknown: true });
 
+
+const returnAssetSchema = Joi.object({
+  id: objectIdSchema.required().messages({
+    'string.empty': 'ID is required',
+    'any.required': 'ID is required',
+  }),
+  userId: Joi.string().required().messages({
+    'string.empty': 'ID is required',
+    'any.required': 'ID is required',
+  }),
+})
+
+const handleAssetRequestUpdateSchema = Joi.object({
+  id: objectIdSchema.required().messages({
+    'string.empty': 'ID is required',
+    'any.required': 'ID is required',
+  }),
+  status: Joi.string()
+    .required()
+    .valid(...VALID_ASSETS_STATUS)
+    .messages({
+      'string.empty': 'Status is required',
+      'any.required': 'Status is required',
+      'any.only': `Status must be one of the following: ${VALID_ASSETS_STATUS.join(', ')}`,
+    }),
+}).options({ stripUnknown: true });
+
 module.exports = {
   assetAssignmentSchema,
   updateAssignedAssetSchema,
@@ -98,4 +125,6 @@ module.exports = {
   getAssignedAssetByUserIdSchema,
   acknowledgeAssetSchema,
   rejectAssetSchema,
+  returnAssetSchema,
+  handleAssetRequestUpdateSchema,
 };

@@ -34,6 +34,35 @@ mongoose
     logger.info(`🗄️ MongoDB connected successfully.`);
     // Start the Express server ONLY after DB connection is successful
     require('./expressServer');
+    const initCronJobs = async () => {
+      const cron = require('node-cron');
+      const resetAnnualLeaves = require('./cron/onRollLeaveCron');
+      const updateProbationLeavesForAllUsers = require('./cron/probationLeaveCron');
+
+      // Annual Leave Reset - Run at 12:00 AM on Jan 1 every year
+      cron.schedule('0 0 1 1 *', async () => {
+        try {
+          logger.info('🔁 Running scheduled onRoll leave cron job');
+          await resetAnnualLeaves();
+          logger.info('✅ onRoll leave cron job completed');
+        } catch (error) {
+          logger.error('❌ onRoll leave cron job failed:', error);
+        }
+      });
+
+      // Probation Leave Update - Run at 12:05 AM on the 1st of every month
+      cron.schedule('0 0 1 * *', async () => {
+        try {
+          logger.info('🔁 Running scheduled probation leave cron job');
+          await updateProbationLeavesForAllUsers();
+          logger.info('✅ probation leave cron job completed');
+        } catch (error) {
+          logger.error('❌ probation leave cron job failed:', error);
+        }
+      });
+    };
+
+    setTimeout(initCronJobs, 1000);
   })
   .catch((err) => {
     logger.error('❌ MongoDB connection error:', err.message);

@@ -1,4 +1,3 @@
-// src/services/userService.js
 const bcrypt = require('bcryptjs');
 const User = require('../models/userModel');
 const Helper = require('../utility/helper');
@@ -18,19 +17,11 @@ const {
 const { default: mongoose } = require('mongoose');
 const csv = require('csvtojson');
 const Department = require('../models/departmentModel');
-
-const ON_ROLL_LEAVES = {
-  annualLeave: 16,
-  casualSickLeave: 8,
-  bereavementLeaves: 3,
-  marriageLeave: 5,
-  birthdayLeave: 1,
-  total: 33,
-};
-
-const PROBATION_LEAVE = {
-  perMonth: 1,
-};
+const {
+  calculateProbationLeave,
+  calculateOnRollLeave,
+} = require('../utility/leaveCalculation');
+const employeeHistory = require('../models/employeeHistory');
 
 class UserService {
   /**
@@ -200,71 +191,39 @@ class UserService {
    */
   async createUser(userData) {
     logger.info(`Attempting to create user with email: ${userData?.email}`);
+
     // Check for existing email
     if (await this.getUserByEmail(userData?.email)) {
-      logger.warn(`Email already in use: ${userData?.email}`);
       throw new ApiError(
         httpStatus.CONFLICT,
         'Email address is already registered.'
       );
     }
 
-    // Check for existing employee ID if provided
+    // Check for existing employee ID
     if (
       userData?.employeeId &&
       (await this.getUserByEmployeeId(userData?.employeeId))
     ) {
-      logger.warn(`Employee ID already in use: ${userData?.employeeId}`);
       throw new ApiError(httpStatus.CONFLICT, 'Employee ID is already in use.');
     }
 
-    // Check if team lead exists in DB
-    if (userData?.teamLeadId) {
-      try {
-        const tlExist = await this.getUserById(userData?.teamLeadId);
-        if (!tlExist) {
-          throw new ApiError(httpStatus.NOT_FOUND, 'Team lead not found');
-        }
-      } catch (err) {
-        if (err instanceof ApiError) {
-          throw err;
-        }
-        throw new ApiError(
-          httpStatus.INTERNAL_SERVER_ERROR,
-          'Failed to validate team lead'
-        );
+    // Validate IDs (Team Lead, Sub Team Lead, HR POC)
+    const idsToValidate = [
+      { id: userData?.teamLeadId, label: 'Team Lead' },
+      { id: userData?.subTeamLeadId, label: 'Sub Team Lead' },
+      { id: userData?.hrPocId, label: 'HR' },
+    ];
+
+    for (const { id, label } of idsToValidate) {
+      if (id) {
+        const userExists = await this.getUserById(id);
+        if (!userExists)
+          throw new ApiError(httpStatus.NOT_FOUND, `${label} not found`);
       }
     }
 
-    // check if subTL exist in db
-    if (
-      userData?.subTeamLeadId &&
-      !(await this.getUserById(userData?.subTeamLeadId))
-    ) {
-      throw new ApiError(httpStatus.NOT_FOUND, 'Sub Team Lead not found');
-    }
-
-    // check if Hr exist in db
-    if (userData?.hrPocId === '') {
-      userData.hrPocId = undefined; // Prevent Mongoose casting error
-    } else if (userData?.hrPocId) {
-      try {
-        const hrExist = await this.getUserById(userData?.hrPocId);
-        if (!hrExist) {
-          throw new ApiError(httpStatus.NOT_FOUND, 'HR not found');
-        }
-      } catch (err) {
-        if (err instanceof ApiError) {
-          throw err;
-        }
-        throw new ApiError(
-          httpStatus.INTERNAL_SERVER_ERROR,
-          'Failed to validate HR'
-        );
-      }
-    }
-
-    // auto-generating employeeId. format : SD_001
+    // Auto-generate Employee ID
     const lastUser = await User.findOne({ employeeId: { $regex: /^SD_\d+$/ } })
       .sort({ employeeId: -1 })
       .select('employeeId')
@@ -273,28 +232,44 @@ class UserService {
     const paddedNumber = String(nextNumber).padStart(3, '0');
 
     // Hash the password
-    const hashedPassword = await bcrypt.hash(userData?.password, 10); // 10 is the salt rounds
+    const hashedPassword = await bcrypt.hash(userData?.password, 10);
 
-    // Create and save the new user
+    // Validate Work Type
+    if (!['WFH', 'WFO'].includes(userData?.workType)) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Invalid workType. Allowed values are "WFH" or "WFO".'
+      );
+    }
+
+    // Determine Join Date
+    const hireDate = userData?.hireDate
+      ? new Date(userData.hireDate)
+      : new Date();
+
+    let leaveStructure = {};
+    if (userData.status === 'probation') {
+      leaveStructure.perMonth = 1;
+      leaveStructure.carryForwardLeave = {
+        total: 0,
+      };
+    } else if (userData.status === 'onroll') {
+      leaveStructure = calculateOnRollLeave(hireDate);
+    } else {
+      leaveStructure = {};
+    }
+
+    // Create and Save User
     const user = new User({
       ...userData,
       employeeId: `SD_${paddedNumber}`,
       password: hashedPassword,
-      email: userData?.email?.toLowerCase(), // Store email in lowercase
+      email: userData?.email?.toLowerCase(),
+      leaves: leaveStructure,
     });
-
-    if (!['WFH', 'WFO'].includes(userData?.workType)) {
-      logger.warn(`Invalid workType: ${userData?.workType}`);
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'Invalid workType. Allowed values are "wfh" or "wfo".'
-      );
-    }
 
     const savedUser = await user.save();
     logger.info(`User created successfully with ID: ${savedUser?.id}`);
-
-    // Return user object without password (using toJSON transform)
     return savedUser.toJSON();
   }
 
@@ -305,7 +280,7 @@ class UserService {
    * @returns {Promise<User|null>} - The updated user document or null if not found.
    * @throws {ApiError} - Throws error if email or employeeId conflict occurs.
    */
-  async updateUser(id, updateData) {
+  async updateUser(id, updateData, changedByUser) {
     logger.info(`Attempting to update user with ID: ${id}`);
     const user = await this.getUserById(id); // Use getUserById to ensure user exists and is not deleted
 
@@ -313,6 +288,8 @@ class UserService {
       logger.warn(`Update failed: User not found with ID: ${id}`);
       return null; // Or throw ApiError(httpStatus.NOT_FOUND, 'User not found')
     }
+
+    const oldUser = user.toObject();
 
     // Check for email conflict if email is being updated
     updateData.email = updateData?.email?.toLowerCase();
@@ -357,21 +334,27 @@ class UserService {
       );
     }
 
-    if (
-      updateData?.status === 'onroll' &&
-      existingUser?.status === 'probation'
-    ) {
-      updateData = {
-        ...updateData,
-        leaves: {
-          annualLeave: 16,
-          casualSickLeave: 8,
-          bereavementLeaves: 3,
-          marriageLeave: 5,
-          birthdayLeave: 1,
-          total: 33,
-        },
-      };
+    // **Detect status change**
+    const oldStatus = oldUser.status;
+    const newStatus = updateData.status || oldStatus;
+
+    if (oldStatus !== newStatus) {
+      const today = new Date();
+      const hireDate = user.hireDate ? new Date(user.hireDate) : today;
+
+      // If status changed from probation → onroll
+      if (oldStatus === 'probation' && newStatus === 'onroll') {
+        const onRollLeaves = calculateOnRollLeave(today);
+
+        updateData.leaves = onRollLeaves;
+      } else if (oldStatus === 'onroll' && newStatus === 'probation') {
+        updateData.leaves = {
+          perMonth: 1,
+          carryForwardLeave: {
+            total: 0,
+          },
+        };
+      }
     }
 
     // Handle empty string for hrPocId
@@ -406,6 +389,27 @@ class UserService {
     const updatedUser = await user.save();
 
     logger.info(`User updated successfully: ${updatedUser?.id}`);
+
+    // Find changed fields except some exclusions
+    const includedFields = ['jobTitle', 'role', 'status'];
+
+    const changedFields = Object.keys(updateData).filter(
+      (f) => includedFields.includes(f) && oldUser[f] !== updatedUser[f]
+    );
+
+    await Promise.all(
+      changedFields.map((field) =>
+        employeeHistory.create({
+          employeeId: updatedUser._id,
+          entity: field,
+          previous: oldUser[field] || null,
+          changed: updatedUser[field] || null,
+          changedBy: changedByUser._id,
+          actionAt: new Date(),
+        })
+      )
+    );
+
     return updatedUser.toJSON();
   }
 
@@ -451,7 +455,11 @@ class UserService {
       return null; // User not found
     }
 
-    if (user?.status === 'terminated' || user?.status === 'absconded' || user?.status === 'resigned') {
+    if (
+      user?.status === 'terminated' ||
+      user?.status === 'absconded' ||
+      user?.status === 'resigned'
+    ) {
       logger.warn(`User is terminated or absconded or resigned`);
       return null;
     }
@@ -900,6 +908,34 @@ class UserService {
       );
       // Throw a generic error for the controller to catch
       throw new Error('Failed to process bulk user upload.');
+    }
+  }
+
+  async getUserHistory(employeeId) {
+    try {
+      const historyRecords = await employeeHistory
+        .find({ employeeId })
+        .populate({
+          path: 'changedBy',
+          select: 'firstName lastName', // Adjust this as per your User schema fields
+        })
+        .sort({ actionAt: -1 }) // Sort by most recent changes first
+        .lean();
+
+      console.log('history-record', historyRecords);
+
+      return {
+        status: true,
+        statusCode: 200,
+        data: historyRecords,
+      };
+    } catch (error) {
+      console.error('Error in getUserHistory service:', error);
+      return {
+        status: false,
+        statusCode: 500,
+        message: 'An unexpected server error occurred.',
+      };
     }
   }
 }

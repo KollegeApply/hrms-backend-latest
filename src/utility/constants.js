@@ -28,8 +28,10 @@ const ASSETS_STATUS = {
   ASSIGNED: 'assigned',
   ACKNOWLEDGED: 'acknowledged',
   NOT_ACKNOWLEDGED: 'not_acknowledged',
+  RETURN_REQUESTED: 'return_requested',
+  RETURN_APPROVED: 'return_approved',
+  RETURN_REJECTED: 'return_rejected',
   RETURNED: 'returned',
-  REQUEST_RETURNED: 'request_returned',
   CANCELLED: 'cancelled',
 };
 

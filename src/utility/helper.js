@@ -57,7 +57,7 @@ class Helper {
     const mailOptions = {
       from: fromHr
         ? `"HR" <${MAIL_FROM_HR}>`
-        : `"Support" <${MAIL_FROM_SUPPORT}>`, // Customize sender name
+        : `"Support" <${MAIL_FROM_SUPPORT}>`,
       to: receiverEmails.join(','),
       subject: subject,
       html: message,
@@ -308,7 +308,6 @@ class Helper {
     toDate,
     reason,
   }) {
-
     // Format the dates for the email
     const fromFormatted = formatDateToKolkata(fromDate);
     const toFormatted = formatDateToKolkata(toDate);
@@ -407,6 +406,167 @@ class Helper {
       </div>
     </div>
     `;
+  }
+
+  /**
+   * Generates an asset assignment email template for IT department.
+   * @param {string} firstName - Employee's first name.
+   * @param {string} assetName - The name of the asset assigned.
+   * @param {string} assetId - The ID of the asset.
+   * @param {string} serialNumber - The serial number of the asset (if available).
+   * @param {string} assignedBy - The name of the person who assigned the asset.
+   * @returns {string} - HTML email content.
+   */
+  /**
+   * Generates an asset assignment email for employees.
+   * @param {string} firstName - Employee's first name.
+   * @param {string} assetName - Name of the assigned asset.
+   * @param {string} assetId - Asset ID.
+   * @param {string} loginUrl - URL to the HRMS dashboard.
+   * @returns {string} - HTML email content.
+   */
+  static getAssetAssignmentEmail(firstName, assetName, assetId, loginUrl) {
+    return `
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+  <div style="text-align: center; margin-bottom: 20px;">
+    <h1 style="color: #333;">Asset Assignment Notification</h1>
+  </div>
+
+  <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+    <p style="color: #555; font-size: 16px; line-height: 1.6;">
+      Hi <strong>${firstName}</strong>,
+    </p>
+
+    <p style="color: #555; font-size: 16px; line-height: 1.6;">
+      You have been assigned a new asset: <strong>${assetName}</strong> (Asset ID: ${assetId}).
+    </p>
+
+    <p style="color: #555; font-size: 16px; line-height: 1.6;">
+      Please review and acknowledge the receipt of this asset.
+    </p>
+
+    <p style="color: #555; font-size: 16px; line-height: 1.6;">
+      You can log in to the HRMS to view and acknowledge your assets.
+    </p>
+
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${loginUrl}" style="background-color: #007bff; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Go to Dashboard</a>
+    </div>
+
+    <p style="color: #777; font-size: 14px;">Thank you,<br>IT Department</p>
+  </div>
+
+  <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
+    This is an automated message. Please do not reply directly to this email.
+  </div>
+</div>
+  `;
+  }
+
+  /**
+   * Generates an email template for asset acknowledgment notification.
+   * @param {string} employeeName - The name of the employee.
+   * @param {string} employeeId - The employee ID.
+   * @param {string} assetName - The asset name.
+   * @param {string} assetId - The asset ID.
+   * @param {string} dashboardUrl - The HRMS dashboard URL.
+   * @returns {string} - HTML email content.
+   */
+  static getAssetAcknowledgmentEmail(
+    employeeName,
+    employeeId,
+    assetName,
+    assetId,
+    dashboardUrl
+  ) {
+    return `
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+  <div style="text-align: center; margin-bottom: 20px;">
+    <h1 style="color: #333;">Asset Acknowledgment Confirmation</h1>
+  </div>
+  <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+    <p style="color: #555; font-size: 16px; line-height: 1.6;">Hello Team,</p>
+    <p style="color: #555; font-size: 16px; line-height: 1.6;">
+      The following asset has been successfully acknowledged by the employee:
+    </p>
+
+    <div style="background-color: #eef; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #66f;">
+      <p style="color: #555; font-size: 15px;">
+        <strong>Employee Name:</strong> ${employeeName}<br>
+        <strong>Employee ID:</strong> ${employeeId}<br>
+        <strong>Asset Name:</strong> ${assetName}<br>
+        <strong>Asset ID:</strong> ${assetId}
+      </p>
+    </div>
+
+    <p style="color: #555; font-size: 16px; line-height: 1.6;">
+      You can review the asset acknowledgment in the dashboard.
+    </p>
+
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${dashboardUrl}/assets/assigned" style="background-color: #007bff; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">View Asset Details</a>
+    </div>
+
+    <p style="color: #777; font-size: 14px; line-height: 1.5;">Thank you,<br>IT Department</p>
+  </div>
+  <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
+    This is an automated message. Please do not reply directly to this email.
+  </div>
+</div>
+  `;
+  }
+
+  /**
+   * Generates an email template for asset rejection notification.
+   * @param {string} employeeName - The name of the employee.
+   * @param {string} employeeId - The employee ID.
+   * @param {string} assetName - The asset name.
+   * @param {string} assetId - The asset ID.
+   * @param {string} dashboardUrl - The HRMS dashboard URL.
+   * @returns {string} - HTML email content.
+   */
+  static getAssetRejectionEmail(
+    employeeName,
+    employeeId,
+    assetName,
+    assetId,
+    dashboardUrl
+  ) {
+    return `
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+  <div style="text-align: center; margin-bottom: 20px;">
+    <h1 style="color: #333;">Asset Rejection Notification</h1>
+  </div>
+  <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+    <p style="color: #555; font-size: 16px; line-height: 1.6;">Hello Team,</p>
+    <p style="color: #555; font-size: 16px; line-height: 1.6;">
+      The following asset has been rejected by the employee:
+    </p>
+
+    <div style="background-color: #eef; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #f00;">
+      <p style="color: #555; font-size: 15px;">
+        <strong>Employee Name:</strong> ${employeeName}<br>
+        <strong>Employee ID:</strong> ${employeeId}<br>
+        <strong>Asset Name:</strong> ${assetName}<br>
+        <strong>Asset ID:</strong> ${assetId}
+      </p>
+    </div>
+
+    <p style="color: #555; font-size: 16px; line-height: 1.6;">
+      You can review the asset rejection in the dashboard.
+    </p>
+
+    <div style="text-align: center; margin: 30px 0;">
+      <a href="${dashboardUrl}/assets/assigned" style="background-color: #dc3545; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">View Rejected Asset</a>
+    </div>
+
+    <p style="color: #777; font-size: 14px; line-height: 1.5;">Thank you,<br>IT Department</p>
+  </div>
+  <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
+    This is an automated message. Please do not reply directly to this email.
+  </div>
+</div>
+  `;
   }
 }
 

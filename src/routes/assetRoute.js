@@ -62,4 +62,30 @@ router.put(
 
 router.put('/reject-asset/:id', authenticateUser, assetController.rejectAsset);
 
+router.put('/return-asset/:id', authenticateUser, assetController.returnAsset);
+
+router.get(
+  '/requests',
+  authenticateUser,
+  authorizeRole([
+    USER_ROLES?.IT,
+    USER_ROLES?.HR,
+    USER_ROLES?.SUBADMIN,
+    USER_ROLES?.ADMIN,
+  ]),
+  assetController.fetchAssetRequests
+);
+// Updated route to handle approval/rejection of requests
+router.put(
+  '/requests/:id',
+  authenticateUser,
+  authorizeRole([
+    USER_ROLES?.IT,
+    USER_ROLES?.HR,
+    USER_ROLES?.SUBADMIN,
+    USER_ROLES?.ADMIN,
+  ]),
+  assetController.handleAssetRequestUpdate
+);
+
 module.exports = router;

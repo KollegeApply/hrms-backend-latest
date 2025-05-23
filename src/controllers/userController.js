@@ -35,10 +35,8 @@ const createUser = catchAsync(async (req, res) => {
   let user;
   if (targetUserRank != 1 && currentUserRank < 4) {
     user = await userService.createUser(validatedData);
-    console.log('User created:', user);
     // sending mail
     const sendMail = req?.body?.sendMail === true;
-    console.log('sendMail:', sendMail);
     if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
       logger.info(`Sending welcome email to ${user.email}`);
       Helper.sendEmail({
@@ -139,7 +137,11 @@ const updateUser = catchAsync(async (req, res) => {
   const clickedUserId = userId;
 
   if (currentUserId !== clickedUserId) {
-    const updatedUser = await userService?.updateUser(userId, validatedData);
+    const updatedUser = await userService?.updateUser(userId, validatedData, {
+      _id: req.user.id,
+      name: req.user.name,
+      role: req.user.role,
+    });
 
     if (!updatedUser) {
       throw new ApiError(
@@ -356,6 +358,21 @@ const bulkUpload = async (req, res) => {
   }
 };
 
+const getUserHistory = async (req, res) => {
+  try {
+    const userId = req?.user?.id;
+    const validateData =
+      await userValidator?.getUserHistorySchema?.validateAsync({ userId });
+    const result = await userService.getUserHistory(validateData?.userId);
+    return res.status(result.statusCode).json(result.data);
+  } catch (error) {
+    console.error('Error in getUserHistory controller:', error);
+    return res
+      .status(500)
+      .json({ message: 'An unexpected server error occurred.' });
+  }
+};
+
 module.exports = {
   createUser,
   getAllUsers,
@@ -367,6 +384,7 @@ module.exports = {
   forgotPassword,
   verifyOtp,
   bulkUpload,
+  getUserHistory,
 };
 
 // --- Utility: catchAsync (Place in src/utility/catchAsync.js) ---
