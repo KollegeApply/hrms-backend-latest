@@ -12,6 +12,7 @@ const EMPLOYEE_STATUS = {
   TERMINATED: 'terminated',
   ABSCONDED: 'absconded',
   ONROLL: 'onroll',
+  RESIGNED: 'resigned',
 };
 
 const LEAVETYPES = {
