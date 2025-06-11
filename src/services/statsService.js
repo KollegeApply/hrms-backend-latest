@@ -6,6 +6,7 @@ const Leave = require('../models/leaveModel');
 const Attendance = require('../models/attendanceModel');
 const { default: mongoose } = require('mongoose');
 const leaveService = require('./leaveService');
+const { SYSTEM_LAUNCH_YEAR, SYSTEM_START_MONTH } = require('../utility/constants');
 
 class StatsService {
   /**
@@ -35,7 +36,8 @@ class StatsService {
     const startOfMonth = new Date(currentYear, currentMonth, 1);
     const endOfMonth = new Date(currentYear, currentMonth + 1, 0);
     const startOfYear = new Date(currentYear, 0, 1);
-    const { start: quarterStart, end: quarterEnd } = await this.getQuarterRange(currentDate);
+    const { start: quarterStart, end: quarterEnd } =
+      await this.getQuarterRange(currentDate);
 
     try {
       const user = await User.findById(userId);
@@ -266,7 +268,19 @@ class StatsService {
     // Determine effective start date (joining date or Jan 1, whichever is later)
     const startOfYear = new Date(currentYear, 0, 1);
     const joinDate = user.hireDate ? new Date(user.hireDate) : startOfYear;
-    const effectiveStartDate = joinDate > startOfYear ? joinDate : startOfYear;
+    let effectiveStartDate;
+
+    if (currentYear === SYSTEM_LAUNCH_YEAR) {
+      const systemStartDate = new Date(
+        SYSTEM_LAUNCH_YEAR,
+        SYSTEM_START_MONTH,
+        1
+      );
+      effectiveStartDate =
+        joinDate > systemStartDate ? joinDate : systemStartDate;
+    } else {
+      effectiveStartDate = joinDate > startOfYear ? joinDate : startOfYear;
+    }
 
     // Holidays up to today
     const holidays = await Holiday.find({

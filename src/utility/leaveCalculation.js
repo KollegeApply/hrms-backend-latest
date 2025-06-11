@@ -1,4 +1,4 @@
-function calculateOnRollLeave(hireDate) {
+function calculateOnRollLeave(hireDate,carryForward = 0) {
   const currentYear = new Date().getFullYear();
 
   if (hireDate.getFullYear() < currentYear) {
@@ -24,7 +24,7 @@ function calculateOnRollLeave(hireDate) {
       bereavementLeave: { total: 3 },
       marriageLeave: { total: 5 },
       birthdayLeave: { total: 1 },
-      carryForwardLeave: { total: 0 },
+      carryForwardLeave : { total: carryForward },
       total: 33,
     };
   }
@@ -124,7 +124,7 @@ function calculateOnRollLeave(hireDate) {
   const bereavementLeave = { total: 3 };
   const marriageLeave = { total: 5 };
   const birthdayLeave = { total: 1 };
-  const carryForwardLeave = { total: 0 };
+  const carryForwardLeave = { total: carryForward };
 
   const total =
     annualLeaveEntitlement +

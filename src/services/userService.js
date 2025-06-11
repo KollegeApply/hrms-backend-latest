@@ -346,6 +346,12 @@ class UserService {
       if (oldStatus === 'probation' && newStatus === 'onroll') {
         const onRollLeaves = calculateOnRollLeave(today);
 
+        // Add old carryForwardLeave to new one
+        const existingCarry = oldUser?.leaves?.carryForwardLeave?.total || 0;
+        onRollLeaves.carryForwardLeave.total += existingCarry;
+
+        onRollLeaves.total += existingCarry;
+
         updateData.leaves = onRollLeaves;
       } else if (oldStatus === 'onroll' && newStatus === 'probation') {
         updateData.leaves = {

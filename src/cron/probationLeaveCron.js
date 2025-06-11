@@ -38,13 +38,11 @@ async function updateProbationLeavesForAllUsers() {
 
     const unusedLeave = usedLeave ? 0 : perMonth;
 
-    // Update carryForward leave
-    user.leaves = {
-      ...user.leaves,
-      carryForwardLeave: {
-        total: carryForward + unusedLeave,
-      },
-    };
+    if (!user.leaves.carryForwardLeave) {
+      user.leaves.carryForwardLeave = { total: 0 };
+    }
+
+    user.leaves.carryForwardLeave.total += unusedLeave;
 
     await user.save();
   }

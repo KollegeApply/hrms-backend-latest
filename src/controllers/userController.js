@@ -69,6 +69,7 @@ const createUser = catchAsync(async (req, res) => {
 });
 
 const getAllUsers = catchAsync(async (req, res) => {
+  console.log(req?.query?.role);
   // 1. Validate query parameters
   const validatedQuery = await userValidator?.getAllUsersSchema?.validateAsync(
     req?.query
