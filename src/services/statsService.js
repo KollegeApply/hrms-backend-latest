@@ -14,6 +14,17 @@ class StatsService {
    * @param {String} params.userId - Employee ID
    * @returns {Object} - Monthly stats data
    */
+  async getQuarterRange(date = new Date()) {
+    const quarter = Math.ceil((date.getMonth() + 1) / 3);
+    const year = date.getFullYear();
+    const startMonth = (quarter - 1) * 3;
+    const endMonth = startMonth + 2;
+
+    const start = new Date(year, startMonth, 1);
+    const end = new Date(year, endMonth + 1, 0); // Last day of endMonth
+
+    return { start, end };
+  }
 
   async getMonthlyStats({ userId }) {
     const currentDate = new Date();
@@ -24,6 +35,7 @@ class StatsService {
     const startOfMonth = new Date(currentYear, currentMonth, 1);
     const endOfMonth = new Date(currentYear, currentMonth + 1, 0);
     const startOfYear = new Date(currentYear, 0, 1);
+    const { start: quarterStart, end: quarterEnd } = await this.getQuarterRange(currentDate);
 
     try {
       const user = await User.findById(userId);
@@ -72,7 +84,7 @@ class StatsService {
         { $unwind: '$dates' },
         {
           $match: {
-            dates: { $gte: startOfMonth, $lte: endOfMonth },
+            dates: { $gte: quarterStart, $lte: quarterEnd },
           },
         },
         {
