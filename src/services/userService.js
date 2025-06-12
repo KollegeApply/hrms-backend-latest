@@ -350,6 +350,7 @@ class UserService {
         const existingCarry = oldUser?.leaves?.carryForwardLeave?.total || 0;
         onRollLeaves.carryForwardLeave.total += existingCarry;
 
+        // Optional: also update `.total` if you want to reflect it
         onRollLeaves.total += existingCarry;
 
         updateData.leaves = onRollLeaves;

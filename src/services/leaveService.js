@@ -46,6 +46,8 @@ class leaveService {
       throw new ApiError(404, 'User not found.');
     }
 
+    let autoRejected = false;
+    let autoRejectReason = '';
     // 4. Leave Validation based on User Status
     if (user.status === 'probation') {
       const hireDate = new Date(user.hireDate);
@@ -55,9 +57,16 @@ class leaveService {
         userId,
         leaveType
       );
+      // console.log(probationValidation);
 
       if (!probationValidation.valid) {
-        throw new ApiError(409, probationValidation.message);
+        if (probationValidation.autoReject) {
+          console.log(probationValidation.message);
+          autoRejected = true;
+          autoRejectReason = probationValidation.message;
+        } else {
+          throw new ApiError(409, probationValidation.message);
+        }
       }
     } else if (user.status === 'onroll') {
       const leaveValidation = await this.validateOnRollLeave(
@@ -78,14 +87,18 @@ class leaveService {
       leaveReason,
       leaveType,
       dates: validLeaveDates,
-      status: 'pending', // Initial status
+      status: autoRejected ? 'rejected' : 'pending',
       appliedOn: new Date(),
     });
 
     try {
-      const savedLeave = await newLeave.save();
-      // Optionally, trigger notifications or other post-leave-request logic here
-      return savedLeave;
+      let savedLeave = await newLeave.save();
+
+      // Convert to plain object so extra fields can be added
+      const leaveResponse = savedLeave.toObject();
+      leaveResponse.rejectionReason = autoRejected ? autoRejectReason : null;
+
+      return leaveResponse;
     } catch (error) {
       console.error('Error saving leave request:', error);
       throw new ApiError(500, 'Failed to save leave request.');
@@ -190,7 +203,9 @@ class leaveService {
     if (monthsDiff < 1) {
       return {
         valid: false,
-        message: 'Cannot apply for leave within the first month of employment.',
+        autoReject: true,
+        message:
+          'Leave auto-rejected during first month. If you have a genuine reason, please contact HR for further assistance.',
       };
     }
 
@@ -489,10 +504,16 @@ class leaveService {
       throw new ApiError(httpStatus.NOT_FOUND, 'Leave not found.');
     }
 
-    if (oldLeave.status !== 'pending') {
+    // Allow status change from rejected to approved
+    if (oldLeave.status === 'approved') {
+      throw new ApiError(409, 'Cannot modify approved leaves');
+    }
+
+    // Allow only 'pending' or 'rejected' to be updated
+    if (!['pending', 'rejected'].includes(oldLeave.status)) {
       throw new ApiError(
         httpStatus.CONFLICT,
-        'Seems like status of leave has already been changed. Refresh page to see changes.'
+        'Leave status cannot be modified in its current state.'
       );
     }
 
