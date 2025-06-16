@@ -22,6 +22,9 @@ const {
   calculateOnRollLeave,
 } = require('../utility/leaveCalculation');
 const employeeHistory = require('../models/employeeHistory');
+const leavePolicyModel = require('../models/leavePolicyModel');
+const leavePolicyMappingModel = require('../models/leavePolicyMappingModel');
+const employeeLeaveBalanceModel = require('../models/employeeLeaveBalanceModel');
 
 class UserService {
   /**
@@ -242,21 +245,20 @@ class UserService {
       );
     }
 
-    // Determine Join Date
-    const hireDate = userData?.hireDate
-      ? new Date(userData.hireDate)
-      : new Date();
+    let assignedPolicy = null;
 
-    let leaveStructure = {};
-    if (userData.status === 'probation') {
-      leaveStructure.perMonth = 1;
-      leaveStructure.carryForwardLeave = {
-        total: 0,
-      };
-    } else if (userData.status === 'onroll') {
-      leaveStructure = calculateOnRollLeave(hireDate);
-    } else {
-      leaveStructure = {};
+    if (userData.status === 'onroll') {
+      assignedPolicy = await leavePolicyModel.findOne({
+        name: 'Onroll Policy',
+      });
+    } else if (userData.status === 'probation') {
+      assignedPolicy = await leavePolicyModel.findOne({
+        name: 'Probation Policy',
+      });
+    }
+
+    if (!assignedPolicy) {
+      throw new ApiError(400, 'Leave policy not found for the given status');
     }
 
     // Create and Save User
@@ -265,10 +267,39 @@ class UserService {
       employeeId: `SD_${paddedNumber}`,
       password: hashedPassword,
       email: userData?.email?.toLowerCase(),
-      leaves: leaveStructure,
+      leavePolicyId: assignedPolicy._id,
     });
 
     const savedUser = await user.save();
+
+    // Find mappings for assigned policy
+    const mappings = await leavePolicyMappingModel.find({
+      leavePolicyId: assignedPolicy._id,
+      isDeleted: false,
+    }).lean();
+
+    const balances = mappings.map((mapping) => {
+      let accrued = 0;
+
+      if (mapping.accrualType === 'monthly') {
+        accrued = mapping.accrualPerMonth;
+      } else if (mapping.accrualType === 'yearly') {
+        accrued = mapping.quota;
+      }
+
+      return {
+        userId: savedUser._id,
+        leaveTypeId: mapping.leaveTypeId,
+        accrued,
+        used: 0,
+        carryForwarded: 0,
+        total: accrued || mapping.quota,
+      };
+    });
+
+    // Save all balances
+    await employeeLeaveBalanceModel.insertMany(balances);
+
     logger.info(`User created successfully with ID: ${savedUser?.id}`);
     return savedUser.toJSON();
   }
@@ -858,7 +889,7 @@ class UserService {
               logger.info(`Sending welcome email to ${user.email}`);
               Helper.sendEmail({
                 receiverEmails: [user?.email],
-                subject: `Welcome to ${process?.env?.TEAM} – Let’s Get You Started!`,
+                subject: `Welcome to ${process?.env?.TEAM} – Let's Get You Started!`,
                 message: Helper.getWelcomeEmail(
                   user?.firstName,
                   user?.email,

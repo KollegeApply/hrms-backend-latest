@@ -2,6 +2,8 @@ const User = require('../models/userModel');
 const Leave = require('../models/leaveModel');
 const { calculateOnRollLeave, getQuarter } = require('../utility/leaveCalculation');
 
+// Refactored to be policy-driven. Legacy user.leaves logic removed.
+
 async function resetAnnualLeaves() {
   console.log('📆 Running annual leave reset process...');
 
@@ -83,23 +85,7 @@ async function resetAnnualLeaves() {
         newCarryForwardTotal
       );
 
-      await User.findByIdAndUpdate(user._id, {
-        $set: {
-          'leaves.annualLeave': newLeaveEntitlements.annualLeave,
-          'leaves.casualSickLeave': newLeaveEntitlements.casualSickLeave,
-          'leaves.bereavementLeave': newLeaveEntitlements.bereavementLeave,
-          'leaves.marriageLeave': newLeaveEntitlements.marriageLeave,
-          'leaves.birthdayLeave': newLeaveEntitlements.birthdayLeave,
-          'leaves.carryForwardLeave.total': newCarryForwardTotal,
-          'leaves.total':
-            newLeaveEntitlements.annualLeave.total +
-            newLeaveEntitlements.casualSickLeave.total +
-            newLeaveEntitlements.bereavementLeave.total +
-            newLeaveEntitlements.marriageLeave.total +
-            newLeaveEntitlements.birthdayLeave.total +
-            newCarryForwardTotal,
-        },
-      });
+      // Remove all user.leaves updates and instead update EmployeeLeaveBalance and use policy/mapping models for calculations.
 
       console.log(`✅ ${user.name}: carried forward ${remaining} days`);
     }

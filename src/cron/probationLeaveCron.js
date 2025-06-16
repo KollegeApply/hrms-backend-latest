@@ -1,6 +1,8 @@
 const User = require('../models/userModel');
 const Leave = require('../models/leaveModel');
 
+// Refactored to be policy-driven. Legacy user.leaves logic removed.
+
 async function updateProbationLeavesForAllUsers() {
   const today = new Date();
 

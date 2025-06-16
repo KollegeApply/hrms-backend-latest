@@ -380,12 +380,14 @@ class Helper {
           We regret to inform you that your <strong>${leaveType}</strong> ${requestType.toLowerCase()} request for <strong>${date}</strong> has been declined.
         </p>
   
-        <div style="background-color: #ffecec; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #d9534f;">
+   <!--     
+   <div style="background-color: #ffecec; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #d9534f;">
           <h2 style="color: #b52b27; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Reason Provided</h2>
           <p style="color: #555; font-size: 15px; line-height: 1.6; margin: 0;">
             ${reason}
           </p>
-        </div>
+        </div> 
+  -->
   
         <p style="color: #555; font-size: 16px; line-height: 1.6;">
           We completely understand if this is disappointing, and we’re happy to work with you on finding an alternative date or a solution that works for you.

@@ -89,7 +89,6 @@ const CSV_TYPES = [
   'application/csv',
 ];
 
-
 const SYSTEM_LAUNCH_YEAR = 2025;
 const SYSTEM_START_MONTH = 4;
 
