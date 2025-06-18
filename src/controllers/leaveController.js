@@ -11,57 +11,6 @@ const { formatDateToKolkata } = require('../utility/common');
 const LeaveApplication = require('../models/leaveApplicationModel');
 const leaveTypeModel = require('../models/leaveTypeModel');
 
-const createLeave = catchAsync(async (req, res) => {
-  const { from, to, leaveReason, leaveType } = req.body;
-  const userId = req?.user?.id;
-
-  const validatedData = await leaveValidator?.createLeaveSchema?.validateAsync({
-    from: from,
-    to: to,
-    leaveReason: leaveReason,
-    userId: userId,
-    leaveType: leaveType,
-  });
-
-  const data = await leaveService?.createLeave(validatedData);
-
-  const user = await User?.findById(req?.user?.id)
-    .populate('teamLeadId', 'email')
-    .populate('subTeamLeadId', 'email');
-
-  const sendMail = req?.body?.sendMail === true;
-  if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
-    logger.info(`Sending leave email to ${user?.teamLeadId}`);
-    console.log(
-      `Sending leave email to ${user?.teamLeadId?.email} and ${user?.subTeamLeadId?.email}`
-    );
-    Helper.sendEmail({
-      receiverEmails: [
-        HR_EMAIL,
-        user?.teamLeadId?.email,
-        user?.subTeamLeadId?.email,
-      ],
-      subject: 'Leave Applied',
-      message: Helper.WfhLeaveApplication({
-        userName: user?.firstName,
-        requestType: 'leave',
-        leaveType: LEAVETYPES[leaveType] || 'Monthly Leave',
-        fromDate: new Date(from),
-        toDate: new Date(to),
-        reason: leaveReason,
-      }),
-    }).catch((err) =>
-      logger.error(`Failed to send leave email to ${user?.teamLeadId}:`, err)
-    );
-  }
-
-  res.status(httpStatus.CREATED).json({
-    status: true,
-    message: 'Leave created successfully!',
-    data: data,
-  });
-});
-
 // Get all leave
 const getAllLeave = catchAsync(async (req, res) => {
   const currentUser = req.user;
@@ -351,7 +300,6 @@ const getLeaveApplications = catchAsync(async (req, res) => {
 });
 
 module.exports = {
-  createLeave,
   getAllLeave,
   getLeaveById,
   updateLeave,

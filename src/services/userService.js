@@ -14,17 +14,13 @@ const {
   OTP_EXPIRY_MINUTES,
   USER_CSV_FILE_HEADERS,
 } = require('../utility/constants');
-const { default: mongoose } = require('mongoose');
 const csv = require('csvtojson');
 const Department = require('../models/departmentModel');
-const {
-  calculateProbationLeave,
-  calculateOnRollLeave,
-} = require('../utility/leaveCalculation');
 const employeeHistory = require('../models/employeeHistory');
 const leavePolicyModel = require('../models/leavePolicyModel');
 const leavePolicyMappingModel = require('../models/leavePolicyMappingModel');
 const employeeLeaveBalanceModel = require('../models/employeeLeaveBalanceModel');
+const leaveTypeModel = require('../models/leaveTypeModel');
 
 class UserService {
   /**
@@ -273,10 +269,12 @@ class UserService {
     const savedUser = await user.save();
 
     // Find mappings for assigned policy
-    const mappings = await leavePolicyMappingModel.find({
-      leavePolicyId: assignedPolicy._id,
-      isDeleted: false,
-    }).lean();
+    const mappings = await leavePolicyMappingModel
+      .find({
+        leavePolicyId: assignedPolicy._id,
+        isDeleted: false,
+      })
+      .lean();
 
     const balances = mappings.map((mapping) => {
       let accrued = 0;
@@ -317,7 +315,7 @@ class UserService {
 
     if (!user) {
       logger.warn(`Update failed: User not found with ID: ${id}`);
-      return null; // Or throw ApiError(httpStatus.NOT_FOUND, 'User not found')
+      return null;
     }
 
     const oldUser = user.toObject();
@@ -365,33 +363,102 @@ class UserService {
       );
     }
 
-    // **Detect status change**
+    // Detect status change
     const oldStatus = oldUser.status;
     const newStatus = updateData.status || oldStatus;
 
     if (oldStatus !== newStatus) {
-      const today = new Date();
-      const hireDate = user.hireDate ? new Date(user.hireDate) : today;
-
       // If status changed from probation → onroll
       if (oldStatus === 'probation' && newStatus === 'onroll') {
-        const onRollLeaves = calculateOnRollLeave(today);
+        const probationBalance = await employeeLeaveBalanceModel
+          .findOne({
+            userId: user._id,
+          })
+          .populate('leaveTypeId');
 
-        // Add old carryForwardLeave to new one
-        const existingCarry = oldUser?.leaves?.carryForwardLeave?.total || 0;
-        onRollLeaves.carryForwardLeave.total += existingCarry;
+        let unusedProbation = 0;
 
-        // Optional: also update `.total` if you want to reflect it
-        onRollLeaves.total += existingCarry;
+        // If probation balance exists and is of type PROBATION
+        if (probationBalance?.leaveTypeId?.code === 'PROBATION') {
+          unusedProbation =
+            (probationBalance.total || 0) - (probationBalance.used || 0);
+        }
 
-        updateData.leaves = onRollLeaves;
-      } else if (oldStatus === 'onroll' && newStatus === 'probation') {
-        updateData.leaves = {
-          perMonth: 1,
-          carryForwardLeave: {
-            total: 0,
-          },
-        };
+        // ✅ Fetch Onroll Policy
+        const onrollPolicy = await leavePolicyModel.findOne({
+          name: 'Onroll Policy',
+        });
+        if (!onrollPolicy) {
+          throw new ApiError(400, 'Onroll leave policy not found');
+        }
+
+        // ✅ Fetch all mappings for Onroll policy
+        const onrollMappings = await leavePolicyMappingModel
+          .find({
+            leavePolicyId: onrollPolicy._id,
+          })
+          .populate('leaveTypeId');
+
+        // Create new balances
+        for (const mapping of onrollMappings) {
+          const {
+            leaveTypeId,
+            quota,
+            accrualType,
+            accrualPerMonth,
+            maxCarryForward,
+          } = mapping;
+
+          let carryForwarded = 0;
+          if (mapping.leaveTypeId.code === 'ANNUAL') {
+            carryForwarded = unusedProbation;
+          }
+
+          const accrued = accrualType === 'monthly' ? accrualPerMonth : quota;
+
+          try {
+            await employeeLeaveBalanceModel.create({
+              userId: user._id,
+              leaveTypeId,
+              accrued,
+              used: 0,
+              carryForwarded,
+              total: accrued + carryForwarded,
+            });
+          } catch (err) {
+            console.error('LeaveBalance create error:', err);
+          }
+        }
+        updateData.leavePolicyId = onrollPolicy._id;
+      }
+
+      // Optional: handle onroll → probation (rare case)
+      if (oldStatus === 'onroll' && newStatus === 'probation') {
+        const probationPolicy = await leavePolicyModel.findOne({
+          name: 'Probation Policy',
+        });
+        if (!probationPolicy) {
+          throw new ApiError(400, 'Probation leave policy not found');
+        }
+
+        // Delete existing onroll balances
+        await employeeLeaveBalanceModel.deleteMany({ userId: user._id });
+
+        // Create 1 leave type for probation
+        const probationMapping = await leavePolicyMappingModel.findOne({
+          leavePolicyId: probationPolicy._id,
+        });
+
+        await employeeLeaveBalanceModel.create({
+          userId: user._id,
+          leaveTypeId: probationMapping.leaveTypeId,
+          accrued: probationMapping.accrualPerMonth,
+          used: 0,
+          carryForwarded: 0,
+          total: probationMapping.accrualPerMonth,
+        });
+
+        updateData.leavePolicyId = probationPolicy._id;
       }
     }
 
@@ -399,7 +466,6 @@ class UserService {
     if (updateData?.hrPocId === '') {
       updateData.hrPocId = undefined;
     } else if (updateData?.hrPocId) {
-      // Optionally, you could validate the existence of the HR here if needed
       try {
         const hrExist = await this.getUserById(updateData?.hrPocId);
         if (!hrExist) {

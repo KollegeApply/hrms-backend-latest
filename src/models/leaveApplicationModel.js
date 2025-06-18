@@ -19,6 +19,8 @@ const leaveApplicationSchema = new Schema(
     },
     isUnpaid: { type: Boolean, default: false },
     isDeleted: { type: Boolean, default: false },
+    approvedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    rejectedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     appliedOn: { type: Date, default: Date.now },
   },
   { timestamps: true }

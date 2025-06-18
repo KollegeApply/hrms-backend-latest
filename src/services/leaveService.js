@@ -1,4 +1,3 @@
-const Leave = require('../models/leaveModel');
 const Holiday = require('../models/holidayModel');
 const User = require('../models/userModel');
 const ApiError = require('../utility/ApiError');
@@ -21,450 +20,12 @@ class leaveService {
    * @throws {ApiError} - If a Leave already exists on the given date.
    */
 
-  async createLeave(leaveData) {
-    const { from, to, leaveReason, userId, leaveType } = leaveData;
-
-    // 1. Validate Input Dates
-    const startDate = new Date(from);
-    const endDate = new Date(to);
-    if (isNaN(startDate) || isNaN(endDate) || startDate > endDate) {
-      throw new ApiError(400, 'Invalid leave date(s) provided.');
-    }
-
-    // 2. Generate Valid Leave Dates
-    const { validLeaveDates, rejectedReasons } =
-      await this.generateValidLeaveDates(userId, startDate, endDate);
-
-    if (validLeaveDates.length === 0) {
-      const reasonMessages = rejectedReasons
-        .map((r) => `${r.date}: ${r.reason}`)
-        .join('<br>');
-      throw new ApiError(
-        400,
-        `No valid leave dates in the requested range.<br>${reasonMessages}`
-      );
-    }
-
-    // 3. Find User
-    const user = await User.findById(userId);
-    if (!user) {
-      throw new ApiError(404, 'User not found.');
-    }
-
-    let autoRejected = false;
-    let autoRejectReason = '';
-    // 4. Leave Validation based on User Status
-    if (user.status === 'probation') {
-      const hireDate = new Date(user.hireDate);
-      const probationValidation = await this.validateProbationLeave(
-        hireDate,
-        validLeaveDates,
-        userId,
-        leaveType
-      );
-      // console.log(probationValidation);
-
-      if (!probationValidation.valid) {
-        if (probationValidation.autoReject) {
-          console.log(probationValidation.message);
-          autoRejected = true;
-          autoRejectReason = probationValidation.message;
-        } else {
-          throw new ApiError(409, probationValidation.message);
-        }
-      }
-    } else if (user.status === 'onroll') {
-      const leaveValidation = await this.validateOnRollLeave(
-        user,
-        leaveType,
-        validLeaveDates
-      );
-      if (!leaveValidation.valid) {
-        throw new ApiError(409, leaveValidation.message);
-      }
-    } else {
-      throw new ApiError(400, `Invalid user status: ${user.status}.`);
-    }
-
-    // 5. Create and Save Leave Request
-    const newLeave = new Leave({
-      userId,
-      leaveReason,
-      leaveType,
-      dates: validLeaveDates,
-      status: autoRejected ? 'rejected' : 'pending',
-      appliedOn: new Date(),
-    });
-
-    try {
-      let savedLeave = await newLeave.save();
-
-      // Convert to plain object so extra fields can be added
-      const leaveResponse = savedLeave.toObject();
-      leaveResponse.rejectionReason = autoRejected ? autoRejectReason : null;
-
-      return leaveResponse;
-    } catch (error) {
-      console.error('Error saving leave request:', error);
-      throw new ApiError(500, 'Failed to save leave request.');
-    }
-  }
-
-  async generateValidLeaveDates(userId, startDate, endDate) {
-    const userObjId = new mongoose.Types.ObjectId(userId);
-    const leaveDates = [];
-    let current = new Date(startDate);
-    current.setHours(0, 0, 0, 0); // Normalize start date
-
-    while (current <= endDate) {
-      const dateCopy = new Date(current);
-      dateCopy.setHours(0, 0, 0, 0);
-      leaveDates.push(dateCopy);
-      current.setDate(current.getDate() + 1);
-    }
-
-    if (leaveDates.length === 0) {
-      return { validLeaveDates: [], rejectedReasons: [] }; // Handle empty range
-    }
-
-    const [holidays, existingLeaves, existingAttendance] = await Promise.all([
-      Holiday.find({
-        date: { $in: leaveDates },
-        isDeleted: false,
-      }),
-      Leave.find({
-        userId: userObjId,
-        dates: { $in: leaveDates },
-        status: { $in: ['approved', 'pending'] },
-        isDeleted: false,
-      }),
-      Attendance.find({
-        user: userObjId,
-        date: { $gte: startDate, $lte: endDate },
-        status: { $in: ['present', 'leave_applied', 'wfh_applied'] },
-      }),
-    ]);
-
-    const holidayDates = new Set(holidays.map((h) => h.date.toISOString()));
-    const existingLeaveDates = new Set(
-      existingLeaves.flatMap((l) => l.dates.map((d) => d.toISOString()))
-    );
-    const attendanceDates = new Set(
-      existingAttendance.map((a) => a.date.toISOString())
-    );
-    const rejectedReasons = [];
-    const validLeaveDates = leaveDates.filter((date) => {
-      const isoDate = date.toISOString();
-
-      if (date.getDay() === 0) {
-        rejectedReasons.push({
-          date: format(new Date(isoDate), 'MMMM dd, yyyy'),
-          reason: 'Sunday',
-        });
-        return false;
-      }
-
-      if (holidayDates.has(isoDate)) {
-        rejectedReasons.push({
-          date: format(new Date(isoDate), 'MMMM dd, yyyy'),
-          reason: 'Holiday',
-        });
-        return false;
-      }
-
-      if (existingLeaveDates.has(isoDate)) {
-        rejectedReasons.push({
-          date: format(new Date(isoDate), 'MMMM dd, yyyy'),
-          reason: 'Leave conflicts with existing leave.',
-        });
-        return false;
-      }
-
-      if (attendanceDates.has(isoDate)) {
-        rejectedReasons.push({
-          date: format(new Date(isoDate), 'MMMM dd, yyyy'),
-          reason: 'Existing attendance record found.',
-        });
-        return false;
-      }
-
-      return true;
-    });
-
-    return { validLeaveDates, rejectedReasons };
-  }
-
-  // Refactored to be fully policy-driven. Legacy user.leaves logic removed.
-  async validateProbationLeave(hireDate, requestedDates, userId, leaveType) {
-    const now = new Date();
-
-    const user = await User.findById(userId);
-    if (!user) throw new Error('User not found');
-
-    const monthsDiff =
-      (now.getFullYear() - hireDate.getFullYear()) * 12 +
-      now.getMonth() -
-      hireDate.getMonth();
-
-    if (monthsDiff < 1) {
-      return {
-        valid: false,
-        autoReject: true,
-        message:
-          'Leave auto-rejected during first month. If you have a genuine reason, please contact HR for further assistance.',
-      };
-    }
-
-    // Validate dates using helper
-    const startDate = new Date(
-      Math.min(...requestedDates.map((d) => new Date(d)))
-    );
-    const endDate = new Date(
-      Math.max(...requestedDates.map((d) => new Date(d)))
-    );
-
-    const { validLeaveDates, rejectedReasons } =
-      await this.generateValidLeaveDates(userId, startDate, endDate);
-
-    if (validLeaveDates.length !== requestedDates.length) {
-      return {
-        valid: false,
-        message: 'Some requested leave dates are invalid.',
-        details: rejectedReasons,
-      };
-    }
-
-    // Restrict leave to current month only
-    for (const date of validLeaveDates) {
-      const d = new Date(date);
-      if (
-        d.getMonth() !== now.getMonth() ||
-        d.getFullYear() !== now.getFullYear()
-      ) {
-        return {
-          valid: false,
-          message:
-            'During probation, you can only apply for leave within the current calendar month.',
-        };
-      }
-    }
-
-    const requestedDays = requestedDates.length;
-
-    if (leaveType === 'perMonth') {
-      const earnedLeaves = Math.floor(monthsDiff * 1); // 1 leave per completed month
-      const usedPerMonthLeaves = await this.getUsedLeaveDays(
-        userId,
-        'perMonth'
-      );
-      const perMonthRemaining = earnedLeaves - usedPerMonthLeaves;
-
-      if (validLeaveDates.length > perMonthRemaining) {
-        return {
-          valid: false,
-          message: `You have only ${perMonthRemaining} per month leave days available.`,
-        };
-      }
-    }
-    if (leaveType === 'carryForwardLeave') {
-      const carryForwardTotal = user.leaves?.carryForwardLeave?.total || 0;
-      const carryForwardUsed = await this.getProbUsedLeaveDays(
-        user._id,
-        'carryForwardLeave'
-      );
-      const remaining = carryForwardTotal - carryForwardUsed;
-
-      if (remaining <= 0 || requestedDays > remaining) {
-        return {
-          valid: false,
-          message: `You have only ${remaining} carry forward leave day(s) remaining.`,
-        };
-      }
-    }
-
-    return { valid: true, validDates: validLeaveDates };
-  }
-
-  async getProbUsedLeaveDays(userId, leaveType) {
-    const user = await User.findById(userId);
-    if (!user) throw new Error('User not found');
-
-    const hireDate = new Date(user.hireDate);
-    const now = new Date();
-
-    // For probation: consider all leaves from hireDate until now
-    const leaves = await Leave.find({
-      userId,
-      leaveType,
-      status: { $in: ['approved', 'pending'] },
-      dates: { $elemMatch: { $gte: hireDate, $lte: now } },
-      isDeleted: false,
-    });
-
-    let usedDays = 0;
-    for (const leave of leaves) {
-      for (const date of leave.dates) {
-        const d = new Date(date);
-        if (d >= hireDate && d <= now) {
-          usedDays++;
-        }
-      }
-    }
-
-    return usedDays;
-  }
-
-  async getUsedLeaveDays(userId, leaveType, quarter) {
-    const match = {
-      userId: new mongoose.Types.ObjectId(userId),
-      leaveType,
-      status: { $in: ['approved', 'pending'] }, // Include pending leaves
-      isDeleted: false,
-    };
-
-    if (quarter) {
-      const year = new Date().getFullYear();
-      let startDate;
-      let endDate;
-
-      switch (quarter) {
-        case 1:
-          startDate = new Date(year, 0, 1); // 1st Quarter: Jan 1 - Mar 31
-          endDate = new Date(year, 2, 31, 23, 59, 59, 999);
-          break;
-        case 2:
-          startDate = new Date(year, 3, 1); // 2nd Quarter: Apr 1 - Jun 30
-          endDate = new Date(year, 5, 30, 23, 59, 59, 999);
-          break;
-        case 3:
-          startDate = new Date(year, 6, 1); // 3rd Quarter: Jul 1 - Sep 30
-          endDate = new Date(year, 8, 30, 23, 59, 59, 999);
-          break;
-        case 4:
-          startDate = new Date(year, 9, 1); // 4th Quarter: Oct 1 - Dec 31
-          endDate = new Date(year, 11, 31, 23, 59, 59, 999);
-          break;
-        default:
-          // Handle invalid quarter (optional, but good practice)
-          console.error(`Invalid quarter: ${quarter}`);
-          return 0;
-      }
-
-      match.dates = {
-        $gte: startDate,
-        $lte: endDate,
-      };
-    }
-
-    const result = await Leave.aggregate([
-      { $match: match },
-      { $unwind: '$dates' },
-      { $count: 'total' },
-    ]);
-    return result[0]?.total || 0;
-  }
-
-  async validateOnRollLeave(user, leaveType, requestedDates) {
-    const leaveConfig = user.leaves[leaveType];
-    if (!leaveConfig) {
-      return {
-        valid: false,
-        message: `Leave type "${leaveType}" is not configured for this user.`,
-      };
-    }
-
-    if (leaveType === 'carryForwardLeave') {
-      const usedLeaves = await this.getUsedLeaveDays(
-        user._id,
-        'carryForwardLeave'
-      );
-      if (usedLeaves + requestedDates.length > leaveConfig.total) {
-        return {
-          valid: false,
-          message: `Exceeds available carry forward leaves (${leaveConfig.total} days remaining).`,
-        };
-      }
-      return { valid: true };
-    }
-
-    if (
-      leaveConfig.quarters &&
-      ['annualLeave', 'casualSickLeave'].includes(leaveType)
-    ) {
-      const getQuarter = (date) => Math.ceil((date.getMonth() + 1) / 3);
-      const requestedLeaveByQuarter = requestedDates.reduce((acc, date) => {
-        const quarter = getQuarter(new Date(date));
-        acc[quarter] = (acc[quarter] || 0) + 1;
-        return acc;
-      }, {});
-
-      for (const [quarterStr, requestedDays] of Object.entries(
-        requestedLeaveByQuarter
-      )) {
-        const quarter = parseInt(quarterStr, 10); // Parse quarter string to number
-        const quarterAllocation = leaveConfig.quarters.find(
-          (q) => q.quarter === quarter
-        );
-        if (!quarterAllocation) {
-          return {
-            valid: false,
-            message: `No leave allocation found for Quarter ${quarter}.`,
-          };
-        }
-
-        const usedInQuarter = await this.getUsedLeaveDays(
-          user._id,
-          leaveType,
-          quarter
-        );
-        const availableInQuarter = quarterAllocation.total - usedInQuarter;
-        console.log(
-          quarterAllocation,
-          '-',
-          usedInQuarter,
-          'quarter:',
-          quarter,
-          'leaveType:',
-          leaveType
-        );
-
-        if (requestedDays > availableInQuarter) {
-          return {
-            valid: false,
-            message: `Exceeds Q${quarter} ${leaveType.replace(/([A-Z])/g, ' $1').trim()} allocation (${availableInQuarter} days remaining).`,
-          };
-        }
-      }
-      return { valid: true };
-    }
-
-    // Handle non-quarterly leaves (marriage, bereavement, birthday, etc.)
-    if (leaveConfig.total !== undefined) {
-      const totalUsed = await this.getUsedLeaveDays(user._id, leaveType);
-      if (totalUsed + requestedDates.length > leaveConfig.total) {
-        return {
-          valid: false,
-          message: `Exceeds total ${leaveType.replace(/([A-Z])/g, ' $1').trim()} allocation (${
-            leaveConfig.total - totalUsed
-          } days remaining).`,
-        };
-      }
-      return { valid: true };
-    }
-
-    // If leave type doesn't have quarters or a total, consider it invalid
-    return {
-      valid: false,
-      message: `Leave type "${leaveType}" has an invalid configuration.`,
-    };
-  }
-
   /**
    * Get all Leave (excluding soft-deleted ones).
    * @returns {Promise<Leave[]>} - List of all non-deleted Leaves, sorted by date.
    */
   async getAllLeave() {
-    const leaves = await LeaveApplication.find({ isDeleted: { $ne: true } })
+    const leaves = await LeaveApplication.find()
       .sort({
         createdAt: -1,
       })
@@ -492,7 +53,7 @@ class leaveService {
     const result = await LeaveApplication.find({ userId: id })
       .sort({ createdAt: -1 })
       .populate('userId');
-    if (!result || result.isDeleted) {
+    if (!result) {
       throw new ApiError(httpStatus.NOT_FOUND, 'No Leave for the given user');
     }
     return result;
@@ -520,7 +81,7 @@ class leaveService {
     }
 
     // Allow only 'pending' or 'rejected' to be updated
-    if (!['pending', 'rejected'].includes(oldLeave.status)) {
+    if (!['pending', 'auto-rejected'].includes(oldLeave.status)) {
       throw new ApiError(
         httpStatus.CONFLICT,
         'Leave status cannot be modified in its current state.'
@@ -539,7 +100,6 @@ class leaveService {
 
         await Promise.all(
           leaveRecords.map(async (leave) => {
-            console.log(leave);
             await attendanceService.bulkCreateOrUpdateLeaveAttendance(
               leave.userId,
               leave._id,
@@ -550,7 +110,6 @@ class leaveService {
               userId: leave.userId,
               leaveTypeId: leave.leaveTypeId._id,
             });
-            console.log(empBalance, leave.leaveTypeId._id);
 
             if (empBalance) {
               const daysUsed = leave.dates?.length || leave.totalDays || 0;
@@ -560,7 +119,6 @@ class leaveService {
               empBalance.total =
                 (empBalance.accrued || 0) + (empBalance.carryForwarded || 0);
 
-                console.log(empBalance);
               await empBalance.save();
             }
           })
@@ -586,9 +144,11 @@ class leaveService {
     const userIds = leadUsers.map((user) => user._id.toString());
     userIds.push(id); // includes itself
 
-    const leaveEntries = await Leave.find({
+    const leaveEntries = await LeaveApplication.find({
       userId: { $in: userIds },
-    }).populate('userId');
+    })
+      .populate('userId')
+      .populate('leaveTypeId');
 
     return leaveEntries;
   }
@@ -717,24 +277,17 @@ class leaveService {
       }
 
       // ✅ 5. Marriage Leave Rule
+      const balance = await EmployeeLeaveBalance.findOne({
+        userId,
+        leaveTypeId: leaveType._id,
+      });
+
       if (leaveType.code === 'MARRIAGE') {
-        const usedMarriage = await LeaveApplication.findOne({
-          userId,
-          leaveTypeId,
-          status: { $in: ['approved', 'pending'] },
-        });
 
         const requestedDays =
           Math.ceil((lastDate - currentDate) / (1000 * 60 * 60 * 24)) + 1;
 
-        const quota = mapping?.quota ?? 5;
-
-        if (usedMarriage) {
-          return {
-            isValid: false,
-            reason: 'Marriage leave can only be taken once',
-          };
-        }
+        const quota = balance?.total - balance?.used || 5;
 
         if (requestedDays > quota) {
           return {
@@ -746,11 +299,10 @@ class leaveService {
 
       // ✅ 6. Leave Balance
       const currentYear = today.getFullYear();
-      const balance = await EmployeeLeaveBalance.findOne({
-        userId,
-        leaveTypeId: leaveType._id,
-        year: currentYear,
-      });
+      // const balance = await EmployeeLeaveBalance.findOne({
+      //   userId,
+      //   leaveTypeId: leaveType._id,
+      // });
 
       // Calculate pending leaves for this type
       const pendingLeaves = await LeaveApplication.find({
@@ -766,9 +318,10 @@ class leaveService {
 
       const { accrued = 0, used = 0, carryForwarded = 0 } = balance || {};
       const totalAvailable =
-        leaveType.code === 'UNPAID'
+        leaveType.code === 'LOP'
           ? Infinity
           : accrued + carryForwarded - (used + totalPendingDays);
+      console.log(totalAvailable);
 
       // ✅ 7. Month Start & End for Accrual
       const currentMonthStart = toISTMidnightUTC(
@@ -831,9 +384,9 @@ class leaveService {
         if (istDay === 0) {
           // addReason('Sunday', dateStr);
         } else if (existingLeaveDates.has(dateStr)) {
-          // addReason('Already applied leave', dateStr);
+          addReason('Already applied leave', dateStr);
         } else if (existingAttendanceDates.has(dateStr)) {
-          // addReason('Attendance already marked', dateStr);
+          addReason('Attendance already marked', dateStr);
         } else {
           const holiday = await Holiday.findOne({
             date: {
@@ -929,7 +482,7 @@ class leaveService {
       }
 
       // For unpaid leave, skip balance check
-      if (leaveType.code === 'UNPAID') {
+      if (leaveType.code === 'LOP') {
         return {
           isValid: true,
           dates: validDates,
@@ -1265,6 +818,7 @@ class leaveService {
         leaveReason: reason,
         dates: validationResult.dates,
         totalDays: validationResult.dates.length,
+        isUnpaid: leaveTypeDoc.code === 'LOP',
         status: 'pending',
         appliedAt: new Date(),
       });

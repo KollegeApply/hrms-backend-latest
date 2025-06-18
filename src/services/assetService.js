@@ -214,8 +214,12 @@ class AssetsService {
   async fetchAssetRequests() {
     try {
       const requests = await Assets.find({
-        status: 'return_requested',
-      }).populate('assignee', 'firstName lastName employeeId email');
+        status: {
+          $in: ['return_requested', 'return_approved', 'return_rejected'],
+        },
+      })
+        .sort({ createdAt: -1 })
+        .populate('assignee', 'firstName lastName employeeId email');
       logger.info('Pending asset requests fetched successfully:', requests);
       return requests;
     } catch (error) {

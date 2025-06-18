@@ -5,6 +5,7 @@ const ApiError = require('../utility/ApiError');
 const { default: httpStatus } = require('http-status');
 const LeaveApplication = require('../models/leaveApplicationModel');
 const LeavePolicyMapping = require('../models/leavePolicyMappingModel');
+const leaveApplicationModel = require('../models/leaveApplicationModel');
 
 class EmployeeLeaveBalanceService {
   // Get all leave balances for an employee for a year
@@ -48,44 +49,61 @@ class EmployeeLeaveBalanceService {
       const hireYear = hireDate.getFullYear();
       const hireMonth = hireDate.getMonth(); // 0-indexed
 
-      const response = filteredMappings.map((mapping) => {
-        const leaveType = mapping.leaveTypeId;
-        const typeId = String(leaveType._id);
-        const balance = balanceMap.get(typeId);
+      const response = await Promise.all(
+        filteredMappings
+          .filter((mapping) => mapping.leaveTypeId.code !== 'LOP')
+          .map(async (mapping) => {
+            const leaveType = mapping.leaveTypeId;
+            const typeId = String(leaveType._id);
+            const balance = balanceMap.get(typeId);
 
-        // Calculate how many months the employee has worked in this year
-        const remainingMonths = (() => {
-          if (hireYear < currentYear) return 12;
-          if (hireYear === currentYear) return 12 - hireMonth;
-          return 0;
-        })();
+            // Calculate how many months the employee has worked in this year
+            const remainingMonths = (() => {
+              if (hireYear < currentYear) return 12;
+              if (hireYear === currentYear) return 12 - hireMonth;
+              return 0;
+            })();
 
-        let accrued = 0;
-        if (user.status === 'onroll') {
-          accrued = mapping.accrualType === 'monthly'
-            ? remainingMonths * mapping.accrualPerMonth
-            : mapping.quota;
-        } else {
-          accrued = balance?.total;
-        }
+            let accrued = 0;
+            if (user.status === 'onroll') {
+              accrued =
+                mapping.accrualType === 'monthly'
+                  ? remainingMonths * mapping.accrualPerMonth
+                  : mapping.quota;
+            } else {
+              accrued = balance?.total;
+            }
 
-        const carryForwarded = balance?.carryForwarded || 0;
-        const used = balance?.used || 0;
+            const pendingLeaves = await leaveApplicationModel.find({
+              userId: employeeId,
+              leaveTypeId: leaveType._id,
+              status: 'pending',
+              isDeleted: false,
+            });
+            const pendingDays = pendingLeaves.reduce((acc, leave) => {
+              // Use your field for total days in a leave application (e.g., leave.totalDays)
+              return acc + (leave.totalDays || 0);
+            }, 0);
 
-        const totalProjected = Math.round(accrued + carryForwarded);
-        const available = balance?.total - used;
+            const carryForwarded = balance?.carryForwarded || 0;
+            const used = balance?.used || 0;
 
-        return {
-          leaveTypeId: {
-            _id: leaveType._id,
-            name: leaveType.name,
-            code: leaveType.code,
-          },
-          total: totalProjected,
-          used,
-          available: available < 0 ? 0 : available,
-        };
-      });
+            const totalProjected = Math.round(accrued + carryForwarded);
+            const available =
+              Math.round((balance?.total - used - pendingDays) * 100) / 100;
+
+            return {
+              leaveTypeId: {
+                _id: leaveType._id,
+                name: leaveType.name,
+                code: leaveType.code,
+              },
+              total: totalProjected,
+              used,
+              available: available < 0 ? 0 : available,
+            };
+          })
+      );
 
       return response;
     } catch (error) {

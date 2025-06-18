@@ -145,7 +145,7 @@ const acknowledgeAsset = catchAsync(async (req, res) => {
   if (!updatedAssignment) {
     return res.status(httpStatus.BAD_REQUEST).json({
       status: false,
-      message: "Asset acknowledgment failed.",
+      message: 'Asset acknowledgment failed.',
     });
   }
 
@@ -165,7 +165,9 @@ const acknowledgeAsset = catchAsync(async (req, res) => {
 
     const receiverEmails = [process.env.HR_EMAIL];
 
-    logger.info(`Sending asset acknowledgment email to HR for asset ${assetName}`);
+    logger.info(
+      `Sending asset acknowledgment email to HR for asset ${assetName}`
+    );
 
     Helper.sendEmail({
       receiverEmails,
@@ -183,11 +185,10 @@ const acknowledgeAsset = catchAsync(async (req, res) => {
   // 3. Send Response
   res.status(httpStatus.OK).json({
     status: true,
-    message: "Asset acknowledged successfully.",
+    message: 'Asset acknowledged successfully.',
     data: updatedAssignment,
   });
 });
-
 
 const rejectAsset = catchAsync(async (req, res) => {
   const { id } = req.params;
@@ -224,7 +225,10 @@ const rejectAsset = catchAsync(async (req, res) => {
       message: emailMessage,
       fromHR: true, // or false, depending on sender configuration
     }).catch((err) => {
-      logger.error(`Failed to send asset rejection email to ${employee.email}:`, err);
+      logger.error(
+        `Failed to send asset rejection email to ${employee.email}:`,
+        err
+      );
     });
   }
 
@@ -234,7 +238,6 @@ const rejectAsset = catchAsync(async (req, res) => {
     data: assetAssignment,
   });
 });
-
 
 const returnAsset = catchAsync(async (req, res) => {
   const { id } = req.params;
@@ -251,6 +254,42 @@ const returnAsset = catchAsync(async (req, res) => {
     validatedData.id,
     validatedData.userId
   );
+
+  if (!updatedAssignment) {
+    return res.status(httpStatus.BAD_REQUEST).json({
+      status: false,
+      message: 'Asset return request failed.',
+    });
+  }
+
+  const sendMail = req?.body?.sendMail === true;
+  if (sendMail && process.env.HRMS_FRONTEND_URL) {
+    const employee = await User.findById({ _id: userId });
+    const { assetName, assetId } = updatedAssignment;
+
+    const emailSubject = `Asset Return Request - ${assetName}`;
+    const emailMessage = Helper.getAssetReturnRequestEmail(
+      employee.firstName,
+      employee.employeeId,
+      assetName,
+      assetId,
+      process.env.HRMS_FRONTEND_URL
+    );
+
+    const receiverEmails = [process.env.HR_EMAIL];
+
+    Helper.sendEmail({
+      receiverEmails,
+      subject: emailSubject,
+      message: emailMessage,
+      fromHR: true,
+    }).catch((err) => {
+      logger.error(
+        `Failed to send asset return request email to ${employee.email}:`,
+        err
+      );
+    });
+  }
 
   // 3. Send Response
   res.status(httpStatus.OK).json({

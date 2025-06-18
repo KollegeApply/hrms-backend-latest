@@ -2,7 +2,6 @@ const httpStatus = require('http-status');
 const ApiError = require('../utility/ApiError');
 const User = require('../models/userModel');
 const Holiday = require('../models/holidayModel');
-const Leave = require('../models/leaveModel');
 const Attendance = require('../models/attendanceModel');
 const { default: mongoose } = require('mongoose');
 const leaveService = require('./leaveService');
@@ -13,6 +12,7 @@ const {
 const employeeLeaveBalanceModel = require('../models/employeeLeaveBalanceModel');
 const LeavePolicyMapping = require('../models/leavePolicyMappingModel');
 const leaveApplicationModel = require('../models/leaveApplicationModel');
+const { startOfYear } = require('date-fns');
 
 class StatsService {
   /**
@@ -21,17 +21,6 @@ class StatsService {
    * @param {String} params.userId - Employee ID
    * @returns {Object} - Monthly stats data
    */
-  async getQuarterRange(date = new Date()) {
-    const quarter = Math.ceil((date.getMonth() + 1) / 3);
-    const year = date.getFullYear();
-    const startMonth = (quarter - 1) * 3;
-    const endMonth = startMonth + 2;
-
-    const start = new Date(year, startMonth, 1);
-    const end = new Date(year, endMonth + 1, 0); // Last day of endMonth
-
-    return { start, end };
-  }
 
   async getMonthlyStats({ userId }) {
     const currentDate = new Date();
@@ -149,45 +138,6 @@ class StatsService {
     return daysInMonth - holidays.length - sundaysCount;
   }
 
-  calculateLeaveAvailability(user, currentDate, leavesTakenMap) {
-    const currentQuarter = Math.ceil((currentDate.getMonth() + 1) / 3);
-    const quarterlyLeaveTypes = ['annualLeave', 'casualSickLeave'];
-    const carryForwardType = 'carryForwardLeave';
-
-    // Initialize accumulator
-    const acc = {
-      currentQuarter,
-      leaveAllowed: {},
-      leavesTaken: {},
-      leavesAvailable: {},
-    };
-
-    // Handle quarterly leaves
-    quarterlyLeaveTypes.forEach((type) => {
-      const quarters = user.leaves?.[type]?.quarters || [];
-      const quarterlyAllocation =
-        quarters.find((q) => q.quarter === currentQuarter)?.total || 0;
-      const taken = leavesTakenMap[type] || 0;
-
-      acc.leaveAllowed[type] = quarterlyAllocation;
-      acc.leavesTaken[type] = taken;
-      acc.leavesAvailable[type] = Math.max(0, quarterlyAllocation - taken);
-    });
-
-    // Handle carryForwardLeave separately (no quarters)
-    const carryForwardTotal = user.leaves?.[carryForwardType]?.total || 0;
-    const carryForwardTaken = leavesTakenMap[carryForwardType] || 0;
-
-    acc.leaveAllowed[carryForwardType] = carryForwardTotal;
-    acc.leavesTaken[carryForwardType] = carryForwardTaken;
-    acc.leavesAvailable[carryForwardType] = Math.max(
-      0,
-      carryForwardTotal - carryForwardTaken
-    );
-
-    return acc;
-  }
-
   async calculateLossOfPay(userId, year, month, workingDaysElapsed, holidays) {
     const currentDate = new Date();
     const today = currentDate.getDate();
@@ -239,27 +189,6 @@ class StatsService {
     return sundays;
   }
 
-  // Helper method for pending leave loss days
-  async calculatePendingLeaveLoss(userId, startDate, endDate) {
-    const pendingLeaves = await Leave.find({
-      userId,
-      dates: { $gte: startDate, $lte: endDate },
-      status: { $in: ['pending', 'rejected'] },
-      isDeleted: false,
-    });
-
-    const pendingDays = new Set();
-    pendingLeaves.forEach((leave) => {
-      leave.dates.forEach((date) => {
-        if (date >= startDate && date <= endDate) {
-          pendingDays.add(date.toISOString().split('T')[0]);
-        }
-      });
-    });
-
-    return pendingDays.size;
-  }
-
   /**
    * Get Yearly Stats for an Employee
    * @param {Object} params - Parameters for yearly stats
@@ -273,94 +202,86 @@ class StatsService {
     const today = new Date();
     const currentYear = today.getFullYear();
 
-    // Leave cycle: Jan 1 to Dec 31
-    const startOfYear = new Date(currentYear, 0, 1);
+    // 1. Compute the three candidate start dates:
+    const yearStart = startOfYear(today);
+    const hireDate = user.hireDate ? new Date(user.hireDate) : yearStart;
+    const systemLaunch = new Date(SYSTEM_LAUNCH_YEAR, SYSTEM_START_MONTH, 1);
+
+    // 2. Effective start date is the latest of the three:
+    const effectiveStartDate = new Date(
+      Math.max(hireDate.getTime(), yearStart.getTime(), systemLaunch.getTime())
+    );
+
+    // 3. Year bounds for final queries:
     const endOfYear = new Date(currentYear, 11, 31);
 
-    // User's joining date
-    const joinDate = user.hireDate ? new Date(user.hireDate) : startOfYear;
-
-    // Determine effective start date
-    let effectiveStartDate = joinDate > startOfYear ? joinDate : startOfYear;
-
-    // Adjust for system launch year
-    if (currentYear === SYSTEM_LAUNCH_YEAR) {
-      effectiveStartDate =
-        effectiveStartDate > new Date(SYSTEM_LAUNCH_YEAR, SYSTEM_START_MONTH, 1)
-          ? effectiveStartDate
-          : new Date(SYSTEM_LAUNCH_YEAR, SYSTEM_START_MONTH, 1);
-    }
-
-    // Get all leave balances for the user
+    // 4. Load leave balances and policy mappings
     const leaveBalances = await employeeLeaveBalanceModel
       .find({ userId })
       .populate('leaveTypeId');
 
-    // Get policy mappings for total yearly leaves available projected
     const policyMappings = await LeavePolicyMapping.find({
       leavePolicyId: user.leavePolicyId,
     }).populate('leaveTypeId');
 
-    const hireMonth = effectiveStartDate.getMonth(); // 0-based (0 = Jan)
-    const monthsEligible = 12 - hireMonth;
+    // 5. Calculate “total yearly leaves available” (projected)
+    const hireMonth = effectiveStartDate.getMonth(); // 0-based
+    const monthsElig = 12 - hireMonth;
 
-    const totalYearlyLeavesAvailable = policyMappings.reduce(
-      (total, mapping) => {
-        if (mapping.accrualType === 'monthly' && user.status === 'onroll') {
-          return total + mapping.accrualPerMonth * monthsEligible;
-        }
-        return total + (mapping.quota || 0);
-      },
+    const totalYearlyLeavesAvailable = policyMappings.reduce((sum, mapping) => {
+      if (mapping.accrualType === 'monthly' && user.status === 'onroll') {
+        return sum + mapping.accrualPerMonth * monthsElig;
+      }
+      return sum + (mapping.quota || 0);
+    }, 0);
+
+    // 6. Find the user’s annual‐leave balance entry
+    const annualLeaveBalance = leaveBalances.find(
+      (bal) => bal.leaveTypeId?.code === 'ANNUAL'
+    );
+
+    // 7. Fetch ALL approved, **paid** leaves in the year (dates[]}):
+    const approvedLeaves = await leaveApplicationModel
+      .find({
+        userId,
+        status: 'approved',
+        isUnpaid: false,
+        isDeleted: false,
+        dates: { $elemMatch: { $gte: effectiveStartDate, $lte: endOfYear } },
+      })
+      .populate('leaveTypeId');
+
+    // 8. Sum up total days and annual leave days
+    const totalLeavesTaken = approvedLeaves.reduce(
+      (sum, leave) => sum + (leave.totalDays || 0),
       0
     );
 
-    // Get annual leave balance specifically
-    const annualLeaveBalance = leaveBalances.find(
-      (balance) => balance.leaveTypeId?.code === 'ANNUAL'
-    );
-
-    // Get all approved leaves for the year
-    const approvedLeaves = await leaveApplicationModel.find({
-      userId,
-      status: 'approved',
-      isDeleted: false,
-      dates: { $gte: effectiveStartDate, $lte: endOfYear },
-    });
-
-    // Populate leaveTypeId for each leave
-    const populatedLeaves = await Promise.all(
-      approvedLeaves.map((leave) => leave.populate('leaveTypeId'))
-    );
-
-    // Calculate total leaves taken
-    const totalLeavesTaken = populatedLeaves.reduce((total, leave) => {
-      return total + (leave.totalDays || 0);
-    }, 0);
-
-    // Calculate annual leaves used
-    const annualLeavesUsed = populatedLeaves
+    const annualLeavesUsed = approvedLeaves
       .filter((leave) => leave.leaveTypeId?.code === 'ANNUAL')
-      .reduce((total, leave) => total + (leave.totalDays || 0), 0);
+      .reduce((sum, leave) => sum + (leave.totalDays || 0), 0);
 
-    // Get holidays in the period
+    // 9. Count holidays in the period
     const holidays = await Holiday.find({
       date: { $gte: effectiveStartDate, $lte: today },
     });
 
+    // 10. Working days from effectiveStartDate → today (skips Sundays & holidays)
     const totalWorkingDaysToDate = await this.getWorkingDaysUntilDate(
       today,
       holidays,
       effectiveStartDate
     );
 
+    // 11. Attendance = number of “present” days in that span
     const attendances = await Attendance.find({
       user: userId,
       date: { $gte: effectiveStartDate, $lte: today },
-      status: { $in: ['present'] },
+      status: 'present',
     });
-
     const daysWorked = attendances.length;
 
+    // 12. Loss-of-Pay days = workingDays – (worked + leavesTaken)
     const lossOfPayDays = Math.max(
       0,
       totalWorkingDaysToDate - daysWorked - totalLeavesTaken
@@ -379,26 +300,20 @@ class StatsService {
 
   // Helper to calculate working days between two dates excluding Sundays and holidays
   async getWorkingDaysUntilDate(toDate, holidays = [], startDate = null) {
-    // Default startDate: Jan 1 of current year
+    // Default startDate: Jan 1 of toDate’s year
     const start = startDate || new Date(toDate.getFullYear(), 0, 1);
-    const end = toDate;
     let workingDays = 0;
 
-    // Convert holiday dates to strings for comparison
     const holidayDates = holidays.map((h) => new Date(h.date).toDateString());
 
     for (
       let date = new Date(start);
-      date <= end;
+      date <= toDate;
       date.setDate(date.getDate() + 1)
     ) {
-      console.log(date);
       const isSunday = date.getDay() === 0;
       const isHoliday = holidayDates.includes(date.toDateString());
-
-      if (!isSunday && !isHoliday) {
-        workingDays++;
-      }
+      if (!isSunday && !isHoliday) workingDays++;
     }
 
     return workingDays;

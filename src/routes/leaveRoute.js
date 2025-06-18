@@ -39,7 +39,6 @@ router.get(
 );
 
 // Leave CRUD (dynamic routes last)
-router.post('/', authenticateUser, leaveController?.createLeave);
 router.get('/', authenticateUser, leaveController?.getAllLeave);
 router.get('/:id', authenticateUser, leaveController?.getLeaveById);
 router.put('/:id', authenticateUser, leaveController?.updateLeave);

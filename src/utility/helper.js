@@ -518,6 +518,28 @@ class Helper {
   `;
   }
 
+  static getAssetReturnRequestEmail(firstName, employeeId, assetName, assetId, dashboardUrl) {
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #333;">Asset Return Request Notification</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">Hello Team,</p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          The following asset has been returned by the employee:
+        </p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          <strong>Employee Name:</strong> ${firstName}<br>
+          <strong>Employee ID:</strong> ${employeeId}<br>
+          <strong>Asset Name:</strong> ${assetName}<br>
+          <strong>Asset ID:</strong> ${assetId}
+        </p>
+      </div>
+    </div>
+    `;
+  }
+
   /**
    * Generates an email template for asset rejection notification.
    * @param {string} employeeName - The name of the employee.
