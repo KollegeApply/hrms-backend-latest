@@ -321,7 +321,6 @@ class leaveService {
         leaveType.code === 'LOP'
           ? Infinity
           : accrued + carryForwarded - (used + totalPendingDays);
-      console.log(totalAvailable);
 
       // ✅ 7. Month Start & End for Accrual
       const currentMonthStart = toISTMidnightUTC(
@@ -445,13 +444,9 @@ class leaveService {
         if (availableAfterRequest < 0) {
           return {
             isValid: false,
-            reason: `Insufficient leave balance. Available: ${totalAvailable.toFixed(
-              2
-            )}, Requested: ${validDates.length}`,
+            reason: `Insufficient leave balance. Available: ${Math.floor(totalAvailable)}, Requested: ${validDates.length}`,
             rejectedReasons: [
-              `Insufficient leave balance. Available: ${totalAvailable.toFixed(
-                2
-              )}, Requested: ${validDates.length}`,
+              `Insufficient leave balance. Available: ${Math.floor(totalAvailable)}, Requested: ${validDates.length}`,
             ],
             dates: validDates,
           };
@@ -496,7 +491,7 @@ class leaveService {
       if (availableAfterRequest < 0) {
         return {
           isValid: false,
-          reason: `Insufficient leave balance. Available: ${totalAvailable.toFixed(2)}, Requested: ${totalRequestedDays}`,
+          reason: `Insufficient leave balance. Available: ${Math.floor(totalAvailable)}, Requested: ${totalRequestedDays}`,
           rejectedReasons: groupedRejectedReasons,
         };
       }

@@ -100,7 +100,7 @@ class EmployeeLeaveBalanceService {
               },
               total: totalProjected,
               used,
-              available: available < 0 ? 0 : available,
+              available: available < 0 ? 0 : Math.floor(available),
             };
           })
       );

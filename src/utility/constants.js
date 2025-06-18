@@ -50,6 +50,7 @@ const MAIL_PASS = process.env.SMTP_PASS;
 const HR_EMAIL = process.env.HR_EMAIL;
 const HR_MAIL_USER = process.env.HR_SMTP_USER;
 const HR_MAIL_PASS = process.env.HR_SMTP_PASS;
+const IT_EMAIL = process.env.IT_EMAIL;
 
 const OTP_EXPIRY_MINUTES = 10;
 

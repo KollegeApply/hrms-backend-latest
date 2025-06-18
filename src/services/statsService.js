@@ -226,7 +226,7 @@ class StatsService {
 
     // 5. Calculate “total yearly leaves available” (projected)
     const hireMonth = effectiveStartDate.getMonth(); // 0-based
-    const monthsElig = 12 - hireMonth;
+    const monthsElig = 12 - hireMonth + 1;
 
     const totalYearlyLeavesAvailable = policyMappings.reduce((sum, mapping) => {
       if (mapping.accrualType === 'monthly' && user.status === 'onroll') {

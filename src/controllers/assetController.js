@@ -163,7 +163,7 @@ const acknowledgeAsset = catchAsync(async (req, res) => {
       process.env.HRMS_FRONTEND_URL
     );
 
-    const receiverEmails = [process.env.HR_EMAIL];
+    const receiverEmails = [process.env.HR_EMAIL, process.env.IT_EMAIL];
 
     logger.info(
       `Sending asset acknowledgment email to HR for asset ${assetName}`
@@ -217,7 +217,7 @@ const rejectAsset = catchAsync(async (req, res) => {
       process.env.HRMS_FRONTEND_URL
     );
 
-    const receiverEmails = [process.env.HR_EMAIL];
+    const receiverEmails = [process.env.HR_EMAIL, process.env.IT_EMAIL];
 
     Helper.sendEmail({
       receiverEmails,
@@ -276,7 +276,7 @@ const returnAsset = catchAsync(async (req, res) => {
       process.env.HRMS_FRONTEND_URL
     );
 
-    const receiverEmails = [process.env.HR_EMAIL];
+    const receiverEmails = [process.env.HR_EMAIL, process.env.IT_EMAIL];
 
     Helper.sendEmail({
       receiverEmails,
