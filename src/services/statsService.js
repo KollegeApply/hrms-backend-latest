@@ -225,8 +225,8 @@ class StatsService {
     }).populate('leaveTypeId');
 
     // 5. Calculate “total yearly leaves available” (projected)
-    const hireMonth = effectiveStartDate.getMonth(); // 0-based
-    const monthsElig = 12 - hireMonth + 1;
+    const hireMonth = hireDate?.getMonth(); // 0-based
+    const monthsElig = 12 - hireMonth;
 
     const totalYearlyLeavesAvailable = policyMappings.reduce((sum, mapping) => {
       if (mapping.accrualType === 'monthly' && user.status === 'onroll') {
@@ -234,6 +234,7 @@ class StatsService {
       }
       return sum + (mapping.quota || 0);
     }, 0);
+
 
     // 6. Find the user’s annual‐leave balance entry
     const annualLeaveBalance = leaveBalances.find(
@@ -290,7 +291,7 @@ class StatsService {
     return {
       totalYearlyLeavesAvailable: Math.round(totalYearlyLeavesAvailable),
       totalAnnualLeaveAllowed: annualLeaveBalance
-        ? Math.round(annualLeaveBalance.total)
+        ? Math.floor(annualLeaveBalance.total)
         : 0,
       totalYearlyLeavesTaken: Math.round(totalLeavesTaken),
       totalAnnualLeavesUsed: Math.round(annualLeavesUsed),

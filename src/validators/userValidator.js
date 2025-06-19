@@ -13,56 +13,6 @@ const addressSchema = Joi.object({
   country: Joi.string().trim().optional().allow('', null),
 });
 
-const leavesSchema = Joi.object({
-  annualLeave: Joi.object({
-    // For On-Roll Employees
-    total: Joi.number().optional(), // Total annual leave for the year
-    available: Joi.number().optional(), // Available annual leave
-    quarters: Joi.array()
-      .items(
-        Joi.object({
-          quarter: Joi.number().valid(1, 2, 3, 4).required(), // Quarter number (1-4)
-          available: Joi.number().optional(), // Available leave at the start of the quarter
-          used: Joi.number().optional(), // Leave used in the quarter
-        })
-      )
-      .optional(),
-  }).optional(),
-  casualSickLeave: Joi.object({
-    // For On-Roll Employees
-    total: Joi.number().optional(),
-    available: Joi.number().optional(),
-    quarters: Joi.array()
-      .items(
-        Joi.object({
-          quarter: Joi.number().valid(1, 2, 3, 4).required(),
-          available: Joi.number().optional(),
-          used: Joi.number().optional(),
-        })
-      )
-      .optional(),
-  }).optional(),
-  bereavementLeave: Joi.object({
-    // No quarterly tracking, just total
-    total: Joi.number().optional(),
-    available: Joi.number().optional(),
-  }).optional(),
-  marriageLeave: Joi.object({
-    total: Joi.number().optional(),
-    available: Joi.number().optional(),
-  }).optional(),
-  birthdayLeave: Joi.object({
-    total: Joi.number().optional(),
-    available: Joi.number().optional(),
-  }).optional(),
-  carryForwardLeave: Joi.object({
-    total: Joi.number().optional(),
-    used: Joi.number().optional(),
-  }).optional(),
-  perMonth: Joi.number().optional(),
-  total: Joi.number().optional(),
-});
-
 // Schema for validating MongoDB ObjectIds in parameters
 const mongoIdSchema = Joi.object({
   id: Joi.string()
@@ -105,7 +55,6 @@ const createUserSchema = Joi.object({
   hireDate: Joi.date().iso().optional().allow(null), // Expect ISO format (YYYY-MM-DD)
   phoneNumber: Joi.string().trim().optional().allow('', null),
   address: addressSchema.optional(),
-  leaves: leavesSchema.optional(),
   teamLeadId: Joi.string()
     .trim()
     .allow('', null)
@@ -337,7 +286,6 @@ const getUserHistorySchema = Joi.object({
 module.exports = {
   createUserSchema,
   updateUserSchema,
-  leavesSchema,
   loginSchema,
   mongoIdSchema,
   getAllUsersSchema,
