@@ -129,7 +129,6 @@ const runYearEndLeaveReset = async () => {
 if (require.main === module) {
   runYearEndLeaveReset()
     .then(() => {
-      console.log('Year-end leave reset completed.');
       process.exit(0);
     })
     .catch((err) => {

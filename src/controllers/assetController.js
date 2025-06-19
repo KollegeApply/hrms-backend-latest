@@ -72,9 +72,9 @@ const fetchAssignedAssets = catchAsync(async (req, res) => {
   });
 
   const assignedAssetsResult = await assetsService?.fetchAssignedAssets(
-    validatedQuery.page,
-    validatedQuery.limit,
-    validatedQuery.search
+    validatedQuery?.page,
+    validatedQuery?.limit,
+    validatedQuery?.search
   );
 
   res.status(httpStatus.OK).json({

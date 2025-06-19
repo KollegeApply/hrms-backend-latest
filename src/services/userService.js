@@ -525,7 +525,6 @@ class UserService {
   async deleteUser(id) {
     logger.info(`Attempting to soft delete user with ID: ${id}`);
     const result1 = await User.findById(id);
-    console.log(result1);
     if (result1.isDeleted) {
       return false;
     }
@@ -567,10 +566,6 @@ class UserService {
       logger.warn(`User is terminated or absconded or resigned`);
       return null;
     }
-
-    // Compare provided password with the stored hash
-    // console.log('Plain password:', password);
-    // console.log('Hashed password in DB:', user.password);
 
     const isPasswordMatch = await bcrypt.compare(password, user?.password);
 
@@ -889,7 +884,6 @@ class UserService {
       });
 
       if (usersToInsert.length === 0) {
-        console.log(`${activity} No new users to insert after DB check.`);
         return {
           status: true,
           code: 200,
@@ -941,9 +935,7 @@ class UserService {
           const result = await User.insertMany(usersReadyForInsert, {
             ordered: false,
           });
-          // console.log(result);
           createdCount = result?.length;
-          console.log(`${activity} Inserted ${createdCount} users.`);
 
           for (const user of result) {
             // await sendUserWelcomeEmail(user); // customize this function as needed
@@ -1026,7 +1018,6 @@ class UserService {
         .sort({ actionAt: -1 }) // Sort by most recent changes first
         .lean();
 
-      console.log('history-record', historyRecords);
 
       return {
         status: true,

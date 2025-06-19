@@ -168,7 +168,6 @@ const deleteLeave = catchAsync(async (req, res) => {
     .populate('subTeamLeadId', 'email');
 
   const sendMail = req?.query?.sendMail === 'true';
-  console.log(sendMail);
   if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
     logger.info(`Sending revoke email to ${user?.teamLeadId?.email}`);
 
@@ -242,18 +241,15 @@ const applyForLeave = catchAsync(async (req, res) => {
       .populate('subTeamLeadId', 'email');
 
     const leaveType = await leaveTypeModel
-      .findById(result.data.leaveTypeId)
+      .findById(result?.data?.leaveTypeId)
       .select('name');
-    const from = result.data.dates[0];
-    const to = result.data.dates[result.data.dates.length - 1];
-    const leaveReason = result.data.leaveReason;
+    const from = result?.data?.dates[0];
+    const to = result?.data?.dates[result?.data?.dates?.length - 1];
+    const leaveReason = result?.data?.leaveReason;
 
     const sendMail = req?.body?.sendMail === true;
     if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
       logger.info(`Sending leave email to ${user?.teamLeadId}`);
-      console.log(
-        `Sending leave email to ${user?.teamLeadId?.email} and ${user?.subTeamLeadId?.email}`
-      );
       Helper.sendEmail({
         receiverEmails: [
           HR_EMAIL,

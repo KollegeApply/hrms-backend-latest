@@ -69,7 +69,6 @@ const createUser = catchAsync(async (req, res) => {
 });
 
 const getAllUsers = catchAsync(async (req, res) => {
-  console.log(req?.query?.role);
   // 1. Validate query parameters
   const validatedQuery = await userValidator?.getAllUsersSchema?.validateAsync(
     req?.query
@@ -78,7 +77,6 @@ const getAllUsers = catchAsync(async (req, res) => {
   // Aceess current user id
   const currentUser = req?.user;
 
-  // console.log('Current User ID:', currentUser);
 
   // 2. Call service to get users
   const result = await userService?.getAllUsers(validatedQuery, currentUser); // Service handles pagination logic
@@ -308,7 +306,6 @@ const bulkUpload = async (req, res) => {
     const usersFile = req?.files?.[0];
 
     if (!usersFile) {
-      console.log(`${activity} File is required.`);
       return res?.status(400).send({
         status: false,
         message: 'CSV file is required.',
@@ -317,7 +314,6 @@ const bulkUpload = async (req, res) => {
     }
 
     if (!CSV_TYPES.includes(usersFile?.mimetype)) {
-      console.log(`${activity} Invalid file type: ${usersFile?.mimetype}`);
       return res?.status(400)?.send({
         status: false,
         message: 'Invalid file type. Please upload a valid CSV file.',
@@ -333,7 +329,6 @@ const bulkUpload = async (req, res) => {
       isErrorForUser = false,
     } = await userService.bulkUpload(usersFile, activity);
 
-    // console.log("data is fsbkueirsufb:", data);
 
     // Send response back
     return res?.status(code || 200).send({

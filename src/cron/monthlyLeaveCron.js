@@ -21,7 +21,6 @@ mongoose.connection.on('error', (err) => {
 const runMonthlyLeaveAccrual = async () => {
   logger.info('📅 Starting monthly leave accrual job...');
   try {
-    console.log('Running Monthly Leave Accrual Cron...');
 
     const mappings = await leavePolicyMappingModel.find({ accrualType: 'monthly' });
 
@@ -57,9 +56,6 @@ const runMonthlyLeaveAccrual = async () => {
       await employeeLeaveBalanceModel.bulkWrite(bulkOps);
     }
 
-    console.log(
-      `✅ Monthly accrual complete. Updated ${bulkOps.length} balances.`
-    );
     logger.info(
       `✅ Monthly accrual complete. Updated ${bulkOps.length} balances.`
     );
@@ -72,7 +68,6 @@ const runMonthlyLeaveAccrual = async () => {
 if (require.main === module) {
   runMonthlyLeaveAccrual()
     .then(() => {
-      console.log('Monthly leave accrual completed.');
       process.exit(0);
     })
     .catch((err) => {

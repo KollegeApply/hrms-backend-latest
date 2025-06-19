@@ -178,7 +178,6 @@ class leaveService {
           'Leave application is already deleted'
         );
       }
-      console.log(leaveApplication.userId._id.toString(), userId);
 
       // Check if user has permission to delete
       if (leaveApplication.userId._id.toString() !== userId) {
