@@ -455,7 +455,7 @@ class leaveService {
           isValid: true,
           autoReject: true,
           rejectedReasons: [
-            'Auto-rejected: Probation leave not allowed in first month. If you have a genuine reason, contact HR.',
+            'Auto-rejected: Probation leave not allowed in first month. If you have an emergency, contact HR.',
           ],
           dates: validDates,
         };
