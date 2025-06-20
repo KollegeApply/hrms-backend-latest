@@ -15,7 +15,7 @@ class EmployeeLeaveBalanceService {
 
       // 1. Get user with leave policy
       const user = await User.findById(employeeId).populate('leavePolicyId');
-      if (!user) throw new Error('User not found');
+      if (!user) throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
 
       // 2. Fetch policy mappings
       const policyMappings = await LeavePolicyMapping.find({
@@ -31,13 +31,20 @@ class EmployeeLeaveBalanceService {
       // 4. Create map for fast lookup of leave balance by leaveTypeId
       const balanceMap = new Map();
       balances.forEach((b) => {
-        const typeId = String(b.leaveTypeId._id || b.leaveTypeId);
+        // Handle cases where leaveTypeId might be null
+        if (!b.leaveTypeId) return;
+
+        // If leaveTypeId is populated, use _id, otherwise use the ID directly
+        const typeId = b.leaveTypeId._id
+          ? String(b.leaveTypeId._id)
+          : String(b.leaveTypeId);
         balanceMap.set(typeId, b);
       });
 
       // 5. Filter policy mappings based on employee status
       const filteredMappings = policyMappings.filter((mapping) => {
-        const code = mapping.leaveTypeId?.code;
+        if (!mapping.leaveTypeId) return false;
+        const code = mapping.leaveTypeId.code;
         if (!code) return false;
         return user.status === 'probation'
           ? code === 'PROBATION'
@@ -51,9 +58,14 @@ class EmployeeLeaveBalanceService {
 
       const response = await Promise.all(
         filteredMappings
-          .filter((mapping) => mapping.leaveTypeId.code !== 'LOP')
+          .filter(
+            (mapping) =>
+              mapping.leaveTypeId && mapping.leaveTypeId.code !== 'LOP'
+          )
           .map(async (mapping) => {
             const leaveType = mapping.leaveTypeId;
+            if (!leaveType) return null;
+
             const typeId = String(leaveType._id);
             const balance = balanceMap.get(typeId);
 
@@ -71,7 +83,7 @@ class EmployeeLeaveBalanceService {
                   ? remainingMonths * mapping.accrualPerMonth
                   : mapping.quota;
             } else {
-              accrued = balance?.total;
+              accrued = balance?.total || 0;
             }
 
             const pendingLeaves = await leaveApplicationModel.find({
@@ -81,7 +93,6 @@ class EmployeeLeaveBalanceService {
               isDeleted: false,
             });
             const pendingDays = pendingLeaves.reduce((acc, leave) => {
-              // Use your field for total days in a leave application (e.g., leave.totalDays)
               return acc + (leave.totalDays || 0);
             }, 0);
 
@@ -89,8 +100,9 @@ class EmployeeLeaveBalanceService {
             const used = balance?.used || 0;
 
             const totalProjected = Math.round(accrued + carryForwarded);
-            const available =
-              Math.round((balance?.total - used - pendingDays) * 100) / 100;
+            const available = Math.round(
+              (balance?.total || 0) - used - pendingDays
+            );
 
             return {
               leaveTypeId: {
@@ -105,7 +117,8 @@ class EmployeeLeaveBalanceService {
           })
       );
 
-      return response;
+      // Filter out null responses and return
+      return response.filter(Boolean);
     } catch (error) {
       console.error('Error in getBalancesForEmployee:', error);
       throw error;
