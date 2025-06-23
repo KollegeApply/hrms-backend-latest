@@ -7,7 +7,6 @@ const assignedAssetSchema = new Schema(
     assetId: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
     },
     assetName: {

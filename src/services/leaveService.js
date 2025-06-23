@@ -76,21 +76,20 @@ class leaveService {
     }
 
     // Allow status change from rejected to approved
-    if (oldLeave.status === 'approved') {
-      throw new ApiError(409, 'Cannot modify approved leaves');
-    }
+    // if (oldLeave.status === 'approved') {
+    //   throw new ApiError(409, 'Cannot modify approved leaves');
+    // }
 
-    // Allow only 'pending' or 'rejected' to be updated
-    if (!['pending', 'auto-rejected'].includes(oldLeave.status)) {
+    // Allow only 'pending', 'approved' or 'auto-rejected' to be updated
+    if (!['pending', 'auto-rejected', 'approved'].includes(oldLeave.status)) {
       throw new ApiError(
         httpStatus.CONFLICT,
         'Leave status cannot be modified in its current state.'
       );
     }
 
-    oldLeave.status = leaveData.status;
-
     if (leaveData.status === 'approved') {
+      oldLeave.status = leaveData.status;
       oldLeave.approvedBy = leaveData.edittorId;
 
       try {
@@ -100,33 +99,70 @@ class leaveService {
 
         await Promise.all(
           leaveRecords.map(async (leave) => {
+            // Fetch current balance
+            const empBalance = await EmployeeLeaveBalance.findOne({
+              userId: leave.userId,
+              leaveTypeId: leave.leaveTypeId._id,
+            });
+
+            const total =
+              (empBalance?.accrued || 0) + (empBalance?.carryForwarded || 0);
+            const used = empBalance?.used || 0;
+            const daysToAdd = leave.dates?.length || leave.totalDays || 0;
+
+            if (total - used < daysToAdd) {
+              throw new ApiError(
+                409,
+                `Cannot approve leave: Employee has insufficient leave balance. Available: ${total - used} days, Requested: ${daysToAdd} days.`
+              );
+            }
+
+            // Proceed with attendance creation
             await attendanceService.bulkCreateOrUpdateLeaveAttendance(
               leave.userId,
               leave._id,
               leave.dates
             );
 
-            const empBalance = await EmployeeLeaveBalance.findOne({
-              userId: leave.userId,
-              leaveTypeId: leave.leaveTypeId._id,
-            });
-
             if (empBalance) {
-              const daysUsed = leave.dates?.length || leave.totalDays || 0;
-
-              empBalance.used = (empBalance.used || 0) + daysUsed;
-
-              empBalance.total =
-                (empBalance.accrued || 0) + (empBalance.carryForwarded || 0);
-
+              empBalance.used = used + daysToAdd;
+              empBalance.total = total;
               await empBalance.save();
             }
           })
         );
       } catch (err) {
         console.error('Error updating attendance or leave balance total:', err);
+        throw err; // rethrow to prevent save on failure
       }
+    } else if (
+      oldLeave.status === 'approved' &&
+      leaveData.status === 'rejected'
+    ) {
+      oldLeave.status = leaveData.status;
+      // 1. Revert attendance
+      await attendanceService.bulkRevertLeaveAttendance(
+        oldLeave.userId,
+        oldLeave._id,
+        oldLeave.dates
+      );
+
+      // 2. Deduct leave from used
+      const empBalance = await EmployeeLeaveBalance.findOne({
+        userId: oldLeave.userId,
+        leaveTypeId: oldLeave.leaveTypeId,
+      });
+
+      if (empBalance) {
+        const daysUsed = oldLeave.dates?.length || oldLeave.totalDays || 0;
+        empBalance.used = Math.max((empBalance.used || 0) - daysUsed, 0); // avoid negative
+        await empBalance.save();
+      }
+
+      // 3. Set rejectedBy
+      oldLeave.rejectedBy = leaveData.edittorId;
     } else if (leaveData.status === 'rejected') {
+      oldLeave.status = leaveData.status;
       oldLeave.rejectedBy = leaveData.edittorId;
     }
 
@@ -147,6 +183,7 @@ class leaveService {
     const leaveEntries = await LeaveApplication.find({
       userId: { $in: userIds },
     })
+      .sort({ createdAt: -1 })
       .populate('userId')
       .populate('leaveTypeId');
 
@@ -272,25 +309,10 @@ class leaveService {
         }
       }
 
-      // ✅ 5. Marriage Leave Rule
       const balance = await EmployeeLeaveBalance.findOne({
         userId,
         leaveTypeId: leaveType._id,
       });
-
-      if (leaveType.code === 'MARRIAGE') {
-        const requestedDays =
-          Math.ceil((lastDate - currentDate) / (1000 * 60 * 60 * 24)) + 1;
-
-        const quota = balance?.total - balance?.used || 5;
-
-        if (requestedDays > quota) {
-          return {
-            isValid: false,
-            reason: 'Marriage leave cannot exceed 5 days',
-          };
-        }
-      }
 
       // ✅ 6. Leave Balance
       const currentYear = today.getFullYear();
@@ -424,6 +446,21 @@ class leaveService {
         }
       }
 
+      if (leaveType.code === 'MARRIAGE') {
+        const requestedDays = validDates.length;
+        const quota = balance?.total - balance?.used || 5;
+
+        if (requestedDays > quota) {
+          return {
+            isValid: false,
+            reason: `Marriage leave cannot exceed ${quota} days. Requested: ${requestedDays}`,
+            rejectedReasons: [
+              `Requested: ${requestedDays}, Available: ${quota}`,
+            ],
+          };
+        }
+      }
+
       // ✅ 11. Probation Check
 
       const hireDate = new Date(employee.hireDate);
@@ -462,6 +499,16 @@ class leaveService {
       const groupedRejectedReasons = Object.entries(reasonMap).map(
         ([reason, dates]) => `${reason}: ${dates.join(', ')}`
       );
+
+      // Reject if any already-applied leave exists in the requested range
+      if (reasonMap['Already applied leave']?.length > 0) {
+        return {
+          isValid: false,
+          reason:
+            'Some dates in the selected range have already been applied for.',
+          rejectedReasons: groupedRejectedReasons,
+        };
+      }
 
       if (totalRequestedDays === 0) {
         return {

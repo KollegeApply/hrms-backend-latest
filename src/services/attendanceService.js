@@ -419,6 +419,25 @@ const attendanceService = {
       };
     }
   },
+
+  async bulkRevertLeaveAttendance(userId, leaveId, leaveDates) {
+    if (!Array.isArray(leaveDates) || leaveDates.length === 0) return;
+
+    try {
+      const result = await Attendance.deleteMany({
+        user: userId,
+        leaveId: leaveId,
+        date: { $in: leaveDates.map((date) => new Date(date)) },
+      });
+
+      console.log(
+        `✅ Reverted ${result.deletedCount} leave attendance records for user ${userId}`
+      );
+    } catch (err) {
+      console.error('❌ Failed to revert leave attendance:', err);
+      throw err;
+    }
+  },
 };
 
 module.exports = attendanceService;

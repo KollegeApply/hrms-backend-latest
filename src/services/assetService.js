@@ -22,7 +22,10 @@ class AssetsService {
     } = assignmentData;
 
     // Validate the asset ID
-    const asset = await Assets.findOne({ assetId });
+    const asset = await Assets.findOne({
+      assetId: assetId,
+      status: { $nin: ['cancelled', 'not_acknowledged', 'returned'] },
+    });
     if (asset) {
       logger.error('Asset is already assigned', assetId);
       throw new Error('Asset is already assigned');

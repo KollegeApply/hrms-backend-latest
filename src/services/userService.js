@@ -411,7 +411,7 @@ class UserService {
 
           let carryForwarded = 0;
           if (mapping.leaveTypeId.code === 'ANNUAL') {
-            carryForwarded = unusedProbation;
+            carryForwarded = unusedProbation > 0 ? unusedProbation-1 : 0;
           }
 
           const accrued = accrualType === 'monthly' ? accrualPerMonth : quota;
