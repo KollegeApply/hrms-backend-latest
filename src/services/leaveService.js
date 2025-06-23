@@ -264,13 +264,10 @@ class leaveService {
       // ✅ 4. Birthday Leave Rule
       if (leaveType.code === 'BIRTHDAY') {
         const birthDate = new Date(employee.dateOfBirth);
-        if (
-          currentDate.getDate() !== birthDate.getDate() ||
-          currentDate.getMonth() !== birthDate.getMonth()
-        ) {
+        if (currentDate.getMonth() !== birthDate.getMonth()) {
           return {
             isValid: false,
-            reason: 'Birthday leave can only be taken on your birth date',
+            reason: 'Birthday leave can only be taken on your birthday month',
           };
         }
       }
@@ -282,7 +279,6 @@ class leaveService {
       });
 
       if (leaveType.code === 'MARRIAGE') {
-
         const requestedDays =
           Math.ceil((lastDate - currentDate) / (1000 * 60 * 60 * 24)) + 1;
 
