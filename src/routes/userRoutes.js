@@ -92,4 +92,7 @@ router.post('/forgot-password', userController?.forgotPassword); // Request OTP 
 // Update the handler for this route
 router.post('/reset-password', userController?.verifyOtp);
 
+
+router.get('/:id/history', authenticateUser, userController?.getUserHistory);
+
 module.exports = router;

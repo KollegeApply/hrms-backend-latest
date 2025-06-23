@@ -1,4 +1,3 @@
-// src/validators/userValidator.js
 const Joi = require('joi');
 const {
   VALID_USER_ROLES,
@@ -12,16 +11,6 @@ const addressSchema = Joi.object({
   state: Joi.string().trim().optional().allow('', null),
   zipCode: Joi.string().trim().optional().allow('', null),
   country: Joi.string().trim().optional().allow('', null),
-});
-
-const leavesSchema = Joi.object({
-  annualLeave: Joi.number().optional(),
-  bereavementLeaves: Joi.number().optional(),
-  birthdayLeave: Joi.number().optional(),
-  casualSickLeave: Joi.number().optional(),
-  marriageLeave: Joi.number().optional(),
-  total: Joi.number().optional(),
-  perMonth: Joi.number().optional(),
 });
 
 // Schema for validating MongoDB ObjectIds in parameters
@@ -66,7 +55,6 @@ const createUserSchema = Joi.object({
   hireDate: Joi.date().iso().optional().allow(null), // Expect ISO format (YYYY-MM-DD)
   phoneNumber: Joi.string().trim().optional().allow('', null),
   address: addressSchema.optional(),
-  leaves: leavesSchema.optional(),
   teamLeadId: Joi.string()
     .trim()
     .allow('', null)
@@ -83,6 +71,15 @@ const createUserSchema = Joi.object({
       'any.required': 'ID is required',
     })
     .optional(),
+  hrPocId: Joi.string()
+    .trim()
+    .allow('', null)
+    // .pattern(/^[0-9a-fA-F]{24}$/)
+    .messages({
+      'any.required': 'ID is required',
+    })
+    .optional(),
+
   role: Joi.string()
     .valid(...VALID_USER_ROLES)
     .optional()
@@ -119,6 +116,7 @@ const updateUserSchema = Joi.object({
   phoneNumber: Joi.string().trim().optional().allow('', null),
   teamLeadId: Joi.string().hex(),
   subTeamLeadId: Joi.string().hex().allow(null, ''),
+  hrPocId: Joi.string().hex().allow(null, ''),
 
   address: addressSchema.optional(),
   role: Joi.string()
@@ -277,10 +275,17 @@ const bulkCreateUserRowSchema = Joi.object({
     }),
 }).options({ stripUnknown: true });
 
+
+const getUserHistorySchema = Joi.object({
+  userId: Joi.string().trim().required().messages({
+    'string.empty': 'UserId is required',
+    'any.required': 'UserId is required',
+  }),
+}).options({ stripUnknown: true });
+
 module.exports = {
   createUserSchema,
   updateUserSchema,
-  leavesSchema,
   loginSchema,
   mongoIdSchema,
   getAllUsersSchema,
@@ -288,4 +293,5 @@ module.exports = {
   forgotPasswordSchema,
   verifyOtpSchema,
   bulkCreateUserRowSchema,
+  getUserHistorySchema
 };

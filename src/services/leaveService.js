@@ -1,4 +1,3 @@
-const Leave = require('../models/leaveModel');
 const Holiday = require('../models/holidayModel');
 const User = require('../models/userModel');
 const ApiError = require('../utility/ApiError');
@@ -6,6 +5,12 @@ const { default: httpStatus } = require('http-status');
 const attendanceService = require('./attendanceService');
 const Attendance = require('../models/attendanceModel');
 const { mongoose } = require('mongoose');
+const { format } = require('date-fns');
+const LeaveApplication = require('../models/leaveApplicationModel');
+const LeaveType = require('../models/leaveTypeModel');
+const LeavePolicy = require('../models/leavePolicyModel');
+const LeavePolicyMapping = require('../models/leavePolicyMappingModel');
+const EmployeeLeaveBalance = require('../models/employeeLeaveBalanceModel');
 
 class leaveService {
   /**
@@ -14,177 +19,21 @@ class leaveService {
    * @returns {Promise<Leave>} - The created Leave document.
    * @throws {ApiError} - If a Leave already exists on the given date.
    */
-  async createLeave(leaveData) {
-    const { from, to, leaveReason, userId, leaveType } = leaveData;
-
-    const startDate = new Date(from);
-    const endDate = new Date(to);
-
-    if (isNaN(startDate) || isNaN(endDate)) {
-      throw new ApiError(400, 'Invalid leave date(s).');
-    }
-
-    const userObjId = new mongoose.Types.ObjectId(userId);
-
-    // Generate full list of leave dates
-    const generateDateRange = (start, end) => {
-      const dates = [];
-      const current = new Date(start);
-      while (current <= end) {
-        const copy = new Date(current);
-        copy.setHours(0, 0, 0, 0);
-        dates.push(copy);
-        current.setDate(current.getDate() + 1);
-      }
-      return dates;
-    };
-
-    const leaveDates = generateDateRange(startDate, endDate);
-
-    // Batch fetch holidays, attendance, and existing leaves
-    const [holidays, existingLeaves, existingAttendance] = await Promise.all([
-      Holiday.find({
-        date: { $in: leaveDates },
-        isDeleted: false,
-      }),
-      Leave.find({
-        userId: userObjId,
-        dates: { $in: leaveDates },
-        status: { $in: ['approved', 'pending'] },
-        isDeleted: false,
-      }),
-      Attendance.find({
-        user: userObjId,
-        date: {
-          $gte: new Date(leaveDates[0]),
-          $lte: new Date(leaveDates[leaveDates.length - 1]),
-        },
-        status: { $in: ['present', 'leave_applied', 'wfh_applied'] },
-      }),
-    ]);
-
-    const holidayDates = new Set(holidays.map((h) => h.date.toDateString()));
-    const existingLeaveDates = new Set(
-      existingLeaves.flatMap((l) => l.dates.map((d) => d.toDateString()))
-    );
-    const attendanceDates = new Set(
-      existingAttendance.map((a) => a.date.toDateString())
-    );
-
-    const rejectedReasons = [];
-
-    const validLeaveDates = leaveDates.filter((date) => {
-      const dateStr = date.toDateString();
-
-      if (date.getDay() === 0) {
-        rejectedReasons.push({ date: dateStr, reason: 'Sunday' });
-        return false;
-      }
-
-      if (holidayDates.has(dateStr)) {
-        rejectedReasons.push({ date: dateStr, reason: 'Holiday' });
-        return false;
-      }
-
-      if (existingLeaveDates.has(dateStr)) {
-        rejectedReasons.push({
-          date: dateStr,
-          reason: 'Leave already applied/approved',
-        });
-        return false;
-      }
-
-      if (attendanceDates.has(dateStr)) {
-        rejectedReasons.push({
-          date: dateStr,
-          reason: 'Attendance already marked',
-        });
-        return false;
-      }
-
-      return true;
-    });
-
-    if (validLeaveDates.length === 0) {
-      const reasonMessages = rejectedReasons
-        .map((r) => `- ${r.date}: ${r.reason}`)
-        .join('<br>');
-
-      throw new ApiError(
-        400,
-        `No valid leave dates.<br>Reason:<br>${reasonMessages}`
-      );
-    }
-
-    // Fetch user only once
-    const user = await User.findById(userId);
-    if (!user) throw new ApiError(404, 'User not found.');
-
-    if (user.status === 'onroll') {
-      const totalAllowed = user?.leaves?.[leaveType] || 0;
-      const usedLeaves = await Leave.find({
-        isDeleted: false,
-        userId,
-        leaveType,
-        status: { $in: ['approved', 'pending'] },
-      });
-
-      const usedLeaveCount = usedLeaves.reduce((count, leave) => {
-        return count + (leave.dates?.length || 0);
-      }, 0);
-
-      if (usedLeaveCount + validLeaveDates.length > totalAllowed) {
-        throw new ApiError(409, 'Leave quota exceeded.');
-      }
-    }
-
-    if (user.status === 'probation') {
-      const hireDate = new Date(user.hireDate);
-      const now = new Date();
-      const monthsDiff =
-        (now.getFullYear() - hireDate.getFullYear()) * 12 +
-        now.getMonth() -
-        hireDate.getMonth();
-
-      if (monthsDiff < 1) {
-        throw new ApiError(
-          409,
-          'Cannot apply for leave within 1 month of hiring.'
-        );
-      }
-
-      const pastLeaves = await Leave.find({
-        isDeleted: false,
-        userId,
-        leaveType,
-      });
-
-      if (monthsDiff - 1 <= pastLeaves.length) {
-        throw new ApiError(409, 'You have exhausted your leave limit.');
-      }
-    }
-
-    // Save the new leave
-    const newLeave = new Leave({
-      userId,
-      leaveReason,
-      leaveType,
-      dates: validLeaveDates,
-    });
-
-    return await newLeave.save();
-  }
 
   /**
    * Get all Leave (excluding soft-deleted ones).
    * @returns {Promise<Leave[]>} - List of all non-deleted Leaves, sorted by date.
    */
   async getAllLeave() {
-    const leaves = await Leave.find({ isDeleted: { $ne: true } })
+    const leaves = await LeaveApplication.find()
       .sort({
         createdAt: -1,
       })
-      .populate('userId');
+      .populate('userId')
+      .populate({
+        path: 'leaveTypeId',
+        select: 'name',
+      });
 
     if (!leaves || leaves?.length === 0) {
       return leaves;
@@ -201,10 +50,10 @@ class leaveService {
    * @throws {ApiError} - If no leave is found with the given ID.
    */
   async getLeaveById({ id }) {
-    const result = await Leave.find({ userId: id })
+    const result = await LeaveApplication.find({ userId: id })
       .sort({ createdAt: -1 })
       .populate('userId');
-    if (!result || result.isDeleted) {
+    if (!result) {
       throw new ApiError(httpStatus.NOT_FOUND, 'No Leave for the given user');
     }
     return result;
@@ -217,19 +66,25 @@ class leaveService {
    * @returns {Promise<Leave|null>}
    */
   async updateLeave(leaveData) {
-    const oldLeave = await Leave.findOne({
+    const oldLeave = await LeaveApplication.findOne({
       _id: leaveData.leaveId,
       isDeleted: false,
-    });
+    }).populate('leaveTypeId'); // To access code if needed later
 
     if (!oldLeave) {
       throw new ApiError(httpStatus.NOT_FOUND, 'Leave not found.');
     }
 
-    if (oldLeave.status !== 'pending') {
+    // Allow status change from rejected to approved
+    if (oldLeave.status === 'approved') {
+      throw new ApiError(409, 'Cannot modify approved leaves');
+    }
+
+    // Allow only 'pending' or 'rejected' to be updated
+    if (!['pending', 'auto-rejected'].includes(oldLeave.status)) {
       throw new ApiError(
         httpStatus.CONFLICT,
-        'Seems like status of leave has already been changed. Refresh page to see changes.'
+        'Leave status cannot be modified in its current state.'
       );
     }
 
@@ -239,26 +94,37 @@ class leaveService {
       oldLeave.approvedBy = leaveData.edittorId;
 
       try {
-        // Check if we have multiple leaves to process
-        if (Array.isArray(oldLeave.dates) && oldLeave.dates.length > 0) {
-          // This will handle multiple leave records
-          const leaveRecords = Array.isArray(leaveData.leaves)
-            ? leaveData.leaves
-            : [oldLeave];
+        const leaveRecords = Array.isArray(leaveData.leaves)
+          ? leaveData.leaves
+          : [oldLeave];
 
-          // Use Promise.all to handle multiple records in parallel
-          await Promise.all(
-            leaveRecords.map(async (leave) => {
-              await attendanceService.bulkCreateOrUpdateLeaveAttendance(
-                leave.userId,
-                leave._id,
-                leave.dates
-              );
-            })
-          );
-        }
+        await Promise.all(
+          leaveRecords.map(async (leave) => {
+            await attendanceService.bulkCreateOrUpdateLeaveAttendance(
+              leave.userId,
+              leave._id,
+              leave.dates
+            );
+
+            const empBalance = await EmployeeLeaveBalance.findOne({
+              userId: leave.userId,
+              leaveTypeId: leave.leaveTypeId._id,
+            });
+
+            if (empBalance) {
+              const daysUsed = leave.dates?.length || leave.totalDays || 0;
+
+              empBalance.used = (empBalance.used || 0) + daysUsed;
+
+              empBalance.total =
+                (empBalance.accrued || 0) + (empBalance.carryForwarded || 0);
+
+              await empBalance.save();
+            }
+          })
+        );
       } catch (err) {
-        console.error('Error marking bulk attendance:', err);
+        console.error('Error updating attendance or leave balance total:', err);
       }
     } else if (leaveData.status === 'rejected') {
       oldLeave.rejectedBy = leaveData.edittorId;
@@ -278,73 +144,709 @@ class leaveService {
     const userIds = leadUsers.map((user) => user._id.toString());
     userIds.push(id); // includes itself
 
-    const leaveEntries = await Leave.find({
+    const leaveEntries = await LeaveApplication.find({
       userId: { $in: userIds },
-    }).populate('userId');
+    })
+      .populate('userId')
+      .populate('leaveTypeId');
 
     return leaveEntries;
   }
 
   /**
-   * Soft delete a Leave by its ID.
-   * @param {Object} params - Object containing the leave ID.
+   * Soft delete a Leave Application by its ID.
+   * @param {Object} params - Object containing the leave ID and user ID.
    * @param {string} params.id - The MongoDB ObjectId of the leave to delete.
-   * @returns {Promise<Leave>} - The updated leave with isDeleted set to true.
-   * @throws {ApiError} - If the leave doesn't exist or is already deleted.
+   * @param {string} params.userId - The ID of the user requesting deletion.
+   * @returns {Promise<LeaveApplication>} - The updated leave application with isDeleted set to true.
+   * @throws {ApiError} - If the leave doesn't exist, is already deleted, or user doesn't have permission.
    */
-  async deleteLeave({ id }) {
+  async deleteLeave({ id, userId }) {
     try {
-      const result = await Leave.findById(id);
+      // Get the leave application with populated fields
+      const leaveApplication = await LeaveApplication.findById(id)
+        .populate('leaveTypeId')
+        .populate('userId', 'name email');
 
-      if (!result || result.isDeleted) {
-        throw new ApiError(
-          httpStatus.NOT_FOUND,
-          'Leave not found or already deleted'
-        );
+      if (!leaveApplication) {
+        throw new ApiError(httpStatus.NOT_FOUND, 'Leave application not found');
       }
 
-      if (result.status === 'rejected') {
+      if (leaveApplication.isDeleted) {
         throw new ApiError(
           httpStatus.CONFLICT,
-          'Cannot delete a rejected leave'
+          'Leave application is already deleted'
         );
       }
 
-      // Only delete attendance records if leave is approved
-      if (result.status === 'approved') {
-        // Create an array of attendance deletion operations for the given dates
-        const attendanceOps = result.dates.map((date) => {
-          const startOfDay = new Date(date);
-          startOfDay.setHours(0, 0, 0, 0);
-          const endOfDay = new Date(date);
-          endOfDay.setHours(23, 59, 59, 999);
-
-          return {
-            deleteOne: {
-              filter: {
-                user: result.userId,
-                date: { $gte: startOfDay, $lte: endOfDay },
-                status: 'leave_applied',
-                leaveId: result._id,
-              },
-            },
-          };
-        });
-
-        // Perform bulk deletion of attendance records
-        await Attendance.bulkWrite(attendanceOps);
+      // Check if user has permission to delete
+      if (leaveApplication.userId._id.toString() !== userId) {
+        throw new ApiError(
+          httpStatus.FORBIDDEN,
+          'You do not have permission to delete this leave application'
+        );
       }
 
-      // Update the leave status to 'revoked'
-      result.status = 'revoked';
-      return await result.save();
+      // Check if leave can be deleted (only pending leaves can be deleted)
+      if (leaveApplication.status !== 'pending') {
+        throw new ApiError(
+          httpStatus.CONFLICT,
+          'Only pending leave applications can be deleted'
+        );
+      }
+
+      // Soft delete the leave application
+      leaveApplication.status = 'revoked';
+      leaveApplication.isDeleted = true;
+      await leaveApplication.save();
+
+      return leaveApplication;
     } catch (err) {
-      console.error('Error deleting leave:', err);
+      console.error('Error deleting leave application:', err);
       throw new ApiError(
         httpStatus.INTERNAL_SERVER_ERROR,
-        'Failed to delete leave'
+        err.message || 'Failed to delete leave application'
       );
     }
+  }
+
+  async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
+    try {
+      // ✅ 1. Helper to get UTC date at 18:30 (IST midnight)
+      const toISTMidnightUTC = (date) => {
+        const d = new Date(date);
+        d.setUTCHours(18, 30, 0, 0);
+        return new Date(d);
+      };
+
+      const today = toISTMidnightUTC(new Date());
+
+      const formatDateOnly = (date) => {
+        const istDate = new Date(date.getTime() + 5.5 * 60 * 60 * 1000);
+        return istDate.toISOString().split('T')[0];
+      };
+
+      // ✅ 2. Convert and Validate Range
+      const currentDate = toISTMidnightUTC(startDate);
+      const lastDate = toISTMidnightUTC(endDate);
+
+      if (!currentDate || !lastDate || currentDate > lastDate) {
+        return {
+          isValid: false,
+          reason: 'Invalid date range provided',
+          rejectedReasons: ['Start date or end date is invalid'],
+        };
+      }
+
+      // ✅ 3. Fetch User, Leave Type, and Policy Mapping
+      const employee = await User.findById(userId);
+      if (!employee || !employee.leavePolicyId) {
+        return { isValid: false, reason: 'User or leave policy not found' };
+      }
+
+      const leaveType = await LeaveType.findById(leaveTypeId);
+      if (!leaveType) {
+        return { isValid: false, reason: 'Invalid leave type' };
+      }
+
+      const mapping = await LeavePolicyMapping.findOne({
+        leavePolicyId: employee.leavePolicyId,
+        leaveTypeId: leaveType._id,
+      });
+
+      if (!mapping) {
+        return {
+          isValid: false,
+          reason: 'Leave type not configured in policy',
+        };
+      }
+
+      // ✅ 4. Birthday Leave Rule
+      if (leaveType.code === 'BIRTHDAY') {
+        const birthDate = new Date(employee.dateOfBirth);
+        if (currentDate.getMonth() !== birthDate.getMonth()) {
+          return {
+            isValid: false,
+            reason: 'Birthday leave can only be taken on your birthday month',
+          };
+        }
+      }
+
+      // ✅ 5. Marriage Leave Rule
+      const balance = await EmployeeLeaveBalance.findOne({
+        userId,
+        leaveTypeId: leaveType._id,
+      });
+
+      if (leaveType.code === 'MARRIAGE') {
+        const requestedDays =
+          Math.ceil((lastDate - currentDate) / (1000 * 60 * 60 * 24)) + 1;
+
+        const quota = balance?.total - balance?.used || 5;
+
+        if (requestedDays > quota) {
+          return {
+            isValid: false,
+            reason: 'Marriage leave cannot exceed 5 days',
+          };
+        }
+      }
+
+      // ✅ 6. Leave Balance
+      const currentYear = today.getFullYear();
+      // const balance = await EmployeeLeaveBalance.findOne({
+      //   userId,
+      //   leaveTypeId: leaveType._id,
+      // });
+
+      // Calculate pending leaves for this type
+      const pendingLeaves = await LeaveApplication.find({
+        userId,
+        leaveTypeId: leaveType._id,
+        status: 'pending',
+      });
+
+      let totalPendingDays = 0;
+      pendingLeaves.forEach((leave) => {
+        totalPendingDays += leave.totalDays;
+      });
+
+      const { accrued = 0, used = 0, carryForwarded = 0 } = balance || {};
+      const totalAvailable =
+        leaveType.code === 'LOP'
+          ? Infinity
+          : accrued + carryForwarded - (used + totalPendingDays);
+
+      // ✅ 7. Month Start & End for Accrual
+      const currentMonthStart = toISTMidnightUTC(
+        new Date(today.getFullYear(), today.getMonth(), 1)
+      );
+      const currentMonthEnd = toISTMidnightUTC(
+        new Date(today.getFullYear(), today.getMonth() + 1, 0)
+      );
+
+      // ✅ 8. Fetch Existing Leaves & Attendance
+      const [existingLeaves, existingAttendance] = await Promise.all([
+        LeaveApplication.find({
+          userId,
+          status: { $in: ['approved', 'pending'] },
+          dates: { $elemMatch: { $gte: startDate, $lte: endDate } },
+        }),
+        Attendance.find({
+          userId,
+          date: { $gte: currentDate, $lte: lastDate },
+        }),
+      ]);
+
+      const existingLeaveDates = new Set();
+      const existingAttendanceDates = new Set();
+
+      existingLeaves.forEach((leave) => {
+        leave.dates.forEach((date) => {
+          existingLeaveDates.add(formatDateOnly(date));
+        });
+      });
+
+      existingAttendance.forEach((att) => {
+        existingAttendanceDates.add(formatDateOnly(att.date));
+      });
+
+      // ✅ 9. Day-by-Day Date Validation
+      const validDates = [];
+      const reasonMap = {};
+
+      const addReason = (reason, dateStr) => {
+        if (!reasonMap[reason]) {
+          reasonMap[reason] = [];
+        }
+        reasonMap[reason].push(dateStr);
+      };
+      let pointer = new Date(currentDate);
+
+      // Allow future dates for annual and casual sick leaves
+      // const allowFutureDates = ['ANNUAL', 'CASUAL', 'PROBATION'].includes(
+      //   leaveType.code
+      // );
+
+      while (pointer <= lastDate) {
+        const dateStr = formatDateOnly(pointer);
+        const dateObj = toISTMidnightUTC(pointer);
+        const istDay = new Date(
+          dateObj.getTime() + 5.5 * 60 * 60 * 1000
+        ).getDay();
+
+        if (istDay === 0) {
+          // addReason('Sunday', dateStr);
+        } else if (existingLeaveDates.has(dateStr)) {
+          addReason('Already applied leave', dateStr);
+        } else if (existingAttendanceDates.has(dateStr)) {
+          addReason('Attendance already marked', dateStr);
+        } else {
+          const holiday = await Holiday.findOne({
+            date: {
+              $gte: dateObj,
+              $lt: new Date(dateObj.getTime() + 1000 * 60 * 60 * 24),
+            },
+          });
+
+          if (holiday) {
+            // addReason(`Holiday (${holiday.name})`, dateStr);
+          } else {
+            validDates.push(new Date(dateObj));
+          }
+        }
+
+        pointer.setDate(pointer.getDate() + 1);
+      }
+
+      // ✅ 10. Bereavement Leave Rule
+      if (leaveType.code === 'BEREAVEMENT') {
+        const usedBereavement = await this.getUsedBereavementDays(
+          userId,
+          currentYear
+        );
+        const totalRequested = validDates.length;
+        const quota = mapping?.quota ?? 3;
+
+        if (usedBereavement >= quota) {
+          return {
+            isValid: false,
+            reason:
+              'Annual bereavement leave quota (3 days) has been exhausted',
+          };
+        }
+
+        if (usedBereavement + totalRequested > 3) {
+          return {
+            isValid: false,
+            reason: `Only ${3 - usedBereavement} bereavement days remaining this year`,
+          };
+        }
+      }
+
+      // ✅ 11. Probation Check
+
+      const hireDate = new Date(employee.hireDate);
+      const isInFirstMonth =
+        currentDate.getFullYear() === hireDate.getFullYear() &&
+        currentDate.getMonth() === hireDate.getMonth();
+
+      const isProbationLeave = leaveType.code === 'PROBATION';
+
+      if (isInFirstMonth && isProbationLeave) {
+        const availableAfterRequest = totalAvailable - validDates.length;
+
+        if (availableAfterRequest < 0) {
+          return {
+            isValid: false,
+            reason: `Insufficient leave balance. Available: ${Math.floor(totalAvailable)}, Requested: ${validDates.length}`,
+            rejectedReasons: [
+              `Insufficient leave balance. Available: ${Math.floor(totalAvailable)}, Requested: ${validDates.length}`,
+            ],
+            dates: validDates,
+          };
+        }
+
+        return {
+          isValid: true,
+          autoReject: true,
+          rejectedReasons: [
+            'Auto-rejected: Probation leave not allowed in first month. If you have an emergency, contact HR.',
+          ],
+          dates: validDates,
+        };
+      }
+
+      // ✅ 12. Final Return
+      const totalRequestedDays = validDates.length;
+      const groupedRejectedReasons = Object.entries(reasonMap).map(
+        ([reason, dates]) => `${reason}: ${dates.join(', ')}`
+      );
+
+      if (totalRequestedDays === 0) {
+        return {
+          isValid: false,
+          reason: 'No valid leave dates found',
+          rejectedReasons: groupedRejectedReasons,
+        };
+      }
+
+      // For unpaid leave, skip balance check
+      if (leaveType.code === 'LOP') {
+        return {
+          isValid: true,
+          dates: validDates,
+          rejectedReasons: groupedRejectedReasons,
+        };
+      }
+
+      // Include current request in balance check
+      const availableAfterRequest = totalAvailable - totalRequestedDays;
+
+      if (availableAfterRequest < 0) {
+        return {
+          isValid: false,
+          reason: `Insufficient leave balance. Available: ${Math.floor(totalAvailable)}, Requested: ${totalRequestedDays}`,
+          rejectedReasons: groupedRejectedReasons,
+        };
+      }
+
+      return {
+        isValid: true,
+        dates: validDates,
+        rejectedReasons: groupedRejectedReasons,
+      };
+    } catch (error) {
+      console.error('Error in validateLeaveDates:', error);
+      return {
+        isValid: false,
+        reason: error.message || 'Error validating leave dates',
+      };
+    }
+  }
+
+  async getUsedBereavementDays(userId, year) {
+    const startOfYear = new Date(year, 0, 1);
+    const endOfYear = new Date(year, 11, 31, 23, 59, 59, 999);
+
+    const bereavementLeaves = await LeaveApplication.find({
+      userId,
+      leaveTypeId: await LeaveType.findOne({ code: 'BEREAVEMENT' }).select(
+        '_id'
+      ),
+      status: ['approved', 'pending'],
+      dates: {
+        $gte: startOfYear,
+        $lte: endOfYear,
+      },
+    });
+
+    return bereavementLeaves.reduce(
+      (total, leave) => total + leave.totalDays,
+      0
+    );
+  }
+
+  async getUsedProbationLeaves(userId) {
+    const probationLeaves = await LeaveApplication.find({
+      userId,
+      leaveTypeId: await LeaveType.findOne({ code: 'PROBATION' }).select('_id'),
+      status: { $in: ['approved', 'pending'] },
+    });
+
+    return probationLeaves.reduce((total, leave) => total + leave.totalDays, 0);
+  }
+
+  async calculateMonthlyLeaveBalance(user, leaveType) {
+    const mapping = await LeavePolicyMapping.findOne({
+      leavePolicyId: user.leavePolicyId,
+      leaveTypeId: leaveType,
+    });
+
+    if (!mapping) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Leave type not allowed for this policy'
+      );
+    }
+
+    // If no accrual type is specified or it's 'none', return the quota directly
+    if (!mapping.accrualType || mapping.accrualType === 'none') {
+      return mapping.quota;
+    }
+
+    // Validate accrualPerMonth
+    if (!mapping.accrualPerMonth || mapping.accrualPerMonth < 0) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Invalid accrual rate in leave policy'
+      );
+    }
+
+    // Get user's joining date
+    const joiningDate = new Date(user.joiningDate);
+    const currentDate = new Date();
+
+    // Calculate months between joining date and current date
+    const monthsDiff =
+      (currentDate.getFullYear() - joiningDate.getFullYear()) * 12 +
+      (currentDate.getMonth() - joiningDate.getMonth());
+
+    // For annual leave policy (1.33 leaves per month)
+    if (mapping.accrualType === 'yearly') {
+      // Calculate total accrued leaves (1.33 per month)
+      const accruedLeaves = (monthsDiff * 1.33).toFixed(2);
+
+      // Get used leaves for current year
+      const year = new Date().getFullYear();
+      const usedLeaves = await LeaveApplication.aggregate([
+        {
+          $match: {
+            userId: user._id,
+            leaveTypeId: leaveType,
+            status: { $in: ['approved', 'pending'] },
+            isDeleted: false,
+            dates: {
+              $gte: new Date(year, 0, 1),
+              $lt: new Date(year + 1, 0, 1),
+            },
+          },
+        },
+        {
+          $project: {
+            totalDays: 1,
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalUsed: { $sum: '$totalDays' },
+          },
+        },
+      ]);
+
+      const totalUsed = usedLeaves.length > 0 ? usedLeaves[0].totalUsed : 0;
+
+      // Calculate available balance
+      const availableBalance = Math.max(
+        0,
+        parseFloat(accruedLeaves) - totalUsed
+      );
+
+      // Round to 2 decimal places
+      return Math.round(availableBalance * 100) / 100;
+    }
+
+    // For monthly accrual
+    if (mapping.accrualType === 'monthly') {
+      const accruedLeaves = monthsDiff * mapping.accrualPerMonth;
+      const usedLeaves = await LeaveApplication.aggregate([
+        {
+          $match: {
+            userId: user._id,
+            leaveTypeId: leaveType,
+            status: { $in: ['approved', 'pending'] },
+            isDeleted: false,
+          },
+        },
+        {
+          $project: {
+            totalDays: 1,
+          },
+        },
+        {
+          $group: {
+            _id: null,
+            totalUsed: { $sum: '$totalDays' },
+          },
+        },
+      ]);
+
+      const totalUsed = usedLeaves.length > 0 ? usedLeaves[0].totalUsed : 0;
+      return Math.max(0, accruedLeaves - totalUsed);
+    }
+
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      'Invalid accrual type in leave policy'
+    );
+  }
+
+  async validateLeaveQuota(user, leaveType, requestedDates) {
+    const mapping = await LeavePolicyMapping.findOne({
+      leavePolicyId: user.leavePolicyId,
+      leaveTypeId: leaveType,
+    });
+
+    if (!mapping) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Leave type not allowed for this policy'
+      );
+    }
+
+    // Get all leaves for the current year
+    const year = new Date().getFullYear();
+    const usedLeaves = await LeaveApplication.aggregate([
+      {
+        $match: {
+          userId: user._id,
+          leaveTypeId: leaveType,
+          status: { $in: ['approved', 'pending'] },
+          isDeleted: false,
+          dates: {
+            $gte: new Date(year, 0, 1),
+            $lt: new Date(year + 1, 0, 1),
+          },
+        },
+      },
+      {
+        $project: {
+          totalDays: 1,
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalUsed: { $sum: '$totalDays' },
+        },
+      },
+    ]);
+
+    const totalUsed = usedLeaves.length > 0 ? usedLeaves[0].totalUsed : 0;
+    const requestedDays = requestedDates.length;
+
+    // Check if the request would exceed the yearly quota
+    if (totalUsed + requestedDays > mapping.quota) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `This request would exceed your yearly quota. Used: ${totalUsed}, Quota: ${mapping.quota}, Requested: ${requestedDays}`
+      );
+    }
+
+    return true;
+  }
+
+  async applyForLeave(userId, leaveData) {
+    try {
+      // Check if leaveData is provided
+      if (!leaveData) {
+        return {
+          status: false,
+          message: 'Leave data is required',
+        };
+      }
+
+      // Extract data from request body
+      const {
+        from: startDate,
+        to: endDate,
+        leaveType,
+        leaveReason: reason,
+      } = leaveData;
+
+      // Validate dates
+      if (!startDate || !endDate) {
+        return {
+          status: false,
+          message: 'Start date and end date are required',
+        };
+      }
+
+      // Validate leave type
+      if (!leaveType) {
+        return {
+          status: false,
+          message: 'Leave type is required',
+        };
+      }
+
+      // Get leave type ID
+      const leaveTypeDoc = await LeaveType.findOne({ _id: leaveType });
+      if (!leaveTypeDoc) {
+        return {
+          status: false,
+          message: 'Invalid leave type',
+        };
+      }
+
+      // Validate dates
+      const validationResult = await this.validateLeaveDates(
+        userId,
+        startDate,
+        endDate,
+        leaveType
+      );
+
+      if (!validationResult.isValid) {
+        return {
+          status: false,
+          message: validationResult.reason,
+          rejectedReasons: validationResult.rejectedReasons || [],
+        };
+      }
+
+      if (validationResult.autoReject) {
+        const autoRejectedLeave = new LeaveApplication({
+          userId,
+          leaveTypeId: leaveTypeDoc._id,
+          leaveReason: reason,
+          dates: validationResult.dates,
+          totalDays: 0,
+          status: 'auto-rejected',
+          rejectionReason: validationResult.autoRejectReason,
+          appliedOn: new Date(),
+        });
+
+        await autoRejectedLeave.save();
+
+        return {
+          status: false,
+          message: validationResult.autoRejectReason,
+          rejectedReasons: validationResult.rejectedReasons,
+          data: autoRejectedLeave,
+        };
+      }
+
+      // Ensure we have valid dates
+      if (
+        !validationResult.dates ||
+        !Array.isArray(validationResult.dates) ||
+        validationResult.dates.length === 0
+      ) {
+        return {
+          status: false,
+          message: 'No valid dates found for leave application',
+          rejectedReasons: validationResult.rejectedReasons || [],
+        };
+      }
+
+      // Create leave application
+      const leaveApplication = new LeaveApplication({
+        userId,
+        leaveTypeId: leaveTypeDoc._id,
+        leaveReason: reason,
+        dates: validationResult.dates,
+        totalDays: validationResult.dates.length,
+        isUnpaid: leaveTypeDoc.code === 'LOP',
+        status: 'pending',
+        appliedAt: new Date(),
+      });
+
+      await leaveApplication.save();
+
+      return {
+        status: true,
+        message: 'Leave application submitted successfully',
+        data: leaveApplication,
+      };
+    } catch (error) {
+      console.error('Error in applyForLeave:', error);
+      return {
+        status: false,
+        message: error.message || 'Error applying for leave',
+      };
+    }
+  }
+
+  async checkLeaveActionPermission(currentUser, leave) {
+    // Admin/HR can take action on any leave
+    if (currentUser.role === 'admin' || currentUser.role === 'hr') {
+      return true;
+    }
+
+    // Team leads can take action on their team members' leaves
+    if (currentUser.role === 'teamlead' || currentUser.role === 'subteamlead') {
+      const teamMember = await User.findById(leave.userId);
+      return (
+        teamMember &&
+        (teamMember.teamLeadId?.toString() === currentUser.id ||
+          teamMember.subTeamLeadId?.toString() === currentUser.id)
+      );
+    }
+
+    // Regular users can only revoke their own leaves
+    return currentUser.id === leave.userId.toString();
   }
 }
 
