@@ -10,24 +10,24 @@ class LeavePolicyService {
   async getAllLeaveTypes(userId) {
     try {
       const user = await User.findById(userId);
-  
+
       if (!user || !user.leavePolicyId) {
         throw new Error('User or leave policy not found');
       }
-  
+
       // Step 1: Get mappings for this user's leave policy
       const mappings = await LeavePolicyMapping.find({
         leavePolicyId: user.leavePolicyId,
       });
-  
+
       const leaveTypeIds = mappings.map((m) => m.leaveTypeId);
-  
+
       // Step 2: Return only leave types that are mapped
       const leaveTypes = await LeaveType.find({
         _id: { $in: leaveTypeIds },
         isDeleted: false,
       });
-  
+
       return leaveTypes;
     } catch (error) {
       console.error('Error in getAllLeaveTypes:', error);
