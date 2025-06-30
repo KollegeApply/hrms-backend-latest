@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const LeavePolicyMapping = require('../models/leavePolicyMappingModel');
 const EmployeeLeaveBalance = require('../models/employeeLeaveBalanceModel');
 const LeaveType = require('../models/leaveTypeModel');
+require('dotenv').config({ path: './.env.production' });
 
 const mongoUri = process.env.MONGO_URI;
 

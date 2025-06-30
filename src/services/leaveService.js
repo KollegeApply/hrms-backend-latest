@@ -189,7 +189,6 @@ class leaveService {
 
     return leaveEntries;
   }
-
   /**
    * Soft delete a Leave Application by its ID.
    * @param {Object} params - Object containing the leave ID and user ID.
