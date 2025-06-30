@@ -29,7 +29,7 @@ const attendanceSchema = new Schema(
     },
     leaveId: {
       type: Schema.Types.ObjectId,
-      ref: 'Leaves',
+      ref: 'LeaveApplication',
     },
     wfhId: {
       type: Schema.Types.ObjectId,

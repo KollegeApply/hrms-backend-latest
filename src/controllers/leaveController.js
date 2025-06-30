@@ -16,7 +16,11 @@ const getAllLeave = catchAsync(async (req, res) => {
   const currentUser = req.user;
   let leaves;
 
-  if (currentUser.role === 'admin' || currentUser.role === 'hr') {
+  if (
+    currentUser.role === 'admin' ||
+    currentUser.role === 'subadmin' ||
+    currentUser.role === 'hr'
+  ) {
     // Admin/HR can see all leaves
     leaves = await leaveService?.getAllLeave();
   } else if (
@@ -83,7 +87,6 @@ const updateLeave = catchAsync(async (req, res) => {
     .findById(updatedData?.leaveTypeId)
     .select('name');
 
-
   // Send email notification if status changed
   if (updatedData.status && updatedData.status !== 'pending') {
     const mailReciever = await User.findById(updatedData.userId);
@@ -130,7 +133,7 @@ const updateLeave = catchAsync(async (req, res) => {
                 mailReciever?.firstName,
                 'leave',
                 formattedLeaveDates,
-                leaveType?.name,
+                leaveType?.name
                 // updatedData?.leaveReason
               ),
       }).catch((err) =>

@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const logger = require('../config/logger');
 const leavePolicyMappingModel = require('../models/leavePolicyMappingModel');
 const employeeLeaveBalanceModel = require('../models/employeeLeaveBalanceModel');
+require('dotenv').config({ path: './.env.production' });
 
 const mongoUri = process.env.MONGO_URI;
 mongoose.connect(mongoUri, {

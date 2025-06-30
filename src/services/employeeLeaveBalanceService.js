@@ -99,7 +99,7 @@ class EmployeeLeaveBalanceService {
             const carryForwarded = balance?.carryForwarded || 0;
             const used = balance?.used || 0;
 
-            const totalProjected = Math.round(accrued + carryForwarded);
+            const totalProjected = Math.floor(accrued + carryForwarded);
             const available = Math.floor(
               (balance?.total || 0) - used - pendingDays
             );

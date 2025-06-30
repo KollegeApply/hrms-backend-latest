@@ -25,7 +25,6 @@ const EmployeeLeaveBalance = require('../models/employeeLeaveBalanceModel');
 
 // 1. Create Leave Policies, Types, and Mappings
 async function setupLeaveSystem() {
-  console.log('🚀 Running setupLeaveSystem...');
   const [onrollPolicy] = await LeavePolicy.create([
     { name: 'Onroll Policy', description: 'Policy for onroll employees' },
   ]);
@@ -143,8 +142,6 @@ async function setupLeaveSystem() {
     ...onrollMappings,
     ...probationMappings,
   ]);
-
-  console.log('✅ Leave system setup complete!');
 }
 
 // 2. Update Users with Leave Policies
@@ -259,7 +256,7 @@ async function updateUserLeaveSystem() {
   console.log('🎉 All users updated successfully');
 }
 
-// 3. Entry point: run both in sequence
+
 async function main() {
   try {
     await mongoose

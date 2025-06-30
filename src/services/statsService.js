@@ -142,11 +142,25 @@ class StatsService {
     const currentDate = new Date();
     const today = currentDate.getDate();
 
-    // Get all attendance records in current month
+    const user = await User.findById(userId);
+    if (!user || !user.hireDate) {
+      throw new Error('User or hire date not found');
+    }
+
+    const hireDate = new Date(user.hireDate);
+    const hireYear = hireDate.getFullYear();
+    const hireMonth = hireDate.getMonth();
+    const hireDay = hireDate.getDate();
+
+    // Determine the correct start day
+    const isHiredThisMonth = hireYear === year && hireMonth === month;
+
+    const startDay = isHiredThisMonth ? hireDay : 1;
+
     const attendances = await Attendance.find({
       user: userId,
       date: {
-        $gte: new Date(year, month, 1),
+        $gte: new Date(year, month, startDay),
         $lte: new Date(year, month, today),
       },
     });
@@ -161,7 +175,7 @@ class StatsService {
 
     let lopDays = 0;
 
-    for (let day = 1; day <= today; day++) {
+    for (let day = startDay; day < today; day++) {
       const date = new Date(year, month, day);
       const dayStr = date.toISOString().split('T')[0];
 
@@ -234,12 +248,16 @@ class StatsService {
       monthsElig = 12 - hireMonth;
     }
 
-    const totalYearlyLeavesAvailable = policyMappings.reduce((sum, mapping) => {
+    let totalYearlyLeavesAvailable = policyMappings.reduce((sum, mapping) => {
       if (mapping.accrualType === 'monthly' && user.status === 'onroll') {
-        return sum + mapping.accrualPerMonth * monthsElig;
+        return sum + Math.floor(mapping.accrualPerMonth * monthsElig);
       }
       return sum + (mapping.quota || 0);
     }, 0);
+
+    leaveBalances.forEach((bal) => {
+      totalYearlyLeavesAvailable += bal.carryForwarded || 0;
+    });
 
     // 6. Find the user’s annual‐leave balance entry
     const annualLeaveBalance = leaveBalances.find(
@@ -290,7 +308,7 @@ class StatsService {
     // 12. Loss-of-Pay days = workingDays – (worked + leavesTaken)
     const lossOfPayDays = Math.max(
       0,
-      totalWorkingDaysToDate - daysWorked - totalLeavesTaken
+      totalWorkingDaysToDate - daysWorked - totalLeavesTaken - 1
     );
 
     return {
