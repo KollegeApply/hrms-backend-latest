@@ -64,6 +64,10 @@ const userSchema = new Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
     },
+    hrPocId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
     address: {
       // Optional: More detailed address structure can be added
       street: String,
@@ -104,7 +108,10 @@ const userSchema = new Schema(
       type: Number,
       default: 6,
     },
-    leaves: {},
+    leavePolicyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'LeavePolicy',
+    },
     // Add other relevant HRMS fields as needed:
     // dateOfBirth: Date,
     // reportingManager: { type: Schema.Types.ObjectId, ref: 'User' },
