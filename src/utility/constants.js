@@ -5,6 +5,7 @@ const USER_ROLES = {
   EMPLOYEE: 'employee',
   TEAMLEAD: 'teamlead',
   SUBTEAMLEAD: 'subteamlead',
+  IT: 'IT',
 };
 
 const EMPLOYEE_STATUS = {
@@ -23,6 +24,17 @@ const LEAVETYPES = {
   birthdayLeave: 'Birthday Leave',
 };
 
+const ASSETS_STATUS = {
+  ASSIGNED: 'assigned',
+  ACKNOWLEDGED: 'acknowledged',
+  NOT_ACKNOWLEDGED: 'not_acknowledged',
+  RETURN_REQUESTED: 'return_requested',
+  RETURN_APPROVED: 'return_approved',
+  RETURN_REJECTED: 'return_rejected',
+  RETURNED: 'returned',
+  CANCELLED: 'cancelled',
+};
+
 const MAIL_HOST = 'smtp.gmail.com';
 const MAIL_PORT = 465;
 const MAIL_SECURE = true;
@@ -35,9 +47,10 @@ const MAIL_FROM_SUPPORT =
   process.env.SMTP_FROM_EMAIL_SUPPORT || 'noreply@yourcompany.com';
 const MAIL_USER = process.env.SMTP_USER;
 const MAIL_PASS = process.env.SMTP_PASS;
-const HR_EMAIL = 'hr@sportsdunia.com';
+const HR_EMAIL = process.env.HR_EMAIL;
 const HR_MAIL_USER = process.env.HR_SMTP_USER;
 const HR_MAIL_PASS = process.env.HR_SMTP_PASS;
+const IT_EMAIL = process.env.IT_EMAIL;
 
 const OTP_EXPIRY_MINUTES = 10;
 
@@ -77,11 +90,15 @@ const CSV_TYPES = [
   'application/csv',
 ];
 
+const SYSTEM_LAUNCH_YEAR = 2025;
+const SYSTEM_START_MONTH = 4;
+
 module.exports = {
   USER_ROLES,
   EMPLOYEE_STATUS,
   VALID_USER_ROLES: Object.values(USER_ROLES),
   VALID_EMPLOYEE_STATUS: Object.values(EMPLOYEE_STATUS),
+  VALID_ASSETS_STATUS: Object.values(ASSETS_STATUS),
   MAIL_HOST,
   MAIL_PORT,
   MAIL_SECURE,
@@ -98,4 +115,6 @@ module.exports = {
   CSV_TYPES,
   RANK,
   LEAVETYPES,
+  SYSTEM_LAUNCH_YEAR,
+  SYSTEM_START_MONTH,
 };

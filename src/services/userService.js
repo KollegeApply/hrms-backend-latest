@@ -1,4 +1,3 @@
-// src/services/userService.js
 const bcrypt = require('bcryptjs');
 const User = require('../models/userModel');
 const Helper = require('../utility/helper');
@@ -15,22 +14,13 @@ const {
   OTP_EXPIRY_MINUTES,
   USER_CSV_FILE_HEADERS,
 } = require('../utility/constants');
-const { default: mongoose } = require('mongoose');
 const csv = require('csvtojson');
 const Department = require('../models/departmentModel');
-
-const ON_ROLL_LEAVES = {
-  annualLeave: 16,
-  casualSickLeave: 8,
-  bereavementLeaves: 3,
-  marriageLeave: 5,
-  birthdayLeave: 1,
-  total: 33,
-};
-
-const PROBATION_LEAVE = {
-  perMonth: 1,
-};
+const employeeHistory = require('../models/employeeHistory');
+const leavePolicyModel = require('../models/leavePolicyModel');
+const leavePolicyMappingModel = require('../models/leavePolicyMappingModel');
+const employeeLeaveBalanceModel = require('../models/employeeLeaveBalanceModel');
+const leaveTypeModel = require('../models/leaveTypeModel');
 
 class UserService {
   /**
@@ -148,7 +138,8 @@ class UserService {
     const user = await User.findOne({ _id: id, isDeleted: false })
       .populate('department', 'name')
       .populate('teamLeadId', 'firstName lastName')
-      .populate('subTeamLeadId', 'firstName lastName');
+      .populate('subTeamLeadId', 'firstName lastName')
+      .populate('hrPocId', 'firstName lastName email');
     if (!user) {
       logger.warn(`User not found with ID: ${id}`);
     }
@@ -199,51 +190,39 @@ class UserService {
    */
   async createUser(userData) {
     logger.info(`Attempting to create user with email: ${userData?.email}`);
+
     // Check for existing email
     if (await this.getUserByEmail(userData?.email)) {
-      logger.warn(`Email already in use: ${userData?.email}`);
       throw new ApiError(
         httpStatus.CONFLICT,
         'Email address is already registered.'
       );
     }
 
-    // Check for existing employee ID if provided
+    // Check for existing employee ID
     if (
       userData?.employeeId &&
       (await this.getUserByEmployeeId(userData?.employeeId))
     ) {
-      logger.warn(`Employee ID already in use: ${userData?.employeeId}`);
       throw new ApiError(httpStatus.CONFLICT, 'Employee ID is already in use.');
     }
 
-    // Check if team lead exists in DB
-    if (userData?.teamLeadId) {
-      try {
-        const tlExist = await this.getUserById(userData?.teamLeadId);
-        if (!tlExist) {
-          throw new ApiError(httpStatus.NOT_FOUND, 'Team lead not found');
-        }
-      } catch (err) {
-        if (err instanceof ApiError) {
-          throw err;
-        }
-        throw new ApiError(
-          httpStatus.INTERNAL_SERVER_ERROR,
-          'Failed to validate team lead'
-        );
+    // Validate IDs (Team Lead, Sub Team Lead, HR POC)
+    const idsToValidate = [
+      { id: userData?.teamLeadId, label: 'Team Lead' },
+      { id: userData?.subTeamLeadId, label: 'Sub Team Lead' },
+      { id: userData?.hrPocId, label: 'HR' },
+    ];
+
+    for (const { id, label } of idsToValidate) {
+      if (id) {
+        const userExists = await this.getUserById(id);
+        if (!userExists)
+          throw new ApiError(httpStatus.NOT_FOUND, `${label} not found`);
       }
     }
 
-    // check if subTL exist in db
-    if (
-      userData?.subTeamLeadId &&
-      !(await this.getUserById(userData?.subTeamLeadId))
-    ) {
-      throw new ApiError(httpStatus.NOT_FOUND, 'Sub Team Lead not found');
-    }
-
-    // auto-generating employeeId. format : SD_001
+    // Auto-generate Employee ID
     const lastUser = await User.findOne({ employeeId: { $regex: /^SD_\d+$/ } })
       .sort({ employeeId: -1 })
       .select('employeeId')
@@ -252,28 +231,74 @@ class UserService {
     const paddedNumber = String(nextNumber).padStart(3, '0');
 
     // Hash the password
-    const hashedPassword = await bcrypt.hash(userData?.password, 10); // 10 is the salt rounds
+    const hashedPassword = await bcrypt.hash(userData?.password, 10);
 
-    // Create and save the new user
+    // Validate Work Type
+    if (!['WFH', 'WFO'].includes(userData?.workType)) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Invalid workType. Allowed values are "WFH" or "WFO".'
+      );
+    }
+
+    let assignedPolicy = null;
+
+    if (userData.status === 'onroll') {
+      assignedPolicy = await leavePolicyModel.findOne({
+        name: 'Onroll Policy',
+      });
+    } else if (userData.status === 'probation') {
+      assignedPolicy = await leavePolicyModel.findOne({
+        name: 'Probation Policy',
+      });
+    }
+
+    if (!assignedPolicy) {
+      throw new ApiError(400, 'Leave policy not found for the given status');
+    }
+
+    // Create and Save User
     const user = new User({
       ...userData,
       employeeId: `SD_${paddedNumber}`,
       password: hashedPassword,
-      email: userData?.email?.toLowerCase(), // Store email in lowercase
+      email: userData?.email?.toLowerCase(),
+      leavePolicyId: assignedPolicy._id,
     });
 
-    if (!['WFH', 'WFO'].includes(userData?.workType)) {
-      logger.warn(`Invalid workType: ${userData?.workType}`);
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'Invalid workType. Allowed values are "wfh" or "wfo".'
-      );
-    }
-
     const savedUser = await user.save();
-    logger.info(`User created successfully with ID: ${savedUser?.id}`);
 
-    // Return user object without password (using toJSON transform)
+    // Find mappings for assigned policy
+    const mappings = await leavePolicyMappingModel
+      .find({
+        leavePolicyId: assignedPolicy._id,
+        isDeleted: false,
+      })
+      .lean();
+
+    const balances = mappings.map((mapping) => {
+      let accrued = 0;
+
+      if (mapping.accrualType === 'monthly') {
+        accrued = mapping.accrualPerMonth;
+      } else if (mapping.accrualType === 'yearly') {
+        accrued = mapping.quota;
+      }
+
+      return {
+        userId: savedUser._id,
+        leaveTypeId: mapping.leaveTypeId,
+        accrued,
+        used: 0,
+        carryForwarded: 0,
+        total: accrued || mapping.quota,
+      };
+    });
+
+    // Save all balances
+    await employeeLeaveBalanceModel.insertMany(balances);
+
+    logger.info(`User created successfully with ID: ${savedUser?.id}`);
     return savedUser.toJSON();
   }
 
@@ -284,14 +309,16 @@ class UserService {
    * @returns {Promise<User|null>} - The updated user document or null if not found.
    * @throws {ApiError} - Throws error if email or employeeId conflict occurs.
    */
-  async updateUser(id, updateData) {
+  async updateUser(id, updateData, changedByUser) {
     logger.info(`Attempting to update user with ID: ${id}`);
     const user = await this.getUserById(id); // Use getUserById to ensure user exists and is not deleted
 
     if (!user) {
       logger.warn(`Update failed: User not found with ID: ${id}`);
-      return null; // Or throw ApiError(httpStatus.NOT_FOUND, 'User not found')
+      return null;
     }
+
+    const oldUser = user.toObject();
 
     // Check for email conflict if email is being updated
     updateData.email = updateData?.email?.toLowerCase();
@@ -336,21 +363,129 @@ class UserService {
       );
     }
 
-    if (
-      updateData?.status === 'onroll' &&
-      existingUser?.status === 'probation'
-    ) {
-      updateData = {
-        ...updateData,
-        leaves: {
-          annualLeave: 16,
-          casualSickLeave: 8,
-          bereavementLeaves: 3,
-          marriageLeave: 5,
-          birthdayLeave: 1,
-          total: 33,
-        },
-      };
+    // Detect status change
+    const oldStatus = oldUser.status;
+    const newStatus = updateData.status || oldStatus;
+
+    if (oldStatus !== newStatus) {
+      // If status changed from probation → onroll
+      if (oldStatus === 'probation' && newStatus === 'onroll') {
+        const probationBalance = await employeeLeaveBalanceModel
+          .findOne({
+            userId: user._id,
+          })
+          .populate('leaveTypeId');
+
+        let unusedProbation = 0;
+
+        // If probation balance exists and is of type PROBATION
+        if (probationBalance?.leaveTypeId?.code === 'PROBATION') {
+          unusedProbation =
+            (probationBalance.total || 0) - (probationBalance.used || 0);
+        }
+
+        // ✅ Fetch Onroll Policy
+        const onrollPolicy = await leavePolicyModel.findOne({
+          name: 'Onroll Policy',
+        });
+        if (!onrollPolicy) {
+          throw new ApiError(400, 'Onroll leave policy not found');
+        }
+
+        // ✅ Fetch all mappings for Onroll policy
+        const onrollMappings = await leavePolicyMappingModel
+          .find({
+            leavePolicyId: onrollPolicy._id,
+          })
+          .populate('leaveTypeId');
+
+        // Create new balances
+        for (const mapping of onrollMappings) {
+          const {
+            leaveTypeId,
+            quota,
+            accrualType,
+            accrualPerMonth,
+            maxCarryForward,
+          } = mapping;
+
+          let carryForwarded = 0;
+          if (mapping.leaveTypeId.code === 'ANNUAL') {
+            carryForwarded = unusedProbation > 0 ? unusedProbation-1 : 0;
+          }
+
+          const accrued = accrualType === 'monthly' ? accrualPerMonth : quota;
+
+          try {
+            await employeeLeaveBalanceModel.create({
+              userId: user._id,
+              leaveTypeId,
+              accrued,
+              used: 0,
+              carryForwarded,
+              total: accrued + carryForwarded,
+            });
+          } catch (err) {
+            console.error('LeaveBalance create error:', err);
+          }
+        }
+        updateData.leavePolicyId = onrollPolicy._id;
+      }
+
+      // Optional: handle onroll → probation (rare case)
+      if (oldStatus === 'onroll' && newStatus === 'probation') {
+        const probationPolicy = await leavePolicyModel.findOne({
+          name: 'Probation Policy',
+        });
+        if (!probationPolicy) {
+          throw new ApiError(400, 'Probation leave policy not found');
+        }
+
+        // Delete existing onroll balances
+        await employeeLeaveBalanceModel.deleteMany({ userId: user._id });
+
+        // Create 1 leave type for probation
+        const probationMapping = await leavePolicyMappingModel.findOne({
+          leavePolicyId: probationPolicy._id,
+        });
+
+        await employeeLeaveBalanceModel.create({
+          userId: user._id,
+          leaveTypeId: probationMapping.leaveTypeId,
+          accrued: probationMapping.accrualPerMonth,
+          used: 0,
+          carryForwarded: 0,
+          total: probationMapping.accrualPerMonth,
+        });
+
+        updateData.leavePolicyId = probationPolicy._id;
+      }
+    }
+
+    // Handle empty string for hrPocId
+    if (updateData?.hrPocId === '') {
+      updateData.hrPocId = undefined;
+    } else if (updateData?.hrPocId) {
+      try {
+        const hrExist = await this.getUserById(updateData?.hrPocId);
+        if (!hrExist) {
+          logger.warn(
+            `Update failed: HR not found with ID: ${updateData?.hrPocId}`
+          );
+          throw new ApiError(httpStatus.NOT_FOUND, 'HR not found');
+        }
+      } catch (err) {
+        if (err instanceof ApiError) {
+          throw err;
+        }
+        logger.error(
+          `Error validating HR with ID ${updateData?.hrPocId}: ${err}`
+        );
+        throw new ApiError(
+          httpStatus.INTERNAL_SERVER_ERROR,
+          'Failed to validate HR'
+        );
+      }
     }
 
     // Apply updates
@@ -358,6 +493,27 @@ class UserService {
     const updatedUser = await user.save();
 
     logger.info(`User updated successfully: ${updatedUser?.id}`);
+
+    // Find changed fields except some exclusions
+    const includedFields = ['jobTitle', 'role', 'status'];
+
+    const changedFields = Object.keys(updateData).filter(
+      (f) => includedFields.includes(f) && oldUser[f] !== updatedUser[f]
+    );
+
+    await Promise.all(
+      changedFields.map((field) =>
+        employeeHistory.create({
+          employeeId: updatedUser._id,
+          entity: field,
+          previous: oldUser[field] || null,
+          changed: updatedUser[field] || null,
+          changedBy: changedByUser._id,
+          actionAt: new Date(),
+        })
+      )
+    );
+
     return updatedUser.toJSON();
   }
 
@@ -369,7 +525,6 @@ class UserService {
   async deleteUser(id) {
     logger.info(`Attempting to soft delete user with ID: ${id}`);
     const result1 = await User.findById(id);
-    console.log(result1);
     if (result1.isDeleted) {
       return false;
     }
@@ -403,14 +558,14 @@ class UserService {
       return null; // User not found
     }
 
-    if (user?.status === 'terminated' || user?.status === 'absconded') {
-      logger.warn(`User is terminated or absconded`);
+    if (
+      user?.status === 'terminated' ||
+      user?.status === 'absconded' ||
+      user?.status === 'resigned'
+    ) {
+      logger.warn(`User is terminated or absconded or resigned`);
       return null;
     }
-
-    // Compare provided password with the stored hash
-    // console.log('Plain password:', password);
-    // console.log('Hashed password in DB:', user.password);
 
     const isPasswordMatch = await bcrypt.compare(password, user?.password);
 
@@ -729,7 +884,6 @@ class UserService {
       });
 
       if (usersToInsert.length === 0) {
-        console.log(`${activity} No new users to insert after DB check.`);
         return {
           status: true,
           code: 200,
@@ -781,9 +935,7 @@ class UserService {
           const result = await User.insertMany(usersReadyForInsert, {
             ordered: false,
           });
-          // console.log(result);
           createdCount = result?.length;
-          console.log(`${activity} Inserted ${createdCount} users.`);
 
           for (const user of result) {
             // await sendUserWelcomeEmail(user); // customize this function as needed
@@ -795,7 +947,7 @@ class UserService {
               logger.info(`Sending welcome email to ${user.email}`);
               Helper.sendEmail({
                 receiverEmails: [user?.email],
-                subject: `Welcome to ${process?.env?.TEAM} – Let’s Get You Started!`,
+                subject: `Welcome to ${process?.env?.TEAM} – Let's Get You Started!`,
                 message: Helper.getWelcomeEmail(
                   user?.firstName,
                   user?.email,
@@ -852,6 +1004,33 @@ class UserService {
       );
       // Throw a generic error for the controller to catch
       throw new Error('Failed to process bulk user upload.');
+    }
+  }
+
+  async getUserHistory(employeeId) {
+    try {
+      const historyRecords = await employeeHistory
+        .find({ employeeId })
+        .populate({
+          path: 'changedBy',
+          select: 'firstName lastName', // Adjust this as per your User schema fields
+        })
+        .sort({ actionAt: -1 }) // Sort by most recent changes first
+        .lean();
+
+
+      return {
+        status: true,
+        statusCode: 200,
+        data: historyRecords,
+      };
+    } catch (error) {
+      console.error('Error in getUserHistory service:', error);
+      return {
+        status: false,
+        statusCode: 500,
+        message: 'An unexpected server error occurred.',
+      };
     }
   }
 }

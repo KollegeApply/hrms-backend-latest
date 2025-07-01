@@ -77,7 +77,6 @@ const getAllUsers = catchAsync(async (req, res) => {
   // Aceess current user id
   const currentUser = req?.user;
 
-  // console.log('Current User ID:', currentUser);
 
   // 2. Call service to get users
   const result = await userService?.getAllUsers(validatedQuery, currentUser); // Service handles pagination logic
@@ -137,7 +136,11 @@ const updateUser = catchAsync(async (req, res) => {
   const clickedUserId = userId;
 
   if (currentUserId !== clickedUserId) {
-    const updatedUser = await userService?.updateUser(userId, validatedData);
+    const updatedUser = await userService?.updateUser(userId, validatedData, {
+      _id: req.user.id,
+      name: req.user.name,
+      role: req.user.role,
+    });
 
     if (!updatedUser) {
       throw new ApiError(
@@ -303,7 +306,6 @@ const bulkUpload = async (req, res) => {
     const usersFile = req?.files?.[0];
 
     if (!usersFile) {
-      console.log(`${activity} File is required.`);
       return res?.status(400).send({
         status: false,
         message: 'CSV file is required.',
@@ -312,7 +314,6 @@ const bulkUpload = async (req, res) => {
     }
 
     if (!CSV_TYPES.includes(usersFile?.mimetype)) {
-      console.log(`${activity} Invalid file type: ${usersFile?.mimetype}`);
       return res?.status(400)?.send({
         status: false,
         message: 'Invalid file type. Please upload a valid CSV file.',
@@ -328,7 +329,6 @@ const bulkUpload = async (req, res) => {
       isErrorForUser = false,
     } = await userService.bulkUpload(usersFile, activity);
 
-    // console.log("data is fsbkueirsufb:", data);
 
     // Send response back
     return res?.status(code || 200).send({
@@ -354,6 +354,21 @@ const bulkUpload = async (req, res) => {
   }
 };
 
+const getUserHistory = async (req, res) => {
+  try {
+    const userId = req?.user?.id;
+    const validateData =
+      await userValidator?.getUserHistorySchema?.validateAsync({ userId });
+    const result = await userService.getUserHistory(validateData?.userId);
+    return res.status(result.statusCode).json(result.data);
+  } catch (error) {
+    console.error('Error in getUserHistory controller:', error);
+    return res
+      .status(500)
+      .json({ message: 'An unexpected server error occurred.' });
+  }
+};
+
 module.exports = {
   createUser,
   getAllUsers,
@@ -365,6 +380,7 @@ module.exports = {
   forgotPassword,
   verifyOtp,
   bulkUpload,
+  getUserHistory,
 };
 
 // --- Utility: catchAsync (Place in src/utility/catchAsync.js) ---
