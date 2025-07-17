@@ -13,6 +13,9 @@ const {
   MAIL_PASS,
   HR_MAIL_USER,
   HR_MAIL_PASS,
+  IT_MAIL_USER,
+  IT_MAIL_PASS,
+  MAIL_FROM_IT,
 } = require('./constants');
 const { OTP_EXPIRY_MINUTES } = require('./constants');
 const { formatDateToKolkata } = require('./common');
@@ -35,43 +38,60 @@ class Helper {
    * @param {string} mailData.message - Email body (HTML).
    * @returns {Promise<void>}
    */
-  static async sendEmail({ receiverEmails, subject, message, fromHr = false }) {
-    if (!MAIL_USER || !MAIL_PASS) {
-      logger.error(
-        'SMTP credentials (MAIL_USER, MAIL_PASS) are not configured. Cannot send email.'
-      );
-      return; // Or throw an error
-    }
-
-    const transporter = nodemailer.createTransport({
-      host: MAIL_HOST,
-      port: MAIL_PORT,
-      secure: MAIL_SECURE, // Use true for 465, false for other ports like 587
-      ...(MAIL_SERVICE && { service: MAIL_SERVICE }), // Add service if defined
-      auth: {
-        user: fromHr ? HR_MAIL_USER : MAIL_USER,
-        pass: fromHr ? HR_MAIL_PASS : MAIL_PASS,
-      },
-    });
-
-    const mailOptions = {
-      from: fromHr
-        ? `"HR" <${MAIL_FROM_HR}>`
-        : `"Support" <${MAIL_FROM_SUPPORT}>`,
-      to: receiverEmails.join(','),
-      subject: subject,
-      html: message,
-    };
-
-    try {
-      const info = await transporter.sendMail(mailOptions);
-      logger.info('Email sent successfully:', info.messageId);
-    } catch (error) {
-      logger.error('Failed to send email:', error);
-      // Consider re-throwing or handling the error based on application needs
-      // throw new Error('Failed to send email');
-    }
+static async sendEmail({
+  receiverEmails,
+  subject,
+  message,
+  fromHR = false,
+  fromIT = false,
+  cc = [],
+}) {
+  if (!MAIL_USER || !MAIL_PASS) {
+    logger.error(
+      'SMTP credentials (MAIL_USER, MAIL_PASS) are not configured. Cannot send email.'
+    );
+    return;
   }
+
+  // Determine sender credentials and "from" label
+  let user = MAIL_USER;
+  let pass = MAIL_PASS;
+  let from = `"Support" <${MAIL_FROM_SUPPORT}>`;
+
+  if (fromHR) {
+    user = HR_MAIL_USER;
+    pass = HR_MAIL_PASS;
+    from = `"HR Department" <${MAIL_FROM_HR}>`;
+  } else if (fromIT) {
+    user = IT_MAIL_USER;
+    pass = IT_MAIL_PASS;
+    from = `"IT Department" <${MAIL_FROM_IT}>`;
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: MAIL_HOST,
+    port: MAIL_PORT,
+    secure: MAIL_SECURE,
+    ...(MAIL_SERVICE && { service: MAIL_SERVICE }),
+    auth: { user, pass },
+  });
+
+  const mailOptions = {
+    from,
+    to: receiverEmails.join(','),
+    cc: cc.length > 0 ? cc.join(',') : undefined,
+    subject,
+    html: message,
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    logger.info('Email sent successfully:', info.messageId);
+  } catch (error) {
+    logger.error('Failed to send email:', error?.message || error);
+  }
+}
+
 
   /**
    * Generates a welcome email template for new HRMS users.
@@ -410,24 +430,41 @@ class Helper {
     `;
   }
 
-  /**
-   * Generates an asset assignment email template for IT department.
-   * @param {string} firstName - Employee's first name.
-   * @param {string} assetName - The name of the asset assigned.
-   * @param {string} assetId - The ID of the asset.
-   * @param {string} serialNumber - The serial number of the asset (if available).
-   * @param {string} assignedBy - The name of the person who assigned the asset.
-   * @returns {string} - HTML email content.
-   */
-  /**
-   * Generates an asset assignment email for employees.
-   * @param {string} firstName - Employee's first name.
-   * @param {string} assetName - Name of the assigned asset.
-   * @param {string} assetId - Asset ID.
-   * @param {string} loginUrl - URL to the HRMS dashboard.
-   * @returns {string} - HTML email content.
-   */
-  static getAssetAssignmentEmail(firstName, assetName, assetId, loginUrl) {
+
+  static getAssetReturnRequestEmail(firstName, employeeId, assetName, assetType, dashboardUrl) {
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #333;">Asset Return Request</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">Hello Team,</p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          The following employee has submitted a return request for an assigned asset:
+        </p>
+
+        <div style="background-color: #eef; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #007bff;">
+          <p style="color: #555; font-size: 15px;">
+            <strong>Employee Name:</strong> ${firstName}<br>
+            <strong>Employee ID:</strong> ${employeeId}<br>
+            <strong>Asset Name:</strong> ${assetName}<br>
+            <strong>Asset Type:</strong> ${assetType}
+          </p>
+        </div>
+
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          You can review and process the request in the <a href="${dashboardUrl}/assets/returns" style="color: #007bff;">HRMS dashboard</a>.
+        </p>
+
+        <p style="color: #999; font-size: 14px;">This is an automated email. Please do not reply.</p>
+      </div>
+    </div>
+  `;
+}
+
+
+
+  static getAssetAssignmentEmail(firstName, assetName, assetType, loginUrl) {
     return `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
   <div style="text-align: center; margin-bottom: 20px;">
@@ -440,7 +477,7 @@ class Helper {
     </p>
 
     <p style="color: #555; font-size: 16px; line-height: 1.6;">
-      You have been assigned a new asset: <strong>${assetName}</strong> (Asset ID: ${assetId}).
+      You have been assigned a new asset: <strong>${assetName}</strong> (Asset Type: ${assetType}).
     </p>
 
     <p style="color: #555; font-size: 16px; line-height: 1.6;">
@@ -465,20 +502,12 @@ class Helper {
   `;
   }
 
-  /**
-   * Generates an email template for asset acknowledgment notification.
-   * @param {string} employeeName - The name of the employee.
-   * @param {string} employeeId - The employee ID.
-   * @param {string} assetName - The asset name.
-   * @param {string} assetId - The asset ID.
-   * @param {string} dashboardUrl - The HRMS dashboard URL.
-   * @returns {string} - HTML email content.
-   */
+
   static getAssetAcknowledgmentEmail(
     employeeName,
     employeeId,
     assetName,
-    assetId,
+    assetType,
     dashboardUrl
   ) {
     return `
@@ -497,7 +526,7 @@ class Helper {
         <strong>Employee Name:</strong> ${employeeName}<br>
         <strong>Employee ID:</strong> ${employeeId}<br>
         <strong>Asset Name:</strong> ${assetName}<br>
-        <strong>Asset ID:</strong> ${assetId}
+        <strong>Asset Type:</strong> ${assetType}
       </p>
     </div>
 
@@ -518,42 +547,41 @@ class Helper {
   `;
   }
 
-  static getAssetReturnRequestEmail(firstName, employeeId, assetName, assetId, dashboardUrl) {
-    return `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
-      <div style="text-align: center; margin-bottom: 20px;">
-        <h1 style="color: #333;">Asset Return Request Notification</h1>
-      </div>
-      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
-        <p style="color: #555; font-size: 16px; line-height: 1.6;">Hello Team,</p>
-        <p style="color: #555; font-size: 16px; line-height: 1.6;">
-          The following asset has been returned by the employee:
-        </p>
-        <p style="color: #555; font-size: 16px; line-height: 1.6;">
-          <strong>Employee Name:</strong> ${firstName}<br>
-          <strong>Employee ID:</strong> ${employeeId}<br>
-          <strong>Asset Name:</strong> ${assetName}<br>
-          <strong>Asset ID:</strong> ${assetId}
-        </p>
-      </div>
-    </div>
-    `;
-  }
+ static getAssetReturnStatusEmail(firstName, employeeId, assetName, assetType, status, dashboardUrl) {
+  const statusColor = status === 'approved' ? '#28a745' : '#dc3545';
+  const capitalizedStatus = status.charAt(0).toUpperCase() + status.slice(1);
 
-  /**
-   * Generates an email template for asset rejection notification.
-   * @param {string} employeeName - The name of the employee.
-   * @param {string} employeeId - The employee ID.
-   * @param {string} assetName - The asset name.
-   * @param {string} assetId - The asset ID.
-   * @param {string} dashboardUrl - The HRMS dashboard URL.
-   * @returns {string} - HTML email content.
-   */
+  return `
+  <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+    <div style="text-align: center; margin-bottom: 20px;">
+      <h1 style="color: #333;">Asset Return Request ${capitalizedStatus}</h1>
+    </div>
+    <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+      <p style="color: #555; font-size: 16px; line-height: 1.6;">Hello <strong>${firstName}</strong>,</p>
+      <p style="color: #555; font-size: 16px; line-height: 1.6;">
+        Your return request for the following asset has been 
+        <strong style="color: ${statusColor};">${capitalizedStatus}</strong>:
+      </p>
+      <p style="color: #555; font-size: 16px; line-height: 1.6;">
+        <strong>Employee ID:</strong> ${employeeId}<br>
+        <strong>Asset Name:</strong> ${assetName}<br>
+        <strong>Asset Type:</strong> ${assetType}
+      </p>
+       <div style="text-align: center; margin: 30px 0;">
+        You can view the request status by visiting your dashboard: <br>
+        <a href="${dashboardUrl}/assets/assigned" style="background-color: #007bff; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">View Asset Details</a>
+       </div>
+    </div>
+  </div>
+  `;
+}
+
+
   static getAssetRejectionEmail(
     employeeName,
     employeeId,
     assetName,
-    assetId,
+    assetType,
     dashboardUrl
   ) {
     return `
@@ -572,7 +600,7 @@ class Helper {
         <strong>Employee Name:</strong> ${employeeName}<br>
         <strong>Employee ID:</strong> ${employeeId}<br>
         <strong>Asset Name:</strong> ${assetName}<br>
-        <strong>Asset ID:</strong> ${assetId}
+        <strong>Asset Type:</strong> ${assetType}
       </p>
     </div>
 
@@ -592,6 +620,34 @@ class Helper {
 </div>
   `;
   }
+
+
+  static getAssetReceivedConfirmationEmail(firstName, employeeId, assetName, assetType, dashboardUrl) {
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #333;">Asset Received Confirmation</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">Hello Team,</p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          The following asset has been successfully returned and received from the employee:
+        </p>
+        <ul style="color: #555; font-size: 16px; line-height: 1.6; list-style: none; padding-left: 0;">
+          <li><strong>Employee Name:</strong> ${firstName}</li>
+          <li><strong>Employee ID:</strong> ${employeeId}</li>
+          <li><strong>Asset Name:</strong> ${assetName}</li>
+          <li><strong>Asset Type:</strong> ${assetType}</li>
+        </ul>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          You can review the record in the <a href="${dashboardUrl}" style="color: #007bff;">HRMS dashboard</a>.
+        </p>
+        <p style="color: #999; font-size: 14px;">This is an automated email. Please do not reply.</p>
+      </div>
+    </div>
+  `;
+}
+
 }
 
 module.exports = Helper;

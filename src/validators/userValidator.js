@@ -163,9 +163,12 @@ const getAllUsersSchema = Joi.object({
     .valid(...VALID_EMPLOYEE_STATUS)
     .optional(),
   department: Joi.string().trim().allow('').optional(),
+  teamLeadId: Joi.string().trim().allow('').optional(),
+  subTeamLeadId: Joi.string().trim().allow('').optional(),
   sortBy: Joi.string().trim().optional().default('createdAt'), // Field to sort by
   sortOrder: Joi.string().valid('asc', 'desc').optional().default('desc'), // Sort direction
   isPaginated: Joi.boolean().optional().default(true), // Default to paginated results
+  isAttendanceLog: Joi.boolean().optional().default(false)
 }).options({ stripUnknown: true });
 
 const changePasswordSchema = Joi.object({

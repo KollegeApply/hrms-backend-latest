@@ -4,11 +4,16 @@ const { Schema } = mongoose;
 
 const assignedAssetSchema = new Schema(
   {
-    assetId: {
+    assetType: {
       type: String,
-      required: true,
-      trim: true,
+      required:true,
+      trim:true,
     },
+    // assetId: {
+    //   type: String,
+    //   required: true,
+    //   trim: true,
+    // },
     assetName: {
       type: String,
       required: true,

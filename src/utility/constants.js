@@ -45,12 +45,16 @@ const MAIL_FROM_HR =
   process.env.SMTP_FROM_EMAIL_HR || 'noreply@yourcompany.com';
 const MAIL_FROM_SUPPORT =
   process.env.SMTP_FROM_EMAIL_SUPPORT || 'noreply@yourcompany.com';
+const MAIL_FROM_IT =
+  process.env.SMTP_FROM_EMAIL_IT || 'noreply@yourcompany.com';
 const MAIL_USER = process.env.SMTP_USER;
 const MAIL_PASS = process.env.SMTP_PASS;
 const HR_EMAIL = process.env.HR_EMAIL;
 const HR_MAIL_USER = process.env.HR_SMTP_USER;
 const HR_MAIL_PASS = process.env.HR_SMTP_PASS;
 const IT_EMAIL = process.env.IT_EMAIL;
+const IT_MAIL_USER = process.env.IT_SMTP_USER;
+const IT_MAIL_PASS = process.env.IT_SMTP_PASS;
 
 const OTP_EXPIRY_MINUTES = 10;
 
@@ -105,12 +109,16 @@ module.exports = {
   MAIL_SERVICE,
   MAIL_FROM_HR,
   MAIL_FROM_SUPPORT,
+  MAIL_FROM_IT,
   MAIL_USER,
   MAIL_PASS,
   HR_MAIL_USER,
   HR_MAIL_PASS,
+  IT_MAIL_USER,
+  IT_MAIL_PASS,
   OTP_EXPIRY_MINUTES,
   HR_EMAIL,
+  IT_EMAIL,
   USER_CSV_FILE_HEADERS,
   CSV_TYPES,
   RANK,

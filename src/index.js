@@ -37,7 +37,8 @@ mongoose
   })
   .catch((err) => {
     logger.error('❌ MongoDB connection error:', err.message);
-    process.exit(1); // Exit the application if DB connection fails
+    console.log(err);
+    // process.exit(1); // Exit the application if DB connection fails
   });
 
 // Graceful shutdown handling (optional but good practice)
