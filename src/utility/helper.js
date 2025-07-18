@@ -38,59 +38,59 @@ class Helper {
    * @param {string} mailData.message - Email body (HTML).
    * @returns {Promise<void>}
    */
-static async sendEmail({
-  receiverEmails,
-  subject,
-  message,
-  fromHR = false,
-  fromIT = false,
-  cc = [],
-}) {
-  if (!MAIL_USER || !MAIL_PASS) {
-    logger.error(
-      'SMTP credentials (MAIL_USER, MAIL_PASS) are not configured. Cannot send email.'
-    );
-    return;
-  }
-
-  // Determine sender credentials and "from" label
-  let user = MAIL_USER;
-  let pass = MAIL_PASS;
-  let from = `"Support" <${MAIL_FROM_SUPPORT}>`;
-
-  if (fromHR) {
-    user = HR_MAIL_USER;
-    pass = HR_MAIL_PASS;
-    from = `"HR Department" <${MAIL_FROM_HR}>`;
-  } else if (fromIT) {
-    user = IT_MAIL_USER;
-    pass = IT_MAIL_PASS;
-    from = `"IT Department" <${MAIL_FROM_IT}>`;
-  }
-
-  const transporter = nodemailer.createTransport({
-    host: MAIL_HOST,
-    port: MAIL_PORT,
-    secure: MAIL_SECURE,
-    ...(MAIL_SERVICE && { service: MAIL_SERVICE }),
-    auth: { user, pass },
-  });
-
-  const mailOptions = {
-    from,
-    to: receiverEmails.join(','),
-    cc: cc.length > 0 ? cc.join(',') : undefined,
+  static async sendEmail({
+    receiverEmails,
     subject,
-    html: message,
-  };
+    message,
+    fromHR = false,
+    fromIT = false,
+    cc = [],
+  }) {
+    if (!MAIL_USER || !MAIL_PASS) {
+      logger.error(
+        'SMTP credentials (MAIL_USER, MAIL_PASS) are not configured. Cannot send email.'
+      );
+      return;
+    }
 
-  try {
-    const info = await transporter.sendMail(mailOptions);
-    logger.info('Email sent successfully:', info.messageId);
-  } catch (error) {
-    logger.error('Failed to send email:', error?.message || error);
+    // Determine sender credentials and "from" label
+    let user = MAIL_USER;
+    let pass = MAIL_PASS;
+    let from = `"Support" <${MAIL_FROM_SUPPORT}>`;
+
+    if (fromHR) {
+      user = HR_MAIL_USER;
+      pass = HR_MAIL_PASS;
+      from = `"HR Department" <${MAIL_FROM_HR}>`;
+    } else if (fromIT) {
+      user = IT_MAIL_USER;
+      pass = IT_MAIL_PASS;
+      from = `"IT Department" <${MAIL_FROM_IT}>`;
+    }
+
+    const transporter = nodemailer.createTransport({
+      host: MAIL_HOST,
+      port: MAIL_PORT,
+      secure: MAIL_SECURE,
+      ...(MAIL_SERVICE && { service: MAIL_SERVICE }),
+      auth: { user, pass },
+    });
+
+    const mailOptions = {
+      from,
+      to: receiverEmails.join(','),
+      cc: cc.length > 0 ? cc.join(',') : undefined,
+      subject,
+      html: message,
+    };
+
+    try {
+      const info = await transporter.sendMail(mailOptions);
+      logger.info('Email sent successfully:', info.messageId);
+    } catch (error) {
+      logger.error('Failed to send email:', error?.message || error);
+    }
   }
-}
 
 
   /**
@@ -432,7 +432,7 @@ static async sendEmail({
 
 
   static getAssetReturnRequestEmail(firstName, employeeId, assetName, assetType, dashboardUrl) {
-  return `
+    return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
       <div style="text-align: center; margin-bottom: 20px;">
         <h1 style="color: #333;">Asset Return Request</h1>
@@ -460,7 +460,7 @@ static async sendEmail({
       </div>
     </div>
   `;
-}
+  }
 
 
 
@@ -547,11 +547,11 @@ static async sendEmail({
   `;
   }
 
- static getAssetReturnStatusEmail(firstName, employeeId, assetName, assetType, status, dashboardUrl) {
-  const statusColor = status === 'approved' ? '#28a745' : '#dc3545';
-  const capitalizedStatus = status.charAt(0).toUpperCase() + status.slice(1);
+  static getAssetReturnStatusEmail(firstName, employeeId, assetName, assetType, status, dashboardUrl) {
+    const statusColor = status === 'approved' ? '#28a745' : '#dc3545';
+    const capitalizedStatus = status.charAt(0).toUpperCase() + status.slice(1);
 
-  return `
+    return `
   <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
     <div style="text-align: center; margin-bottom: 20px;">
       <h1 style="color: #333;">Asset Return Request ${capitalizedStatus}</h1>
@@ -574,7 +574,7 @@ static async sendEmail({
     </div>
   </div>
   `;
-}
+  }
 
 
   static getAssetRejectionEmail(
@@ -623,7 +623,7 @@ static async sendEmail({
 
 
   static getAssetReceivedConfirmationEmail(firstName, employeeId, assetName, assetType, dashboardUrl) {
-  return `
+    return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
       <div style="text-align: center; margin-bottom: 20px;">
         <h1 style="color: #333;">Asset Received Confirmation</h1>
@@ -646,8 +646,36 @@ static async sendEmail({
       </div>
     </div>
   `;
-}
+  }
 
+  static getTicketCreatedEmailForTeam(subject, type, raisedByName, baseUrl, ticketId) {
+    return `
+    <p>Hello Team,</p>
+    <p>A new <strong>${type}</strong> ticket has been raised by ${raisedByName}.</p>
+    <p><strong>Subject:</strong> ${subject}</p>
+
+    <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          You can review the record in the <a href="${baseUrl}/tickets" style="color: #007bff;">HRMS DASHBOARD</a>.
+    </p>
+        
+
+     <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>${process?.env?.TEAM} Support Team</strong></p>
+  `;
+  }
+
+  static getTicketStatusUpdateEmail(employeeName, subject, status, baseUrl, ticketId) {
+    return `
+    <p>Hi ${employeeName},</p>
+    <p>Your ticket regarding <strong>${subject}</strong> has been <strong>${status}</strong>.</p>
+    <p style="color: #555; font-size: 16px; line-height: 1.6;">
+      You can review the record in the 
+      <a href="${baseUrl}/tickets" target="_blank" rel="noopener noreferrer" style="color: #007bff;">
+        HRMS Dashboard
+      </a>.
+    </p>
+    <p>If you need further assistance, please contact your HR or support team.</p>
+  `;
+  }
 }
 
 module.exports = Helper;

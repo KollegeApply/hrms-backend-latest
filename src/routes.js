@@ -9,6 +9,7 @@ const wfhRoutes = require('./routes/wfhRoute');
 const thirdPartyRoutes = require('./routes/thirdpartyRoute');
 const statsRoutes = require('./routes/statsRoute');
 const assetRoutes = require('./routes/assetRoute');
+const ticketRoutes = require('./routes/ticketRoute')
 // const otherRoutes = require('./routes/otherRoutes'); // Example for future routes
 
 const router = express.Router();
@@ -51,6 +52,10 @@ const defaultRoutes = [
   {
     path: `/api/${apiVersion}/assets`,
     route: assetRoutes,
+  },
+  {
+    path: `/api/${apiVersion}/tickets`,
+    route: ticketRoutes,
   },
   // Add other route configurations here
   // {
