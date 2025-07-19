@@ -286,6 +286,12 @@ const getUserHistorySchema = Joi.object({
   }),
 }).options({ stripUnknown: true });
 
+const getUserByTlIdSchema = Joi.object({
+  userId: Joi.string().trim().required(),
+  userRole: Joi.string().trim().valid(...VALID_USER_ROLES).required(),
+});
+
+
 module.exports = {
   createUserSchema,
   updateUserSchema,
@@ -296,5 +302,6 @@ module.exports = {
   forgotPasswordSchema,
   verifyOtpSchema,
   bulkCreateUserRowSchema,
-  getUserHistorySchema
+  getUserHistorySchema,
+  getUserByTlIdSchema,
 };

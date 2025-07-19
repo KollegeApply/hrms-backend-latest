@@ -648,6 +648,47 @@ class Helper {
   `;
   }
 
+  static getFeedbackEmail(givenByUser, givenToUser, dashboardUrl, feedbackId) {
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h2 style="color: #333;">Feedback Notification</h2>
+      </div>
+
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Hello <strong>${givenToUser.firstName} ${givenToUser.lastName}</strong>,
+        </p>
+
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          You have received new feedback from <strong>${givenByUser.firstName} ${givenByUser.lastName}</strong>.
+        </p>
+
+        <div style="background-color: #eef; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #66f;">
+          <h3 style="color: #333; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Action Required</h3>
+          <p style="color: #555; font-size: 15px; margin: 0;">
+            Please review the feedback in the HRMS system using the button below.
+          </p>
+        </div>
+
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${dashboardUrl}/feedback/view/${feedbackId}" 
+             style="display: inline-block; background-color: #4CAF50; color: white; padding: 12px 20px; border-radius: 5px; text-decoration: none; font-size: 15px;">
+            View Feedback
+          </a>
+        </div>
+
+        <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>${process?.env?.TEAM || 'HRMS'} Support Team</strong></p>
+      </div>
+
+      <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
+        This is an automated notification. Please do not reply to this email directly.
+      </div>
+    </div>
+  `;
+}
+
+
   static getTicketCreatedEmailForTeam(subject, type, raisedByName, baseUrl, ticketId) {
     return `
     <p>Hello Team,</p>

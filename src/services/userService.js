@@ -1074,6 +1074,107 @@ if (subTeamLeadId && typeof subTeamLeadId === 'string' && subTeamLeadId.trim() !
       };
     }
   }
+
+async getUserByTlId(userId, userRole) {
+  try {
+    let user;
+    const statusQuery = { status: { $in: ['probation', 'onroll'] } };
+    const commonSelectFields = 'id firstName lastName email role employeeId';
+
+    if (
+      userRole === 'admin' ||
+      userRole === 'subadmin' ||
+      userRole === 'hr'
+    ) {
+      user = await User.find(statusQuery).select(commonSelectFields);
+    } else if (userRole === 'teamlead' || userRole === 'subteamlead') {
+
+      const allowedRoles = ['admin', 'subadmin', 'hr', 'IT'];
+
+      const currentUser = await User.findById(userId).select('teamLeadId subTeamLeadId');
+      const managersToInclude = [];
+      if (currentUser && currentUser.teamLeadId) {
+        managersToInclude.push(currentUser.teamLeadId);
+      }
+      if (currentUser && currentUser.subTeamLeadId) {
+        managersToInclude.push(currentUser.subTeamLeadId);
+      }
+      const uniqueManagersToInclude = [...new Set(managersToInclude.filter(Boolean))];
+
+      user = await User.find({
+        $and: [
+          statusQuery,
+          {
+            $or: [
+              { role: { $in: allowedRoles } },
+              userRole === 'teamlead' ? { teamLeadId: userId } : { subTeamLeadId: userId },
+              { _id: { $in: uniqueManagersToInclude } }
+            ]
+          }
+        ]
+      }).select(commonSelectFields);
+
+    } else if (userRole === 'employee') {
+      const currentUser = await User.findById(userId).select('teamLeadId subTeamLeadId');
+      const allowedUserIds = [currentUser.teamLeadId, currentUser.subTeamLeadId].filter(Boolean);
+
+      const allowedRoles = ['admin', 'subadmin', 'hr', 'IT'];
+
+      user = await User.find({
+        $and: [
+          statusQuery,
+          {
+            $or: [
+              { _id: { $in: allowedUserIds } },
+              { role: { $in: allowedRoles } },
+            ]
+          }
+        ]
+      }).select(commonSelectFields);
+    } else if (userRole === 'IT') {
+      const allowedRoles = ['hr', 'admin', 'subadmin'];
+      
+      const currentUser = await User.findById(userId).select('teamLeadId subTeamLeadId');
+      const managersToInclude = [];
+      if (currentUser && currentUser.teamLeadId) {
+        managersToInclude.push(currentUser.teamLeadId);
+      }
+      if (currentUser && currentUser.subTeamLeadId) {
+        managersToInclude.push(currentUser.subTeamLeadId);
+      }
+      const uniqueManagersToInclude = [...new Set(managersToInclude.filter(Boolean))];
+
+      user = await User.find({
+        $and: [
+          statusQuery,
+          {
+            $or: [
+              { role: { $in: allowedRoles } },
+              { teamLeadId: userId },
+              { subTeamLeadId: userId },
+              { _id: { $in: uniqueManagersToInclude } }
+            ]
+          }
+        ]
+      }).select(commonSelectFields);
+    } else {
+      user = []; 
+    }
+
+    return {
+      status: true,
+      statusCode: 200,
+      data: user.filter(u => u.id.toString() !== userId.toString()),
+    };
+  } catch (error) {
+    console.error('Error in getUserByTlId service:', error);
+    return {
+      status: false,
+      statusCode: 500,
+      message: 'An unexpected server error occurred.',
+    };
+  }
+}
 }
 
 module.exports = new UserService(); // Export an instance

@@ -10,6 +10,7 @@ const thirdPartyRoutes = require('./routes/thirdpartyRoute');
 const statsRoutes = require('./routes/statsRoute');
 const assetRoutes = require('./routes/assetRoute');
 const ticketRoutes = require('./routes/ticketRoute')
+const feedbackRoutes = require('./routes/feedbackRoute');
 // const otherRoutes = require('./routes/otherRoutes'); // Example for future routes
 
 const router = express.Router();
@@ -57,6 +58,10 @@ const defaultRoutes = [
     path: `/api/${apiVersion}/tickets`,
     route: ticketRoutes,
   },
+  {
+    path: `/api/${apiVersion}/feedbacks`,
+    route: feedbackRoutes,
+  }
   // Add other route configurations here
   // {
   //   path: `/api/${apiVersion}/departments`,
