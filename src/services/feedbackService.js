@@ -86,7 +86,7 @@ class FeedbacksService {
         feedback.concernReason = reason;
         await feedback.save();
 
-        return { success: true };
+        return feedback;
     };
 
 
@@ -138,12 +138,12 @@ class FeedbacksService {
 
 
     async updateFeedback(id, data) {
-          const ratingValues = Object.values(data.rating || {}).filter(val => typeof val === 'number');
+        const ratingValues = Object.values(data.rating || {}).filter(val => typeof val === 'number');
         const overallRating = ratingValues.reduce((sum, val) => sum + val, 0) / ratingValues.length;
 
         const updatedFeedback = Feedback.findByIdAndUpdate(id, {
             feedback: data.feedback,
-    rating: {
+            rating: {
                 ...data.rating,
                 overall: parseFloat(overallRating.toFixed(1)),
             },
@@ -152,7 +152,7 @@ class FeedbacksService {
             new: true,
         });
 
-        
+
         return updatedFeedback;
     };
 }

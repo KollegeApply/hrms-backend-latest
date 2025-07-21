@@ -648,8 +648,8 @@ class Helper {
   `;
   }
 
-  static getFeedbackEmail(givenByUser, givenToUser, dashboardUrl, feedbackId) {
-  return `
+  static getFeedbackEmail({ givenByUser, givenToUser, dashboardUrl, feedbackId }) {
+    return `
     <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
       <div style="text-align: center; margin-bottom: 20px;">
         <h2 style="color: #333;">Feedback Notification</h2>
@@ -657,11 +657,11 @@ class Helper {
 
       <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
         <p style="color: #555; font-size: 16px; line-height: 1.6;">
-          Hello <strong>${givenToUser.firstName} ${givenToUser.lastName}</strong>,
+          Hello <strong>${givenToUser?.firstName} ${givenToUser?.lastName}</strong>,
         </p>
 
         <p style="color: #555; font-size: 16px; line-height: 1.6;">
-          You have received new feedback from <strong>${givenByUser.firstName} ${givenByUser.lastName}</strong>.
+          You have received new feedback from <strong>${givenByUser?.firstName} ${givenByUser?.lastName}</strong>.
         </p>
 
         <div style="background-color: #eef; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #66f;">
@@ -686,7 +686,189 @@ class Helper {
       </div>
     </div>
   `;
-}
+  }
+
+  static getConcernRaiseEmail({
+    raisedByUser,
+    dashboardUrl,
+    feedbackId,
+  }) {
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h2 style="color: #b91c1c;">Concern Raised on Feedback</h2>
+      </div>
+
+      <div style="background-color: #ffffff; padding: 25px; border-radius: 8px;">
+        <p style="font-size: 16px; color: #555;">
+          Hello,
+        </p>
+
+        <p style="font-size: 16px; color: #555;">
+          <strong>${raisedByUser.firstName} ${raisedByUser.lastName}</strong> has raised a concern on a feedback.
+        </p>
+
+        <div style="background-color: #fee2e2; padding: 15px 20px; border-left: 4px solid #dc2626; border-radius: 5px; margin: 20px 0;">
+          <p style="margin: 0; font-size: 15px; color: #b91c1c;">
+            Please review the concern and take appropriate action.
+          </p>
+        </div>
+
+        <p style="font-size: 16px; color: #555;">
+          <a href="${dashboardUrl}/feedback/view/${feedbackId}" style="color: #dc2626; text-decoration: none;">Click here to view the feedback</a>.
+        </p>
+
+        <p style="color: #777; font-size: 14px; margin-top: 30px;">
+          Best regards,<br><strong>${process?.env?.TEAM || 'HRMS'} Support Team</strong>
+        </p>
+      </div>
+
+      <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
+        This is an automated message. Please do not reply to this email.
+      </div>
+    </div>
+  `;
+  }
+
+  static getEditRequestEmail({
+    givenByUser,
+    givenToUser,
+    dashboardUrl,
+    feedbackId,
+  }) {
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #fefefe;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h2 style="color: #1f2937;">Edit Request for Submitted Feedback</h2>
+      </div>
+
+      <div style="background-color: #ffffff; padding: 25px; border-radius: 8px;">
+        <p style="font-size: 16px; color: #333;">
+          Hello HR Team,
+        </p>
+
+        <p style="font-size: 16px; color: #333;">
+          <strong>${givenByUser.firstName} ${givenByUser.lastName}</strong> has requested to edit the feedback previously given to 
+          <strong>${givenToUser.firstName} ${givenToUser.lastName}</strong>.
+        </p>
+
+        <p style="font-size: 15px; color: #555; margin-top: 20px;">
+          Please review and approve the request if valid. Editing will be enabled only upon your approval.
+        </p>
+
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${dashboardUrl}/feedback/approve-edit/${feedbackId}" 
+             style="display: inline-block; background-color: #3b82f6; color: white; padding: 12px 20px; border-radius: 5px; text-decoration: none; font-size: 15px;">
+            Review Edit Request
+          </a>
+        </div>
+
+        <p style="color: #666; font-size: 14px;">Thank you,<br><strong>${process?.env?.TEAM || 'HRMS'} Support Team</strong></p>
+      </div>
+
+      <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
+        This is an automated message. Please do not reply directly to this email.
+      </div>
+    </div>
+  `;
+  }
+
+  static getEditRequestStatusEmail({
+    givenByUser,
+    givenToUser,
+    status,
+    dashboardUrl,
+    feedbackId
+  }) {
+    const isApproved = status === 'approved';
+    const subjectText = isApproved ? 'approved' : 'rejected';
+    const color = isApproved ? '#16a34a' : '#dc2626';
+
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #fefefe;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h2 style="color: ${color};">Your Feedback Edit Request has been ${subjectText}</h2>
+      </div>
+
+      <div style="background-color: #ffffff; padding: 25px; border-radius: 8px;">
+        <p style="font-size: 16px; color: #333;">
+          Hello <strong>${givenByUser.firstName} ${givenByUser.lastName}</strong>,
+        </p>
+
+        <p style="font-size: 15px; color: #555;">
+          Your request to edit feedback for <strong>${givenToUser.firstName} ${givenToUser.lastName}</strong> has been <strong>${subjectText}</strong> by the HR team.
+        </p>
+
+        ${isApproved
+        ? `<p style="font-size: 15px; color: #555;">You can now update the feedback in the system.</p>`
+        : `<p style="font-size: 15px; color: #555;">Please contact HR if you believe this was a mistake.</p>`
+      }
+
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${dashboardUrl}/feedback/view/${feedbackId}" 
+             style="display: inline-block; background-color: ${color}; color: white; padding: 12px 20px; border-radius: 5px; text-decoration: none; font-size: 15px;">
+            View Feedback
+          </a>
+        </div>
+
+        <p style="color: #777; font-size: 14px;">Best regards,<br><strong>${process?.env?.TEAM || 'HRMS'} Support Team</strong></p>
+      </div>
+
+      <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
+        This is an automated message. Please do not reply directly.
+      </div>
+    </div>
+  `;
+  }
+
+
+  static getFeedbackUpdatedEmail({
+    givenByUser,
+    givenToUser,
+    dashboardUrl,
+    feedbackId,
+  }) {
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #ffffff;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h2 style="color: #1e40af;">Feedback Updated Notification</h2>
+      </div>
+
+      <div style="background-color: #f9fafb; padding: 30px; border-radius: 8px;">
+        <p style="font-size: 16px; color: #374151;">
+          Hello <strong>${givenToUser.firstName} ${givenToUser.lastName}</strong>,
+        </p>
+
+        <p style="font-size: 16px; color: #374151;">
+          The feedback previously shared with you by <strong>${givenByUser.firstName} ${givenByUser.lastName}</strong> has been <strong>updated</strong>.
+        </p>
+
+        <div style="background-color: #e0f2fe; padding: 15px 20px; border-left: 4px solid #3b82f6; border-radius: 5px; margin: 25px 0;">
+          <p style="margin: 0; font-size: 15px; color: #1e3a8a;">
+            Please review the updated feedback in the HRMS system.
+          </p>
+        </div>
+
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${dashboardUrl}/feedback/view/${feedbackId}" 
+             style="display: inline-block; background-color: #2563eb; color: white; padding: 12px 20px; border-radius: 5px; text-decoration: none; font-size: 15px;">
+            View Updated Feedback
+          </a>
+        </div>
+
+        <p style="color: #6b7280; font-size: 14px;">
+          Best regards,<br><strong>${process?.env?.TEAM || 'HRMS'} Support Team</strong>
+        </p>
+      </div>
+
+      <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #9ca3af;">
+        This is an automated message. Please do not reply directly to this email.
+      </div>
+    </div>
+  `;
+  }
+
+
 
 
   static getTicketCreatedEmailForTeam(subject, type, raisedByName, baseUrl, ticketId) {

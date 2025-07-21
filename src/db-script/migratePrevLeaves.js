@@ -16,7 +16,6 @@ const LEAVETYPE_MAP = {
 
 async function migrateLeaves() {
   await mongoose.connect(process.env.MONGO_URI);
-  console.log('Connected to DB');
 
   const leaveTypes = await LeaveType.find({});
   const codeToIdMap = {};
@@ -72,27 +71,27 @@ async function migrateLeaves() {
     const totalDays = datesArr.length;
     const status = (leave.status || '').toLowerCase();
 
-  const isOriginallyFromDateField =
-  !!leave.date && (!Array.isArray(leave.dates) || leave.dates.length === 0);
+    const isOriginallyFromDateField =
+      !!leave.date && (!Array.isArray(leave.dates) || leave.dates.length === 0);
 
-if (status === 'approved' && !!leave.date){
-  await EmployeeLeaveBalance.updateOne(
-    { userId: leave.userId, leaveTypeId },
-    {
-      $inc: { used: 1 },
-      $setOnInsert: {
-        userId: leave.userId,
-        leaveTypeId,
-        accrued: 0,
-        total: 0,
-        carryForwarded: 0,
-      },
-    },
-    { upsert: true }
-  );
-} else {
-  console.log(`Balance update skipped (status=${status}, cameFromDateField=${isOriginallyFromDateField})`);
-}
+    if (status === 'approved' && !!leave.date) {
+      await EmployeeLeaveBalance.updateOne(
+        { userId: leave.userId, leaveTypeId },
+        {
+          $inc: { used: 1 },
+          $setOnInsert: {
+            userId: leave.userId,
+            leaveTypeId,
+            accrued: 0,
+            total: 0,
+            carryForwarded: 0,
+          },
+        },
+        { upsert: true }
+      );
+    } else {
+      console.log(`Balance update skipped (status=${status}, cameFromDateField=${isOriginallyFromDateField})`);
+    }
 
 
     // Migrate to LeaveApplication

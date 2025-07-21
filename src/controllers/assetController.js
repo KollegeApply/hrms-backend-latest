@@ -27,7 +27,6 @@ const assignAsset = catchAsync(async (req, res) => {
   }
 
   const sendMail = req?.body?.sendMail === true;
-  console.log("frontend-url", process.env.HRMS_FRONTEND_URL);
   if (sendMail && process.env.HRMS_FRONTEND_URL) {
     const { assetName, assetType, assignee } = validatedData;
     const employee = await User.findById(assignee);
