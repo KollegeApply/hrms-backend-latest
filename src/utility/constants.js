@@ -35,6 +35,21 @@ const ASSETS_STATUS = {
   CANCELLED: 'cancelled',
 };
 
+
+const CANDIDATE_STATUS = {
+  PENDING: 'pending',
+  DRAFT: 'draft',
+  SUBMITTED: 'submitted',
+  RESENT: 'resent',
+  REDRAFT: 'redraft',
+  RESUBMITTED: 'resubmitted',
+  UNDER_REVIEW: 'underReview',
+  APPROVED: 'approved',
+  COMPLETED: 'completed',
+  BACKOUT: 'backout'
+};
+
+
 const MAIL_HOST = 'smtp.gmail.com';
 const MAIL_PORT = 465;
 const MAIL_SECURE = true;
@@ -103,6 +118,8 @@ module.exports = {
   VALID_USER_ROLES: Object.values(USER_ROLES),
   VALID_EMPLOYEE_STATUS: Object.values(EMPLOYEE_STATUS),
   VALID_ASSETS_STATUS: Object.values(ASSETS_STATUS),
+  CANDIDATE_STATUS,
+  VALID_CANDIDATE_STATUS: Object.values(CANDIDATE_STATUS),
   MAIL_HOST,
   MAIL_PORT,
   MAIL_SECURE,

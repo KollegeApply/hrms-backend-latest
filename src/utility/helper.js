@@ -899,6 +899,43 @@ class Helper {
     <p>If you need further assistance, please contact your HR or support team.</p>
   `;
   }
+
+  static getCandidateInviteEmail(candidate, inviteLink) {
+    return `
+      <p>Dear ${candidate?.firstName},</p>
+  
+      <p>Welcome aboard! We're excited to have you as part of the Sportsdunia family.</p>
+  
+      <p>
+        Please complete your Candidate Information Form (CIF) by clicking the button below.
+        This form will be valid for <strong>7 days</strong> from the date you received this email.
+      </p>
+  
+      <p>
+        <a href="${inviteLink}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #007bff; color: #fff; padding: 12px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">
+          Access Your Form
+        </a>
+      </p>
+  
+      <p>The Candidate Information Form (CIF) is a comprehensive form that helps us collect essential information required at onboarding. Please be prepared to provide the following types of details:</p>
+  
+      <ul>
+        <li><strong>Personal Details</strong> – Name, contact info, date of birth, marital status, Aadhar/PAN</li>
+        <li><strong>Address Information</strong> – Current and permanent addresses with supporting docs</li>
+        <li><strong>Educational Background</strong> – Schooling, graduation, post-grad, certifications</li>
+        <li><strong>Employment History</strong> – Job roles, experiences, previous employers</li>
+        <li><strong>Medical Information</strong> – Blood group and any medical history (if applicable)</li>
+        <li><strong>Background Check Info</strong> – Court/legal proceedings or convictions (if any)</li>
+        <li><strong>Bank Details</strong> – For salary disbursement</li>
+        <li><strong>Document Uploads</strong> – PAN, Aadhar, address proof, resume, offer letter, etc.</li>
+      </ul>
+  
+      <p>Please ensure all required information is accurate and complete.</p>
+  
+      <p>Best regards,<br/>HR Team - Sportsdunia</p>
+    `;
+  }
+  
 }
 
 module.exports = Helper;
