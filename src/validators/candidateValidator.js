@@ -377,16 +377,28 @@ const finalSubmitSchema = candidateDraftSchema.concat(
       accountType: Joi.string().valid("savings", "current").required(),
     }).required(),
 
-    documents: Joi.object({
-      photograph: Joi.string().uri().required(),
-      signature: Joi.string().uri().required(),
-      panCard: Joi.string().uri().required(),
-      aadharCardFront: Joi.string().uri().required(),
-      aadharCardBack: Joi.string().uri().required(),
-      addressProof: Joi.string().uri().required(),
-      tenthMarkSheet: Joi.string().uri().required(),
-      updatedResume: Joi.string().uri().required(),
-      cancelledCheque: Joi.string().uri().required(),
+documents: Joi.object({
+      // --- Required Documents ---
+      photograph: Joi.string().required(),
+      signature: Joi.string().required(),
+      panCard: Joi.string().required(),
+      aadharCardFront: Joi.string().required(),
+      aadharCardBack: Joi.string().required(),
+      addressProof: Joi.string().required(),
+      tenthMarkSheet: Joi.string().required(),
+      twelfthMarkSheet: Joi.string().required(),
+      graduationProof: Joi.string().required(),
+      updatedResume: Joi.string().required(),
+      cancelledCheque: Joi.string().required(),
+      form11: Joi.string().required(),
+
+      // --- Optional Documents ---
+      postGraduationProof: Joi.string().optional().allow(null, ''),
+      offerLetter: Joi.string().optional().allow(null, ''),
+      relievingLetter: Joi.string().optional().allow(null, ''),
+      salarySlipOne: Joi.string().optional().allow(null, ''),
+      salarySlipTwo: Joi.string().optional().allow(null, ''),
+      salarySlipThree: Joi.string().optional().allow(null, ''),
     }).required(),
      certification: Joi.boolean().valid(true).required().messages({
       "any.only": "You must certify the information to submit",

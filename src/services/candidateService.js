@@ -101,21 +101,31 @@ class CandidateService {
   }
   
 
-  async finalSubmit(email, data) {
-    // Validate all required fields (to be implemented)
-    // Upload docs to Azure (to be implemented)
-    const candidate = await Candidate.findOne({ personalEmail: email });
-    if (!candidate) throw new Error('Candidate not found');
-    if (!candidate.userDetails) throw new Error('UserDetails not found');
-    let status;
-    if(status === "pending" || status === "draft"){
-      status = "submitted";
-    }else{
-      status = "resubmitted";
-    }
-    await UserDetails.findByIdAndUpdate(candidate.userDetails, { ...data, status: status }, { new: true });
-    return await Candidate.findOne({ personalEmail: email }).populate('userDetails');
+async finalSubmit(email, data) {
+  const candidate = await Candidate.findOne({ personalEmail: email });
+  if (!candidate) throw new Error('Candidate not found');
+  if (!candidate.userDetails) throw new Error('UserDetails not found');
+
+  if (candidate.status === "backout") {
+    throw new Error('Candidate has already backed out.');
   }
+
+  let newStatus;
+  if (candidate.status === "pending" || candidate.status === "draft") {
+    newStatus = "submitted";
+  } else {
+    newStatus = "resubmitted";
+  }
+
+  // Update userDetails document
+  await UserDetails.findByIdAndUpdate(candidate.userDetails, { ...data }, { new: true });
+
+  // Update candidate status
+  await Candidate.findByIdAndUpdate(candidate._id, { status: newStatus });
+
+  // Return updated candidate with populated userDetails
+  return await Candidate.findOne({ personalEmail: email }).populate('pointOfContact', 'firstName lastName email');;
+}
 
   
   async editCandidate(id, data) {

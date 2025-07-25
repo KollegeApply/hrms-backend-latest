@@ -935,6 +935,49 @@ class Helper {
       <p>Best regards,<br/>HR Team - Sportsdunia</p>
     `;
   }
+
+static getCandidateSubmissionEmail(candidate) {
+  const submissionDate = new Date().toLocaleString('en-US', {
+    dateStyle: 'long',
+    timeStyle: 'short',
+  });
+
+  const statusTitle =
+    candidate.status === 'resubmitted'
+      ? 'Candidate Information Form Re-Submitted'
+      : 'Candidate Information Form Submitted';
+
+  const statusMessage =
+    candidate.status === 'resubmitted'
+      ? 'The following candidate has re-submitted their Candidate Information Form (CIF):'
+      : 'The following candidate has successfully submitted their Candidate Information Form (CIF):';
+
+  return `
+    <div>
+      <img
+        src="https://placehold.co/600x150/34c38f/FFFFFF?text=Submission+Received"
+        alt="Submission Confirmation Banner"
+        style="width: 100%; max-width: 600px; height: auto; margin-bottom: 20px;"
+      >
+
+      <h3>${statusTitle}</h3>
+
+      <p>${statusMessage}</p>
+
+      <ul>
+        <li><strong>Name:</strong> ${candidate?.personalInfo?.firstName || 'N/A'} ${candidate?.personalInfo?.lastName || ''}</li>
+        <li><strong>Email:</strong> ${candidate?.personalInfo?.email || 'N/A'}</li>
+        <li><strong>Submission Date:</strong> ${submissionDate}</li>
+      </ul>
+
+      <p>You can now begin reviewing their information in the HRMS system.</p>
+
+      <p>Regards,<br/>HRMS System</p>
+      
+      <p style="font-size: 12px; color: #888;">This is an automated notification.</p>
+    </div>
+  `;
+}
   
 }
 

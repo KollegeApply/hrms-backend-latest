@@ -225,6 +225,38 @@ function cleanEmptyFields(obj) {
   return obj;
 }
 
+const transformDocumentPaths = (documents) => {
+  const baseUrl = process.env.IMAGE_BASE_URL;
+
+  if (!documents || typeof documents !== 'object' || !baseUrl) {
+    return documents || {};
+  }
+
+  const documentsWithUrls = {};
+
+  for (const [key, relativePath] of Object.entries(documents)) {
+      console.log('transformDocumentPaths:', key, relativePath);
+    if (
+      typeof relativePath === 'string' &&
+      (
+        relativePath.startsWith('http://') ||
+        relativePath.startsWith('https://') ||
+        relativePath.startsWith(baseUrl)
+      )
+    ) {
+      // Already a full URL or starts with baseUrl, use as is
+      documentsWithUrls[key] = relativePath;
+    } else {
+      // Only prepend baseUrl if it's a relative path
+      documentsWithUrls[key] = `${baseUrl}/${relativePath}`;
+    }
+  }
+
+  return documentsWithUrls;
+};
+
+
+
 
 
 module.exports = {
@@ -236,4 +268,5 @@ module.exports = {
   generateCIFToken,
   validateCIFToken,
   cleanEmptyFields,
+  transformDocumentPaths,
 };
