@@ -369,6 +369,23 @@ const getUserHistory = async (req, res) => {
   }
 };
 
+const getUserByTlId = async (req, res) => {
+  try {
+   const userId = req?.query?.userId;
+const userRole = req?.query?.userRole;
+
+    const validateData =
+      await userValidator?.getUserByTlIdSchema?.validateAsync({ userId, userRole });
+    const result = await userService.getUserByTlId(validateData?.userId, userRole);
+    return res.status(result.statusCode).json(result);
+  } catch (error) {
+    console.error('Error in getUserByTlId controller:', error);
+    return res
+      .status(500)
+      .json({ message: 'An unexpected server error occurred.' });
+  }
+};
+
 module.exports = {
   createUser,
   getAllUsers,
@@ -381,6 +398,7 @@ module.exports = {
   verifyOtp,
   bulkUpload,
   getUserHistory,
+  getUserByTlId,
 };
 
 // --- Utility: catchAsync (Place in src/utility/catchAsync.js) ---

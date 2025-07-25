@@ -13,10 +13,14 @@ const objectIdSchema = Joi.string()
   .message({ 'any.invalid': 'Invalid MongoDB ObjectId' });
 
 const assetAssignmentSchema = Joi.object({
-  assetId: Joi.string().required().messages({
-    'string.empty': 'Asset ID is required',
-    'any.required': 'Asset ID is required',
+  assetType: Joi.string().required().messages({
+    'string.empty': 'Asset Type is required',
+    'any.required': 'Asset Type is required',
   }),
+  // assetId: Joi.string().required().messages({
+  //   'string.empty': 'Asset ID is required',
+  //   'any.required': 'Asset ID is required',
+  // }),
   assetName: Joi.string().required().messages({
     'string.empty': 'Asset Name is required',
     'any.required': 'Asset Name is required',
