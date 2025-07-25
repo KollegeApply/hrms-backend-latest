@@ -249,11 +249,18 @@ const attendanceService = {
   },
 
 
-async getTeamMembers(leaderId){
-  const teamUsers = await User.find({ teamLeadId: leaderId }, '_id');
+async getTeamMembers(leaderId) {
+  const teamUsers = await User.find(
+    {
+      $or: [
+        { teamLeadId: leaderId },
+        { subTeamLeadId: leaderId }
+      ]
+    },
+    '_id'
+  );
   return teamUsers.map((u) => u._id);
 },
-
 
   async getAttendance(userId, role, startDateStr, endDateStr) {
     try {
@@ -299,7 +306,7 @@ async getTeamMembers(leaderId){
       }
       let query = { date: dateQuery };
 
-if (['teamlead', 'stl'].includes(role)) {
+if (['teamlead', 'subteamlead'].includes(role)) {
   const teamMemberIds = await this.getTeamMembers(userId);
   query.user = { $in: [userId, ...teamMemberIds] };
 } else if (!['hr', 'subadmin', 'admin'].includes(role)) {
