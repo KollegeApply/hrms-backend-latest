@@ -21,6 +21,7 @@ const leavePolicyModel = require('../models/leavePolicyModel');
 const leavePolicyMappingModel = require('../models/leavePolicyMappingModel');
 const employeeLeaveBalanceModel = require('../models/employeeLeaveBalanceModel');
 const leaveTypeModel = require('../models/leaveTypeModel');
+const { default: mongoose } = require('mongoose');
 
 class UserService {
   /**
@@ -33,100 +34,140 @@ class UserService {
    * @returns {Promise<object>} - Paginated user data or list of all users.
    */
 
-  async getAllUsers(queryOptions, currentUser) {
-    const {
-      page,
-      limit,
-      search,
-      department,
-      role,
-      status,
-      sortBy,
-      sortOrder,
-      isPaginated,
-    } = queryOptions;
+async getAllUsers(queryOptions, currentUser) {
+  const {
+    page,
+    limit,
+    search,
+    department,
+    role,
+    status,
+    sortBy,
+    sortOrder,
+    isPaginated,
+    isAttendanceLog,
+    teamLeadId,
+    subTeamLeadId,
+  } = queryOptions;
 
-    const query = { isDeleted: false }; // Base query to exclude soft-deleted users
+  const query = { isDeleted: false };
+  const andConditions = [];
 
-    if (
-      department &&
-      typeof department === 'string' &&
-      department?.trim()?.length > 0
-    ) {
-      // Assuming 'department' field in User schema stores the ObjectId
-      query.department = department?.trim();
-      logger.info(`Applying department filter: ${query.department}`);
-    }
+  // Department filter
+  if (typeof department === 'string' && department.trim().length > 0) {
+    andConditions.push({ department: department.trim() });
+  }
 
-    // Add search criteria
-    if (search && typeof search === 'string' && search?.trim()?.length > 0) {
-      const searchTerm = search?.trim();
-      // Simple search across multiple fields (adjust fields as needed)
-      const searchRegex = new RegExp(searchTerm, 'i'); // Case-insensitive search
-      query.$or = [
-        { firstName: searchRegex },
-        { lastName: searchRegex },
-        { email: searchRegex },
-        { employeeId: searchRegex },
-        // { jobTitle: searchRegex },
-        // { department: searchRegex },
-      ];
-    }
+  // Role filter
+  if (role) {
+    andConditions.push({ role });
+  }
 
-    // Add filtering criteria
-    if (role) {
-      query.role = role;
-    }
-    if (status) {
-      query.status = status;
-    }
+  // Team-based filter
+  const teamFilter = [];
+  if (currentUser?.role === 'teamlead') {
+    teamFilter.push({ teamLeadId: currentUser.id });
+  } else if (currentUser?.role === 'subteamlead') {
+    teamFilter.push({ subTeamLeadId: currentUser.id });
+  }
 
-    // Restrict user from seeing their own record
-    // query._id = { $ne: currentUser.id };
+  // Search filter
+  const searchFilters = [];
+  if (typeof search === 'string' && search.trim().length > 0) {
+    const regex = new RegExp(search.trim(), 'i');
+    searchFilters.push(
+      { firstName: regex },
+      { lastName: regex },
+      { email: regex },
+      { employeeId: regex }
+    );
+  }
 
-    // Define sorting
-    const sort = {};
-    sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
+  if (isAttendanceLog) {
+    // Only users who are onroll or probation or the current user
+    const statusFilter = {
+      status: { $in: ['onroll', 'probation'] },
+    };
 
-    const populateOptions = [
-      {
-        path: 'teamLeadId',
-        select: 'id firstName lastName email',
-      },
-      {
-        path: 'subTeamLeadId',
-        select: '_id firstName lastName email',
-      },
-      {
-        path: 'department',
-        select: '_id name',
-      },
-    ];
+    const attendanceConditions = [];
 
-    if (isPaginated) {
-      logger.info(
-        `Fetching paginated users: page=${page}, limit=${limit}, query=${JSON.stringify(query)}, sort=${JSON.stringify(sort)}`
-      );
-      const paginatedResult = await paginate(
-        User,
-        query,
-        page,
-        limit,
-        sort,
-        null,
-        populateOptions
-      );
-
-      return paginatedResult;
+    if (teamFilter.length > 0) {
+      attendanceConditions.push({ ...statusFilter, ...teamFilter[0] });
     } else {
-      logger.info(
-        `Fetching all users: query=${JSON.stringify(query)}, sort=${JSON.stringify(sort)}`
-      );
-      // Fetch all matching users without pagination
-      const users = await User.find(query).sort(sort);
-      return { data: users };
+      attendanceConditions.push(statusFilter);
+    }
+
+    // Always include current user
+    attendanceConditions.push({ _id: currentUser.id });
+
+    if (searchFilters.length > 0) {
+      andConditions.push({
+        $or: searchFilters,
+      });
+    }
+
+    andConditions.push({
+      $or: attendanceConditions,
+    });
+  } else {
+    // Normal flow (non-attendance)
+    if (teamFilter.length > 0) {
+      andConditions.push(teamFilter[0]);
+    }
+
+    if (status) {
+      andConditions.push({ status });
+    }
+
+    if (searchFilters.length > 0) {
+      andConditions.push({
+        $or: searchFilters,
+      });
     }
   }
+
+  if(!isAttendanceLog){
+   
+if (teamLeadId && typeof teamLeadId === 'string' && teamLeadId.trim() !== '') {
+  andConditions.push({ teamLeadId: teamLeadId.trim() });
+}
+
+if (subTeamLeadId && typeof subTeamLeadId === 'string' && subTeamLeadId.trim() !== '') {
+  andConditions.push({ subTeamLeadId: subTeamLeadId.trim() });
+}
+}
+
+  if (andConditions.length > 0) {
+    query.$and = andConditions;
+  }
+
+  const sort = {};
+  sort[sortBy || 'createdAt'] = sortOrder === 'desc' ? -1 : 1;
+
+  const populateOptions = [
+    { path: 'teamLeadId', select: 'id firstName lastName email' },
+    { path: 'subTeamLeadId', select: '_id firstName lastName email' },
+    { path: 'department', select: '_id name' },
+  ];
+
+  if (isPaginated) {
+    console.log(query);
+    const paginatedResult = await paginate(
+      User,
+      query,
+      page,
+      limit,
+      sort,
+      null,
+      populateOptions
+    );
+    return paginatedResult;
+  } else {
+    const users = await User.find(query).sort(sort).populate(populateOptions);
+    return { data: users };
+  }
+}
+
 
   /**
    * Get a single user by their ID.
@@ -223,7 +264,7 @@ class UserService {
     }
 
     // Auto-generate Employee ID
-    const lastUser = await User.findOne({ employeeId: { $regex: /^SD_\d+$/ } })
+    const lastUser = await User.findOne({ employeeId: { $regex: new RegExp(`^${process.env.TEAM_CODE}_\\d+$`) }})
       .sort({ employeeId: -1 })
       .select('employeeId')
       .lean();
@@ -260,7 +301,7 @@ class UserService {
     // Create and Save User
     const user = new User({
       ...userData,
-      employeeId: `SD_${paddedNumber}`,
+      employeeId: `${process.env.TEAM_CODE}_${paddedNumber}`,
       password: hashedPassword,
       email: userData?.email?.toLowerCase(),
       leavePolicyId: assignedPolicy._id,
@@ -411,7 +452,7 @@ class UserService {
 
           let carryForwarded = 0;
           if (mapping.leaveTypeId.code === 'ANNUAL') {
-            carryForwarded = unusedProbation > 0 ? unusedProbation-1 : 0;
+            carryForwarded = unusedProbation > 0 ? unusedProbation - 1 : 0;
           }
 
           const accrued = accrualType === 'monthly' ? accrualPerMonth : quota;
@@ -897,7 +938,7 @@ class UserService {
       const saltRounds = 10;
       const usersReadyForInsert = [];
       const lastUser = await User.findOne({
-        employeeId: { $regex: /^SD_\d+$/ },
+        employeeId: { $regex: new RegExp(`^${process.env.TEAM_CODE}_\\d+$`)},
       })
         .sort({ employeeId: -1 })
         .select('employeeId')
@@ -910,7 +951,7 @@ class UserService {
           if (!user.password)
             throw new Error('Missing password prior to hashing.');
           const paddedNumber = String(nextNumber++).padStart(3, '0');
-          user.employeeId = `SD_${paddedNumber}`;
+          user.employeeId = `${process.env.TEAM_CODE}_${paddedNumber}`;
           passMap[user?.firstName] = user?.password;
           // passMap.set(user?.firstName, user?.password);
           user.password = await bcrypt.hash(user?.password, saltRounds);
@@ -1033,6 +1074,107 @@ class UserService {
       };
     }
   }
+
+async getUserByTlId(userId, userRole) {
+  try {
+    let user;
+    const statusQuery = { status: { $in: ['probation', 'onroll'] } };
+    const commonSelectFields = 'id firstName lastName email role employeeId';
+
+    if (
+      userRole === 'admin' ||
+      userRole === 'subadmin' ||
+      userRole === 'hr'
+    ) {
+      user = await User.find(statusQuery).select(commonSelectFields);
+    } else if (userRole === 'teamlead' || userRole === 'subteamlead') {
+
+      const allowedRoles = ['admin', 'subadmin', 'hr', 'IT'];
+
+      const currentUser = await User.findById(userId).select('teamLeadId subTeamLeadId');
+      const managersToInclude = [];
+      if (currentUser && currentUser.teamLeadId) {
+        managersToInclude.push(currentUser.teamLeadId);
+      }
+      if (currentUser && currentUser.subTeamLeadId) {
+        managersToInclude.push(currentUser.subTeamLeadId);
+      }
+      const uniqueManagersToInclude = [...new Set(managersToInclude.filter(Boolean))];
+
+      user = await User.find({
+        $and: [
+          statusQuery,
+          {
+            $or: [
+              { role: { $in: allowedRoles } },
+              userRole === 'teamlead' ? { teamLeadId: userId } : { subTeamLeadId: userId },
+              { _id: { $in: uniqueManagersToInclude } }
+            ]
+          }
+        ]
+      }).select(commonSelectFields);
+
+    } else if (userRole === 'employee') {
+      const currentUser = await User.findById(userId).select('teamLeadId subTeamLeadId');
+      const allowedUserIds = [currentUser.teamLeadId, currentUser.subTeamLeadId].filter(Boolean);
+
+      const allowedRoles = ['admin', 'subadmin', 'hr', 'IT'];
+
+      user = await User.find({
+        $and: [
+          statusQuery,
+          {
+            $or: [
+              { _id: { $in: allowedUserIds } },
+              { role: { $in: allowedRoles } },
+            ]
+          }
+        ]
+      }).select(commonSelectFields);
+    } else if (userRole === 'IT') {
+      const allowedRoles = ['hr', 'admin', 'subadmin'];
+      
+      const currentUser = await User.findById(userId).select('teamLeadId subTeamLeadId');
+      const managersToInclude = [];
+      if (currentUser && currentUser.teamLeadId) {
+        managersToInclude.push(currentUser.teamLeadId);
+      }
+      if (currentUser && currentUser.subTeamLeadId) {
+        managersToInclude.push(currentUser.subTeamLeadId);
+      }
+      const uniqueManagersToInclude = [...new Set(managersToInclude.filter(Boolean))];
+
+      user = await User.find({
+        $and: [
+          statusQuery,
+          {
+            $or: [
+              { role: { $in: allowedRoles } },
+              { teamLeadId: userId },
+              { subTeamLeadId: userId },
+              { _id: { $in: uniqueManagersToInclude } }
+            ]
+          }
+        ]
+      }).select(commonSelectFields);
+    } else {
+      user = []; 
+    }
+
+    return {
+      status: true,
+      statusCode: 200,
+      data: user.filter(u => u.id.toString() !== userId.toString()),
+    };
+  } catch (error) {
+    console.error('Error in getUserByTlId service:', error);
+    return {
+      status: false,
+      statusCode: 500,
+      message: 'An unexpected server error occurred.',
+    };
+  }
+}
 }
 
 module.exports = new UserService(); // Export an instance
