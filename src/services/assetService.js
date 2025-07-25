@@ -12,7 +12,7 @@ class AssetsService {
    */
   async assignAsset(assignmentData) {
     const {
-      assetId,
+      assetType,
       assetName,
       assignee,
       serialNumber,
@@ -22,14 +22,14 @@ class AssetsService {
     } = assignmentData;
 
     // Validate the asset ID
-    const asset = await Assets.findOne({
-      assetId: assetId,
-      status: { $nin: ['cancelled', 'not_acknowledged', 'returned'] },
-    });
-    if (asset) {
-      logger.error('Asset is already assigned', assetId);
-      throw new Error('Asset is already assigned');
-    }
+    // const asset = await Assets.findOne({
+    //   assetId: assetId,
+    //   status: { $nin: ['cancelled', 'not_acknowledged', 'returned'] },
+    // });
+    // if (asset) {
+    //   logger.error('Asset is already assigned', assetId);
+    //   throw new Error('Asset is already assigned');
+    // }
 
     // Validate the assignee
     const user = await User.findById(assignee);
@@ -46,7 +46,7 @@ class AssetsService {
     }
 
     const newAssignment = new Assets({
-      assetId,
+      assetType,
       assetName,
       assignee,
       serialNumber,
@@ -66,7 +66,7 @@ class AssetsService {
   async fetchAssignedAssets(page, limit, search) {
     const query = {};
     if (search) {
-      query.assetId = { $regex: new RegExp(search, 'i') }; // Case-insensitive search on assetId
+      query.Type = { $regex: new RegExp(search, 'i') };
     }
 
     const populateOptions = [
@@ -74,6 +74,10 @@ class AssetsService {
         path: 'assignee',
         select: 'firstName lastName employeeId email',
       },
+      {
+        path: 'assignedBy',
+        select: 'firstName lastName employeeId email'
+      }
     ];
 
     const paginationResult = await paginate(
@@ -92,7 +96,7 @@ class AssetsService {
 
   /**
    * Updates the status and/or specifications of an assigned asset.
-   * @param {string} assetId - The ID of the asset to update.
+   * @param {string} assetType - The Type of the asset to update.
    * @param {object} updateData - An object containing the fields to update (status, specifications, serialNo).
    * @returns {Promise<AssignedAsset|null>} - The updated assigned asset record, or null if not found.
    */

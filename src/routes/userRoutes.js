@@ -33,6 +33,8 @@ router.post(
 
 router.get('/', authenticateUser, userController?.getAllUsers);
 
+router.get('/tl-id', authenticateUser, userController?.getUserByTlId);
+
 // Get Specific User: Allow self-access, plus HR/Admin/Manager access
 router.get(
   '/:id',

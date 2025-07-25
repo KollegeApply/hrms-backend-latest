@@ -15,6 +15,11 @@ const leaveSchema = new Schema(
     leaveType: {
       type: String,
     },
+     date: { // This is the singular 'date' field from your legacy data
+      type: Date,
+      // Make it optional if not all legacy records have it, or if it will be replaced by 'dates'
+      required: false, // Set to false, as it's a legacy field you're migrating from
+    },
     dates: {
       type: [Date],
       required: true,

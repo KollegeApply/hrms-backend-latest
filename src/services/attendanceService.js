@@ -1,4 +1,5 @@
 const Attendance = require('../models/attendanceModel');
+const User = require('../models/userModel');
 const { startOfDay, endOfDay, parseISO, isValid } = require('date-fns');
 
 // Helper function to get the start and end of the current month
@@ -247,6 +248,13 @@ const attendanceService = {
     }
   },
 
+
+async getTeamMembers(leaderId){
+  const teamUsers = await User.find({ teamLeadId: leaderId }, '_id');
+  return teamUsers.map((u) => u._id);
+},
+
+
   async getAttendance(userId, role, startDateStr, endDateStr) {
     try {
       let startDate, endDate;
@@ -291,9 +299,13 @@ const attendanceService = {
       }
       let query = { date: dateQuery };
 
-      if (role !== 'hr' && role !== 'subadmin' && role !== 'admin') {
-        query.user = userId;
-      }
+if (['teamlead', 'stl'].includes(role)) {
+  const teamMemberIds = await this.getTeamMembers(userId);
+  query.user = { $in: [userId, ...teamMemberIds] };
+} else if (!['hr', 'subadmin', 'admin'].includes(role)) {
+  query.user = userId;
+}
+
       const attendance = await Attendance.find(query)
         .populate('user', 'firstName lastName employeeId workType')
         .populate('leaveId')
