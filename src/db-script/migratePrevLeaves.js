@@ -3,7 +3,7 @@ const Leave = require('../models/leaveModel');
 const LeaveType = require('../models/leaveTypeModel');
 const LeaveApplication = require('../models/leaveApplicationModel');
 const EmployeeLeaveBalance = require('../models/employeeLeaveBalanceModel');
-require('dotenv').config({ path: './.env.production' });
+require('dotenv').config({ path: '../../.env.production' });
 
 const LEAVETYPE_MAP = {
   casualSickLeave: 'CASUAL',
