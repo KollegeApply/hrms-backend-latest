@@ -2,6 +2,7 @@ const Candidate = require('../models/candidateModel');
 const UserDetails = require('../models/userDetailsModel');
 const { generateCIFToken, cleanEmptyFields } = require('../utility/common');
 const _ = require('lodash');
+const jwt = require('jsonwebtoken');
 
 class CandidateService {
   async createCandidate(data,userId){
@@ -87,10 +88,10 @@ class CandidateService {
     }
   
     // Update the candidate's overall status if needed
-    if (candidate.status === 'pending') {
+    if (candidate.status === 'pending' || candidate.status === 'draft') {
         candidate.status = 'draft';
     }
-    if(candidate.status === 'resended' || candidate.status === 'underReview'){
+    if(candidate.status === 'resended' || candidate.status === 'redraft'){
       candidate.status = 'redraft';
     }
     
@@ -124,7 +125,7 @@ async finalSubmit(email, data) {
   await Candidate.findByIdAndUpdate(candidate._id, { status: newStatus });
 
   // Return updated candidate with populated userDetails
-  return await Candidate.findOne({ personalEmail: email }).populate('pointOfContact', 'firstName lastName email');;
+  return await Candidate.findById(candidate._id).populate('pointOfContact', 'firstName lastName email');;
 }
 
   
@@ -140,6 +141,68 @@ async finalSubmit(email, data) {
     await UserDetails.findByIdAndUpdate(candidate.userDetails, { ...data, status: status }, { new: true });
     return await Candidate.findOne({ personalEmail: email }).populate('userDetails');
   }
+
+  async  reviewUpdateCandidate(candidateId, updateData){
+  const candidate = await Candidate.findById(candidateId);
+  if (!candidate) {
+    throw new Error('Candidate not found');
+  }
+
+  // Find or create the userDetails document
+  let userDetails = await UserDetails.findById(candidate.userDetails);
+  if (!userDetails) {
+    userDetails = new UserDetails();
+  }
+
+  // Update all fields from the form
+  Object.assign(userDetails, updateData);
+  await userDetails.save();
+
+  // Update the candidate status
+  candidate.status = 'underReview';
+  candidate.userDetails = userDetails._id; // Ensure the reference is set
+  await candidate.save();
+
+  return candidate;
+};
+
+async approveCandidate(candidateId) {
+  const candidate = await Candidate.findById(candidateId);
+  if (!candidate) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Candidate not found');
+  }
+
+  candidate.status = 'approved';
+  await candidate.save();
+
+  return candidate;
+};
+
+ async resendCifInvite(candidateId)  {
+  const candidate = await Candidate.findById(candidateId).populate('userDetails');
+  if (!candidate) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Candidate not found');
+  }
+
+  if (candidate.userDetails) {
+  candidate.userDetails.certification = false;
+  await candidate.userDetails.save();
+}
+
+  candidate.status = 'resended';
+  
+  // Generate a new token for the candidate
+  const token = jwt.sign(
+    { email: candidate.personalEmail, exp: Math.floor(Date.now() / 1000) + (3 * 24 * 60 * 60) }, 
+    process.env.CIF_TOKEN_SECRET 
+  );
+
+  await candidate.save();
+
+  const updatedCandidate = await Candidate.findById(candidateId).populate('userDetails pointOfContact');
+  
+  return { candidate:updatedCandidate, token };
+};
 }
 
 module.exports = new CandidateService();

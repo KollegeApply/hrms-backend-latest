@@ -250,12 +250,7 @@ const attendanceService = {
 
 
 async getTeamMembers(leaderId){
-  const teamUsers = await User.find({
-      $or: [
-        { teamLeadId: leaderId },
-        { subTeamLeadId: leaderId }
-      ]
-    }, '_id');
+  const teamUsers = await User.find({ teamLeadId: leaderId }, '_id');
   return teamUsers.map((u) => u._id);
 },
 
@@ -304,7 +299,7 @@ async getTeamMembers(leaderId){
       }
       let query = { date: dateQuery };
 
-if (['teamlead', 'subteamlead'].includes(role)) {
+if (['teamlead', 'stl'].includes(role)) {
   const teamMemberIds = await this.getTeamMembers(userId);
   query.user = { $in: [userId, ...teamMemberIds] };
 } else if (!['hr', 'subadmin', 'admin'].includes(role)) {

@@ -6,7 +6,7 @@ const CandidateSchema = new Schema({
   pointOfContact: { type: Schema.Types.ObjectId, ref: 'User' },
   firstName: { type: String, required: true },
   lastName: { type: String, required: true },
-  personalEmail: { type: String, required: true, unique: true },
+  personalEmail: { type: String, required: true },
   phoneNumber: { type: String },
   employeeStatus: { type: String },
   department: { type: Schema.Types.ObjectId, ref: 'Department' },

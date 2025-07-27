@@ -40,7 +40,7 @@ const CANDIDATE_STATUS = {
   PENDING: 'pending',
   DRAFT: 'draft',
   SUBMITTED: 'submitted',
-  RESENT: 'resent',
+  RESENT: 'resended',
   REDRAFT: 'redraft',
   RESUBMITTED: 'resubmitted',
   UNDER_REVIEW: 'underReview',

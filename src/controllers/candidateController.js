@@ -179,7 +179,7 @@ const finalSubmit = catchAsync(async (req, res) => {
   const result = await CandidateService.finalSubmit(email, validatedData);
 
   // 7. Email
-  const sendMail = req?.body?.sendMail;
+  const sendMail = parsedBody?.sendMail ? true : false;
   if (sendMail && process.env.HRMS_FRONTEND_URL) {
     try {
       const emailSubject = result.status === 'resubmitted'
@@ -203,44 +203,44 @@ const finalSubmit = catchAsync(async (req, res) => {
   }
 });
 
-  const editCandidate = catchAsync(async (req, res) => {
-    const { id } = req.params;
+const reviewUpdateCandidate = catchAsync(async (req, res) => {
+  const { id } = req.params; // Using candidate ID
 
-    const files = req.files || {};
-    const uploadedPaths = {};
-
-
-    for (const [field, fileArray] of Object.entries(files)) {
-      if (fileArray && fileArray[0]) {
-        const file = fileArray[0];
-        const relativePath = await uploadToAzure(file.buffer, file.originalname);
-        const simpleField = field.replace('documents.', '');
-        uploadedPaths[simpleField] = relativePath;
-      }
+  // This logic is similar to finalSubmit but calls a different service
+  const files = req.files || {};
+  const uploadedPaths = {};
+  for (const [field, fileArray] of Object.entries(files)) {
+    if (fileArray && fileArray[0]) {
+      const file = fileArray[0];
+      const relativePath = await uploadToAzure(file.buffer, file.originalname);
+      const simpleField = field.replace('documents.', '');
+      uploadedPaths[simpleField] = relativePath;
     }
+  }
 
-    const parsedBody = {};
-    for (const key in req.body) {
-      try {
-        parsedBody[key] = JSON.parse(req.body[key]);
-      } catch (e) {
-        parsedBody[key] = req.body[key];
-      }
+  const parsedBody = {};
+  for (const key in req.body) {
+    try {
+      parsedBody[key] = JSON.parse(req.body[key]);
+    } catch (e) {
+      parsedBody[key] = req.body[key];
     }
+  }
 
-    const dataToValidate = {
-      ...parsedBody,
-      documents: {
-        ...parsedBody.documents,
-        ...uploadedPaths
-      },
-    };
+  const dataToValidate = {
+    ...parsedBody,
+    documents: {
+      ...(parsedBody.documents || {}),
+      ...uploadedPaths,
+    },
+  };
 
-    const validatedData = await candidateValidator.finalSubmitSchema.validateAsync(dataToValidate);
+  // We can reuse the finalSubmitSchema or create a specific one
+  const validatedData = await candidateValidator.finalSubmitSchema.validateAsync(dataToValidate);
 
-    const result = await CandidateService.editCandidate(id, validatedData);
-    res.json({ status: true, data: result });
-  });
+  const result = await CandidateService.reviewUpdateCandidate(id, validatedData);
+  res.json({ status: true, data: result, message: "Candidate updated successfully." });
+});
 
 
   const getCandidateDetailsById = catchAsync(async (req, res) => {
@@ -278,6 +278,39 @@ const finalSubmit = catchAsync(async (req, res) => {
     res.json({ status: true, message: "Canidate backout successfully" });
   });
 
+const approveCandidate = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const result = await CandidateService.approveCandidate(id);
+  res.json({ status: true, data: result, message: "Candidate approved successfully." });
+});
+
+const resendCifInvite = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { candidate, token } = await CandidateService.resendCifInvite(id);
+
+  // Construct the new invite link
+  const inviteLink = `${process.env.HRMS_FRONTEND_URL}/invite-cif/form/${token}`;
+  
+  // Get comments from userDetails to include in the email
+  const comments = candidate.userDetails?.comments || 'Please review the feedback provided in the form.';
+
+  // Send the resend email
+  const emailSubject = 'Action Required: Updates to Your Candidate Information Form (CIF)';
+  const emailMessage = Helper.getCandidateResendEmail(candidate, inviteLink, comments);
+
+  const ccEmails = candidate.pointOfContact?.email ? [candidate.pointOfContact.email] : [];
+
+  await Helper.sendEmail({
+    receiverEmails: [candidate.personalEmail],
+    subject: emailSubject,
+    message: emailMessage,
+    fromHR: true,
+    cc: ccEmails,
+  });
+
+  res.json({ status: true, message: 'CIF invite has been resent successfully.' });
+});
+
   module.exports = {
     createCandidate,
     getCandidates,
@@ -286,6 +319,8 @@ const finalSubmit = catchAsync(async (req, res) => {
     getCandidateDetailsById,
     saveDraft,
     finalSubmit,
-    editCandidate,
+    reviewUpdateCandidate,
     backoutCandidate,
+    approveCandidate,
+    resendCifInvite
   };

@@ -954,19 +954,14 @@ static getCandidateSubmissionEmail(candidate) {
 
   return `
     <div>
-      <img
-        src="https://placehold.co/600x150/34c38f/FFFFFF?text=Submission+Received"
-        alt="Submission Confirmation Banner"
-        style="width: 100%; max-width: 600px; height: auto; margin-bottom: 20px;"
-      >
-
       <h3>${statusTitle}</h3>
 
       <p>${statusMessage}</p>
 
       <ul>
-        <li><strong>Name:</strong> ${candidate?.personalInfo?.firstName || 'N/A'} ${candidate?.personalInfo?.lastName || ''}</li>
-        <li><strong>Email:</strong> ${candidate?.personalInfo?.email || 'N/A'}</li>
+        <li><strong>Name:</strong> ${candidate?.firstName || 'N/A'} ${candidate?.lastName || ''}</li>
+        <li><strong>Email:</strong> ${candidate?.personalEmail || 'N/A'}</li>
+        <li><strong>Phone:</strong> ${candidate?.phoneNumber || 'N/A'}</li>
         <li><strong>Submission Date:</strong> ${submissionDate}</li>
       </ul>
 
@@ -978,6 +973,32 @@ static getCandidateSubmissionEmail(candidate) {
     </div>
   `;
 }
+
+
+  static getCandidateResendEmail(candidate, inviteLink, comments) {
+    return `
+      <p>Dear ${candidate?.firstName},</p>
+  
+      <p>Our HR team has reviewed your Candidate Information Form (CIF) and has requested some updates. Please access the form using the button below to review the comments and make the necessary changes.</p>
+      
+      <p><strong>Comments from HR:</strong></p>
+      <p><${comments}</p>
+
+      <p><strong>Please note:</strong> Some fields that have already been verified may be locked and cannot be edited. Please focus on completing the unlocked fields.</p>
+
+      <p>This new link will be valid for <strong>3 days</strong>.</p>
+  
+      <p>
+        <a href="${inviteLink}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #f0ad4e; color: #fff; padding: 12px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">
+          Update Your Form
+        </a>
+      </p>
+  
+      <p>Thank you for your prompt attention to this matter.</p>
+  
+      <p>Best regards,<br/>HR Team - Sportsdunia</p>
+    `;
+  }
   
 }
 
