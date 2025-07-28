@@ -27,7 +27,7 @@ const documentFields = [
   { name: 'documents.salarySlipThree', maxCount: 1 },
 ];
 
-router.post('/', authenticateUser,  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]), candidateController.createCandidate);
+router.post('/', authenticateUser, authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]), candidateController.createCandidate);
 router.get('/', candidateController.getCandidates);
 router.get('/id/:id', candidateController.getCandidateDetailsById);
 
@@ -35,18 +35,24 @@ router.get('/validate/:token', candidateController.validateToken);
 router.get('/user-details/:token', candidateController.fetchCandidateDetails);
 router.post('/save/:token', candidateController.saveDraft);
 
-router.put('/backout/:id', authenticateUser,   authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]), candidateController.backoutCandidate);
+router.put('/backout/:id', authenticateUser, authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]), candidateController.backoutCandidate);
 
-router.put('/approve/:id', authenticateUser,   authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]), candidateController.approveCandidate);
+router.put('/approve/:id', authenticateUser, authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]), candidateController.approveCandidate);
 
-router.post('/resend/:id', authenticateUser,  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]), candidateController.resendCifInvite);
+router.post('/resend/:id', authenticateUser, authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]), candidateController.resendCifInvite);
 
-// Add safe upload middleware
-router.post('/submit/:token', 
+router.post(
+  '/request-device/:id',
+  authenticateUser,
+  authorizeRole([USER_ROLES.ADMIN, USER_ROLES.HR, USER_ROLES.SUBADMIN]),
+  candidateController.requestDevice
+);
+
+router.post('/submit/:token',
   safeUpload(documentFields),
   candidateController.finalSubmit
 );
-router.post('/review-update/:id', 
+router.post('/review-update/:id',
   safeUpload(documentFields),
   authenticateUser,
   authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]),

@@ -135,7 +135,6 @@ const updateUser = catchAsync(async (req, res) => {
   const currentUserId = req?.user?.id;
   const clickedUserId = userId;
 
-  if (currentUserId !== clickedUserId) {
     const updatedUser = await userService?.updateUser(userId, validatedData, {
       _id: req.user.id,
       name: req.user.name,
@@ -182,12 +181,6 @@ const updateUser = catchAsync(async (req, res) => {
       message: 'User updated successfully.',
       data: updatedUser, // User object already cleaned by toJSON
     });
-  } else {
-    res.status(httpStatus.FORBIDDEN).json({
-      status: false,
-      message: 'You cannot update this user',
-    });
-  }
 });
 
 const deleteUser = catchAsync(async (req, res) => {

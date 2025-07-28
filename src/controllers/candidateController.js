@@ -5,8 +5,6 @@ const CandidateService = require('../services/candidateService');
 const candidateValidator = require('../validators/candidateValidator');
 const UserDetails = require('../models/userDetailsModel');
 const Helper = require('../utility/helper');
-const jwt = require('jsonwebtoken');
-const candidateService = require('../services/candidateService');
 const { validateCIFToken, transformDocumentPaths } = require('../utility/common');
 const candidateModel = require('../models/candidateModel');
 const { uploadToAzure } = require('../utility/azureBlob');
@@ -95,9 +93,7 @@ const fetchCandidateDetails = catchAsync(async (req, res) => {
     const docsPlain = candidate.userDetails.documents.toObject
       ? candidate.userDetails.documents.toObject()
       : candidate.userDetails.documents;
-    console.log("Docs Plain", docsPlain);
     candidate.userDetails.documents = transformDocumentPaths(docsPlain);
-    console.log("Transformed Docs", candidate.userDetails.documents);
   }
 
 
@@ -116,26 +112,13 @@ const saveDraft = catchAsync(async (req, res) => {
   return res.status(httpStatus.CREATED).json({ status: true, data: result });
 });
 
-// const finalSubmit = catchAsync(async (req, res) => {
-//   const { token } = req.params;
-//   const {isValid, email} = await validateCIFToken(token);
-//   if (!isValid) return res.status(httpStatus.NOT_FOUND).json({ message: 'Invalid or expired link.' });
-
-//   console.log("Final submit data", req.body);
-//   const validatedData = await candidateValidator.finalSubmitSchema.validateAsync(req.body);
-//   const result = await CandidateService.finalSubmit(email, validatedData);
-//   res.json({ status: true, data: result });
-// });
-
 const finalSubmit = catchAsync(async (req, res) => {
-  // 1. Validate the token
   const { token } = req.params;
   const { isValid, email } = await validateCIFToken(token);
   if (!isValid) {
     return res.status(httpStatus.NOT_FOUND).json({ message: 'Invalid or expired link.' });
   }
 
-  // 2. Upload files to Azure and build the `uploadedPaths` object
   const files = req.files || {};
   const uploadedPaths = {};
 
@@ -143,26 +126,20 @@ const finalSubmit = catchAsync(async (req, res) => {
     if (fileArray && fileArray[0]) {
       const file = fileArray[0];
       const relativePath = await uploadToAzure(file.buffer, file.originalname);
-      // Clean the field name (e.g., 'documents.photograph' -> 'photograph')
       const simpleField = field.replace('documents.', '');
       uploadedPaths[simpleField] = relativePath;
     }
   }
 
-  // 3. Parse the stringified JSON fields from the request body
   const parsedBody = {};
   for (const key in req.body) {
     try {
-      // This will correctly parse fields like 'personalInfo', 'addressDetails', etc.
       parsedBody[key] = JSON.parse(req.body[key]);
     } catch (e) {
-      // If parsing fails, it's a simple string (like 'true' or an ID), so use the original value.
       parsedBody[key] = req.body[key];
     }
   }
 
-  // 4. *** FIX: Correctly construct the final object for validation ***
-  // We combine the parsed text fields with the object containing the new file paths.
   const dataToValidate = {
     ...parsedBody,
     documents: {
@@ -172,13 +149,10 @@ const finalSubmit = catchAsync(async (req, res) => {
   };
 
 
-  // 5. Validate the complete data object against the Joi schema
   const validatedData = await candidateValidator.finalSubmitSchema.validateAsync(dataToValidate);
 
-  // 6. Pass the validated data to the service layer
   const result = await CandidateService.finalSubmit(email, validatedData);
 
-  // 7. Email
   const sendMail = parsedBody?.sendMail ? true : false;
   if (sendMail && process.env.HRMS_FRONTEND_URL) {
     try {
@@ -204,9 +178,8 @@ const finalSubmit = catchAsync(async (req, res) => {
 });
 
 const reviewUpdateCandidate = catchAsync(async (req, res) => {
-  const { id } = req.params; // Using candidate ID
+  const { id } = req.params;
 
-  // This logic is similar to finalSubmit but calls a different service
   const files = req.files || {};
   const uploadedPaths = {};
   for (const [field, fileArray] of Object.entries(files)) {
@@ -235,7 +208,6 @@ const reviewUpdateCandidate = catchAsync(async (req, res) => {
     },
   };
 
-  // We can reuse the finalSubmitSchema or create a specific one
   const validatedData = await candidateValidator.finalSubmitSchema.validateAsync(dataToValidate);
 
   const result = await CandidateService.reviewUpdateCandidate(id, validatedData);
@@ -243,40 +215,40 @@ const reviewUpdateCandidate = catchAsync(async (req, res) => {
 });
 
 
-  const getCandidateDetailsById = catchAsync(async (req, res) => {
-    const { id } = req.params;
+const getCandidateDetailsById = catchAsync(async (req, res) => {
+  const { id } = req.params;
 
-    const candidate = await Candidate.findById(id)
-      .populate("pointOfContact department userDetails");
+  const candidate = await Candidate.findById(id)
+    .populate("pointOfContact department userDetails");
 
-    if (!candidate) {
-      return res.status(404).json({ message: "Candidate not found" });
-    }
+  if (!candidate) {
+    return res.status(404).json({ message: "Candidate not found" });
+  }
 
-    if (candidate.userDetails?.documents) {
-      const docsPlain = candidate.userDetails.documents.toObject
-        ? candidate.userDetails.documents.toObject()
-        : candidate.userDetails.documents;
+  if (candidate.userDetails?.documents) {
+    const docsPlain = candidate.userDetails.documents.toObject
+      ? candidate.userDetails.documents.toObject()
+      : candidate.userDetails.documents;
 
-      candidate.userDetails.documents = transformDocumentPaths(docsPlain);
-    }
+    candidate.userDetails.documents = transformDocumentPaths(docsPlain);
+  }
 
-    res.json({ candidate });
-  });
+  res.json({ candidate });
+});
 
-  const backoutCandidate = catchAsync(async (req, res) => {
-    const { id } = req.params;
+const backoutCandidate = catchAsync(async (req, res) => {
+  const { id } = req.params;
 
-    const candidate = await Candidate.findById(id);
-    if (!candidate) {
-      return res.status(404).json({ message: "Candidate not found" });
-    }
+  const candidate = await Candidate.findById(id);
+  if (!candidate) {
+    return res.status(404).json({ message: "Candidate not found" });
+  }
 
-    candidate.status = "backout";
-    await candidate.save();
+  candidate.status = "backout";
+  await candidate.save();
 
-    res.json({ status: true, message: "Canidate backout successfully" });
-  });
+  res.json({ status: true, message: "Canidate backout successfully" });
+});
 
 const approveCandidate = catchAsync(async (req, res) => {
   const { id } = req.params;
@@ -288,13 +260,10 @@ const resendCifInvite = catchAsync(async (req, res) => {
   const { id } = req.params;
   const { candidate, token } = await CandidateService.resendCifInvite(id);
 
-  // Construct the new invite link
   const inviteLink = `${process.env.HRMS_FRONTEND_URL}/invite-cif/form/${token}`;
-  
-  // Get comments from userDetails to include in the email
+
   const comments = candidate.userDetails?.comments || 'Please review the feedback provided in the form.';
 
-  // Send the resend email
   const emailSubject = 'Action Required: Updates to Your Candidate Information Form (CIF)';
   const emailMessage = Helper.getCandidateResendEmail(candidate, inviteLink, comments);
 
@@ -311,16 +280,42 @@ const resendCifInvite = catchAsync(async (req, res) => {
   res.json({ status: true, message: 'CIF invite has been resent successfully.' });
 });
 
-  module.exports = {
-    createCandidate,
-    getCandidates,
-    validateToken,
-    fetchCandidateDetails,
-    getCandidateDetailsById,
-    saveDraft,
-    finalSubmit,
-    reviewUpdateCandidate,
-    backoutCandidate,
-    approveCandidate,
-    resendCifInvite
-  };
+const requestDevice = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const requestData = req.body;
+
+  const { candidate, requests } = await CandidateService.requestDevice(id, requestData);
+
+  const policies = [];
+  if (requests.byod) policies.push('BYOD (Bring Your Own Device)');
+  if (requests.byov) policies.push('BYOV (Bring Your Own Vehicle)');
+
+  if (policies.length > 0) {
+    const policyText = policies.join(' & ');
+    const emailSubject = `Welcome! Please review the ${policyText} onboarding policies`;
+    const emailMessage = Helper.getOnboardingPolicyEmail(candidate, policies);
+
+    await Helper.sendEmail({
+      receiverEmails: [candidate.personalEmail],
+      subject: emailSubject,
+      message: emailMessage,
+    });
+  }
+
+  res.json({ status: true, message: 'Request sent successfully.' });
+});
+
+module.exports = {
+  createCandidate,
+  getCandidates,
+  validateToken,
+  fetchCandidateDetails,
+  getCandidateDetailsById,
+  saveDraft,
+  finalSubmit,
+  reviewUpdateCandidate,
+  backoutCandidate,
+  approveCandidate,
+  resendCifInvite,
+  requestDevice,
+};

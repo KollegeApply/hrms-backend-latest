@@ -672,7 +672,7 @@ class Helper {
         </div>
 
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${dashboardUrl}/feedback/view/${feedbackId}" 
+          <a href="${dashboardUrl}/feedbacks/view/${feedbackId}" 
              style="display: inline-block; background-color: #4CAF50; color: white; padding: 12px 20px; border-radius: 5px; text-decoration: none; font-size: 15px;">
             View Feedback
           </a>
@@ -715,7 +715,7 @@ class Helper {
         </div>
 
         <p style="font-size: 16px; color: #555;">
-          <a href="${dashboardUrl}/feedback/view/${feedbackId}" style="color: #dc2626; text-decoration: none;">Click here to view the feedback</a>.
+          <a href="${dashboardUrl}/feedbacks/view/${feedbackId}" style="color: #dc2626; text-decoration: none;">Click here to view the feedback</a>.
         </p>
 
         <p style="color: #777; font-size: 14px; margin-top: 30px;">
@@ -757,7 +757,7 @@ class Helper {
         </p>
 
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${dashboardUrl}/feedback/approve-edit/${feedbackId}" 
+          <a href="${dashboardUrl}/feedbacks" 
              style="display: inline-block; background-color: #3b82f6; color: white; padding: 12px 20px; border-radius: 5px; text-decoration: none; font-size: 15px;">
             Review Edit Request
           </a>
@@ -805,7 +805,7 @@ class Helper {
       }
 
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${dashboardUrl}/feedback/view/${feedbackId}" 
+          <a href="${dashboardUrl}/feedbacks/view/${feedbackId}" 
              style="display: inline-block; background-color: ${color}; color: white; padding: 12px 20px; border-radius: 5px; text-decoration: none; font-size: 15px;">
             View Feedback
           </a>
@@ -850,7 +850,7 @@ class Helper {
         </div>
 
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${dashboardUrl}/feedback/view/${feedbackId}" 
+          <a href="${dashboardUrl}/feedbacks/view/${feedbackId}" 
              style="display: inline-block; background-color: #2563eb; color: white; padding: 12px 20px; border-radius: 5px; text-decoration: none; font-size: 15px;">
             View Updated Feedback
           </a>
@@ -936,23 +936,23 @@ class Helper {
     `;
   }
 
-static getCandidateSubmissionEmail(candidate) {
-  const submissionDate = new Date().toLocaleString('en-US', {
-    dateStyle: 'long',
-    timeStyle: 'short',
-  });
+  static getCandidateSubmissionEmail(candidate) {
+    const submissionDate = new Date().toLocaleString('en-US', {
+      dateStyle: 'long',
+      timeStyle: 'short',
+    });
 
-  const statusTitle =
-    candidate.status === 'resubmitted'
-      ? 'Candidate Information Form Re-Submitted'
-      : 'Candidate Information Form Submitted';
+    const statusTitle =
+      candidate.status === 'resubmitted'
+        ? 'Candidate Information Form Re-Submitted'
+        : 'Candidate Information Form Submitted';
 
-  const statusMessage =
-    candidate.status === 'resubmitted'
-      ? 'The following candidate has re-submitted their Candidate Information Form (CIF):'
-      : 'The following candidate has successfully submitted their Candidate Information Form (CIF):';
+    const statusMessage =
+      candidate.status === 'resubmitted'
+        ? 'The following candidate has re-submitted their Candidate Information Form (CIF):'
+        : 'The following candidate has successfully submitted their Candidate Information Form (CIF):';
 
-  return `
+    return `
     <div>
       <h3>${statusTitle}</h3>
 
@@ -972,7 +972,7 @@ static getCandidateSubmissionEmail(candidate) {
       <p style="font-size: 12px; color: #888;">This is an automated notification.</p>
     </div>
   `;
-}
+  }
 
 
   static getCandidateResendEmail(candidate, inviteLink, comments) {
@@ -982,7 +982,8 @@ static getCandidateSubmissionEmail(candidate) {
       <p>Our HR team has reviewed your Candidate Information Form (CIF) and has requested some updates. Please access the form using the button below to review the comments and make the necessary changes.</p>
       
       <p><strong>Comments from HR:</strong></p>
-      <p><${comments}</p>
+      <p>${comments ? comments : "N/A"}</p>
+
 
       <p><strong>Please note:</strong> Some fields that have already been verified may be locked and cannot be edited. Please focus on completing the unlocked fields.</p>
 
@@ -999,7 +1000,22 @@ static getCandidateSubmissionEmail(candidate) {
       <p>Best regards,<br/>HR Team - Sportsdunia</p>
     `;
   }
-  
+
+  static getOnboardingPolicyEmail(candidate, policies) {
+    const policyList = policies.map(policy => `<li><strong>${policy}</strong></li>`).join('');
+
+    return `
+      <p>Hello ${candidate.firstName},</p>
+      <p>As part of our onboarding policy, you are required to make arrangements for the following:</p>
+      <ul>
+        ${policyList}
+      </ul>
+      <p>Please ensure the required items are available and ready on your joining day.</p>
+      <p>If you have any questions or need support, please reach out to the HR team.</p>
+      <p>Regards,<br/>HR Team - Sportsdunia</p>
+    `;
+  }
+
 }
 
 module.exports = Helper;

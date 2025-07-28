@@ -98,6 +98,11 @@ const createUserSchema = Joi.object({
     'string.empty': 'Work type is required',
     'any.required': 'Work type is required',
   }),
+  candidateId: Joi.string().trim().allow('', null).optional(),
+  dateOfBirth: Joi.date().iso().optional().allow(null).messages({
+    'date.format': 'Date of Birth must be in YYYY-MM-DD format',
+    'date.base': 'Date of Birth must be a valid date',
+  }),
 }).options({ stripUnknown: true }); // Remove fields not defined in the schema
 
 // Schema for updating an existing user
@@ -133,6 +138,10 @@ const updateUserSchema = Joi.object({
     }),
   workType: Joi.string().trim().optional().allow('', null).messages({
     'string.empty': 'Work type cannot be empty',
+  }),
+  dateOfBirth: Joi.date().iso().optional().allow(null).messages({
+    'date.format': 'Date of Birth must be in YYYY-MM-DD format',
+    'date.base': 'Date of Birth must be a valid date',
   }),
 })
   .min(1)

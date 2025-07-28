@@ -1,6 +1,7 @@
 const { BlobServiceClient } = require("@azure/storage-blob");
 const dotenv = require("dotenv");
 const path = require("path");
+const mime = require("mime-types");
 
 dotenv.config();
 
@@ -13,9 +14,14 @@ async function uploadToAzure(fileBuffer, originalName, folderName = 'hrms-cif-do
   const timestamp = Date.now();
   const fileName = `${folderName}/${timestamp}-${cleanName}`.replace(/\/+/g, '/');
 
+  const contentType = mime.lookup(originalName) || 'application/octet-stream';
+
   const blockBlobClient = containerClient.getBlockBlobClient(fileName);
   await blockBlobClient.uploadData(fileBuffer, {
-    blobHTTPHeaders: { blobContentType: 'application/octet-stream' },
+    blobHTTPHeaders: {
+      blobContentType: contentType,
+      blobContentDisposition: 'inline'
+    },
   });
 
   return fileName;

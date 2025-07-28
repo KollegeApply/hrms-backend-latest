@@ -22,6 +22,7 @@ const leavePolicyMappingModel = require('../models/leavePolicyMappingModel');
 const employeeLeaveBalanceModel = require('../models/employeeLeaveBalanceModel');
 const leaveTypeModel = require('../models/leaveTypeModel');
 const { default: mongoose } = require('mongoose');
+const candidateModel = require('../models/candidateModel');
 
 class UserService {
   /**
@@ -151,7 +152,6 @@ if (subTeamLeadId && typeof subTeamLeadId === 'string' && subTeamLeadId.trim() !
   ];
 
   if (isPaginated) {
-    console.log(query);
     const paginatedResult = await paginate(
       User,
       query,
@@ -335,9 +335,17 @@ if (subTeamLeadId && typeof subTeamLeadId === 'string' && subTeamLeadId.trim() !
         total: accrued || mapping.quota,
       };
     });
-
-    // Save all balances
     await employeeLeaveBalanceModel.insertMany(balances);
+
+
+    if(userData?.candidateId){
+      const candidate = await candidateModel.findById(userData?.candidateId);
+      if (!candidate) {
+        throw new ApiError(httpStatus.NOT_FOUND, 'Candidate not found');
+      }
+      candidate.status = "completed";
+      await candidate.save();
+    }
 
     logger.info(`User created successfully with ID: ${savedUser?.id}`);
     return savedUser.toJSON();
