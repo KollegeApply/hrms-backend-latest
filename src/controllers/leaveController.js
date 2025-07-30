@@ -5,7 +5,7 @@ const ApiError = require('../utility/ApiError');
 const catchAsync = require('../utility/catchAsync');
 const logger = require('../config/logger');
 const Helper = require('../utility/helper');
-const { HR_EMAIL, LEAVETYPES } = require('../utility/constants');
+const { HR_EMAIL, LEAVETYPES, ADMIN_EMAILS } = require('../utility/constants');
 const User = require('../models/userModel');
 const { formatDateToKolkata } = require('../utility/common');
 const LeaveApplication = require('../models/leaveApplicationModel');
@@ -89,7 +89,8 @@ const updateLeave = catchAsync(async (req, res) => {
 
   // Send email notification if status changed
   if (updatedData.status && updatedData.status !== 'pending') {
-    const mailReciever = await User.findById(updatedData.userId);
+    const mailReciever = await User.findById(updatedData.userId).populate('teamLeadId', 'email')
+      .populate('subTeamLeadId', 'email');;
     if (mailReciever?.email) {
       // Format leave date(s)
       let formattedLeaveDates = '';
@@ -116,6 +117,14 @@ const updateLeave = catchAsync(async (req, res) => {
         formattedLeaveDates = formatDateToKolkata(leaveDates);
       }
 
+    const ccEmails = [HR_EMAIL,...ADMIN_EMAILS];
+    if (mailReciever?.teamLeadId?.email) {
+      ccEmails.push(mailReciever.teamLeadId.email);
+    }
+    if (mailReciever?.subTeamLeadId?.email) {
+      ccEmails.push(mailReciever.subTeamLeadId.email);
+    }
+
       // Send rejection email
       Helper.sendEmail({
         receiverEmails: [mailReciever?.email],
@@ -136,6 +145,7 @@ const updateLeave = catchAsync(async (req, res) => {
                 leaveType?.name
                 // updatedData?.leaveReason
               ),
+        cc: ccEmails,
       }).catch((err) =>
         logger.error(
           `Failed to send update on leave request email to ${mailReciever?.email}:`,
@@ -196,12 +206,18 @@ const deleteLeave = catchAsync(async (req, res) => {
       formattedLeaveDates = formatDateToKolkata(leaveDates);
     }
 
+    const ccEmails = [...ADMIN_EMAILS];
+    if (user?.teamLeadId?.email) {
+      ccEmails.push(user.teamLeadId.email);
+    }
+    if (user?.subTeamLeadId?.email) {
+      ccEmails.push(user.subTeamLeadId.email);
+    }
+
     // Send email
     Helper.sendEmail({
       receiverEmails: [
-        HR_EMAIL,
-        user?.teamLeadId?.email,
-        user?.subTeamLeadId?.email,
+        HR_EMAIL
       ],
       subject: 'Revoked leave application',
       message: Helper.WfhLeaveRevoked(
@@ -209,6 +225,7 @@ const deleteLeave = catchAsync(async (req, res) => {
         'leave',
         formattedLeaveDates
       ),
+      cc: ccEmails,
     }).catch((err) =>
       logger.error(
         `Failed to send revoke email to ${user?.teamLeadId?.email} and others:`,
@@ -250,15 +267,19 @@ const applyForLeave = catchAsync(async (req, res) => {
     const to = result?.data?.dates[result?.data?.dates?.length - 1];
     const leaveReason = result?.data?.leaveReason;
 
+    const ccEmails = [...ADMIN_EMAILS];
+    if (user?.teamLeadId?.email) {
+      ccEmails.push(user.teamLeadId.email);
+    }
+    if (user?.subTeamLeadId?.email) {
+      ccEmails.push(user.subTeamLeadId.email);
+    }
+
     const sendMail = req?.body?.sendMail === true;
     if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
       logger.info(`Sending leave email to ${user?.teamLeadId}`);
       Helper.sendEmail({
-        receiverEmails: [
-          HR_EMAIL,
-          user?.teamLeadId?.email,
-          user?.subTeamLeadId?.email,
-        ],
+        receiverEmails: [HR_EMAIL],
         subject: 'Leave Applied',
         message: Helper.WfhLeaveApplication({
           userName: user?.firstName,
@@ -268,6 +289,7 @@ const applyForLeave = catchAsync(async (req, res) => {
           toDate: new Date(to),
           reason: leaveReason,
         }),
+        cc: ccEmails,
       }).catch((err) =>
         logger.error(`Failed to send leave email to ${user?.teamLeadId}:`, err)
       );

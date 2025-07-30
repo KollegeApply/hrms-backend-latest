@@ -71,6 +71,8 @@ const IT_EMAIL = process.env.IT_EMAIL;
 const IT_MAIL_USER = process.env.IT_SMTP_USER;
 const IT_MAIL_PASS = process.env.IT_SMTP_PASS;
 
+const ADMIN_EMAILS = process.env.ADMIN_EMAILS?.split(',').map(e => e.trim()).filter(Boolean) || [];
+
 const OTP_EXPIRY_MINUTES = 10;
 
 const RANK = {
@@ -136,6 +138,7 @@ module.exports = {
   OTP_EXPIRY_MINUTES,
   HR_EMAIL,
   IT_EMAIL,
+  ADMIN_EMAILS,
   USER_CSV_FILE_HEADERS,
   CSV_TYPES,
   RANK,
