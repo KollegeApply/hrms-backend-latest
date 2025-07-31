@@ -1,3 +1,6 @@
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env.development') });
+
 const USER_ROLES = {
   ADMIN: 'admin',
   SUBADMIN: 'subadmin',

@@ -19,6 +19,7 @@ const {
 } = require('./constants');
 const { OTP_EXPIRY_MINUTES } = require('./constants');
 const { formatDateToKolkata } = require('./common');
+const moment = require('moment-timezone');
 
 class Helper {
   /**
@@ -198,7 +199,7 @@ class Helper {
     <div style="background-color: #eef; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #66f;">
       <h2 style="color: #333; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Request Details</h2>
       <ul style="list-style: none; padding: 0; margin: 0;">
-        ${requestType === 'leave' ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${leaveType}</li>` : ''}
+        ${requestType === 'Leave' ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${leaveType}</li>` : ''}
         <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Date:</strong> ${date}</li>
         <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>
       </ul>
@@ -250,7 +251,7 @@ class Helper {
           <div style="background-color: #ffecec; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #ff4c4c;">
             <h2 style="color: #333; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Revocation Details</h2>
             <ul style="list-style: none; padding: 0; margin: 0;">
-              ${requestType === 'leave' ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Leave Type:</strong> ${leaveType}</li>` : ''}
+              ${requestType === 'Leave' ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Leave Type:</strong> ${leaveType}</li>` : ''}
               <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Date(s):</strong> ${Array.isArray(date) ? date.join(', ') : date}</li>
               ${reason ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>` : ''}
             </ul>
@@ -327,24 +328,18 @@ class Helper {
     fromDate,
     toDate,
     reason,
+    dashboardUrl
   }) {
-    // Format the dates for the email
-    const fromFormatted = formatDateToKolkata(fromDate);
-    const toFormatted = formatDateToKolkata(toDate);
+     const fromMoment = moment(fromDate).tz('Asia/Kolkata');
+     const toMoment = moment(toDate).tz('Asia/Kolkata');
+
 
     let leaveMessage = '';
 
-    if (leaveType) {
-      // If leave is for a single day
-      if (fromDate.toDateString() === toDate.toDateString()) {
-        leaveMessage = `Leave applied for: ${fromFormatted}`;
-      }
-      // If leave is for multiple days
-      else {
-        leaveMessage = `Leave applied from ${fromFormatted} to ${toFormatted}`;
-      }
+    if (fromMoment.isSame(toMoment, 'day')) {
+      leaveMessage = `${fromMoment.format('DD MMMM YYYY')}`;
     } else {
-      leaveMessage = `${fromFormatted}`;
+      leaveMessage = `${fromMoment.format('DD MMMM YYYY')} to ${toMoment.format('DD MMMM YYYY')}`;
     }
 
     return `
@@ -365,9 +360,15 @@ class Helper {
           <div style="background-color: #eef; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #66f;">
             <h2 style="color: #333; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Request Details</h2>
             <ul style="list-style: none; padding: 0; margin: 0;">
-              ${requestType === 'leave' ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${leaveType}</li>` : ''}
+              ${requestType === 'Leave' ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${leaveType}</li>` : ''}
               <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Date:</strong> ${leaveMessage}</li>
               <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>
+              <li style="margin: 30px 0;">
+           <a href="${dashboardUrl}/leave" 
+   style="display: inline-block; background-color: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 16px; font-weight: bold; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); text-align: center; transition: background-color 0.3s ease;">
+  Take Action
+</a>
+            </li>
             </ul>
           </div>
   
@@ -1016,6 +1017,63 @@ class Helper {
     `;
   }
 
+
+  static dailyAttendanceSummary(userName, date, summaryHtml) {
+    return `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h1 style="color: #333;">Daily Attendance Report for ${date}</h1>
+        </div>
+        <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+          <p style="color: #555; font-size: 16px; line-height: 1.6;">
+            Hi <strong>${userName}</strong>,
+          </p>
+          <p style="color: #555; font-size: 16px; line-height: 1.6;">
+            Here is a summary of your attendance for today.
+          </p>
+
+          <div style="background-color: #fdf6e3; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #ffc107;">
+            ${summaryHtml}
+          </div>
+          <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>HR Team</strong></p>
+        </div>
+        <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
+          This is an automated message. Please do not reply directly to this email.
+        </div>
+      </div>
+    `;
+  }
+
+  
+  static weeklyAttendanceSummary(userName, startDate, endDate, summaryHtml) {
+    return `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h1 style="color: #333;">Weekly Attendance Summary</h1>
+        </div>
+        <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+          <p style="color: #555; font-size: 16px; line-height: 1.6;">
+            Hello <strong>${userName}</strong>,
+          </p>
+          <p style="color: #555; font-size: 16px; line-height: 1.6;">
+            Here is your attendance summary for the week of <strong>${startDate}</strong> to <strong>${endDate}</strong>.
+          </p>
+
+          <div style="background-color: #eef; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #66f;">
+            ${summaryHtml}
+          </div>
+
+          <p style="color: #555; font-size: 16px; line-height: 1.6;">
+            Review your check-in and check-out times to ensure all records are correct. Have a great weekend!
+          </p>
+          <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>HR Team</strong></p>
+        </div>
+        <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
+          This is an automated message. Please do not reply directly to this email.
+        </div>
+      </div>
+    `;
+  }
 }
 
 module.exports = Helper;

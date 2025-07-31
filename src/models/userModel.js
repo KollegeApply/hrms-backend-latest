@@ -134,6 +134,10 @@ const userSchema = new Schema(
       ref: 'Candidate',
       required: false,
     },
+    teamName:{
+      type: String,
+      required: true
+    }
   },
   {
     timestamps: true, // Adds createdAt and updatedAt automatically

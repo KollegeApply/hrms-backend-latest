@@ -10,6 +10,7 @@ const User = require('../models/userModel');
 const { formatDateToKolkata } = require('../utility/common');
 const LeaveApplication = require('../models/leaveApplicationModel');
 const leaveTypeModel = require('../models/leaveTypeModel');
+const moment = require("moment-timezone");
 
 // Get all leave
 const getAllLeave = catchAsync(async (req, res) => {
@@ -92,7 +93,6 @@ const updateLeave = catchAsync(async (req, res) => {
     const mailReciever = await User.findById(updatedData.userId).populate('teamLeadId', 'email')
       .populate('subTeamLeadId', 'email');;
     if (mailReciever?.email) {
-      // Format leave date(s)
       let formattedLeaveDates = '';
       const leaveDates = updatedData.dates;
 
@@ -106,15 +106,17 @@ const updateLeave = catchAsync(async (req, res) => {
         );
       }
 
-      if (Array.isArray(leaveDates)) {
-        const sortedDates = leaveDates
-          .map((d) => new Date(d))
-          .sort((a, b) => a - b);
-        const from = formatDateToKolkata(sortedDates[0]);
-        const to = formatDateToKolkata(sortedDates[sortedDates.length - 1]);
-        formattedLeaveDates = from === to ? from : `${from} to ${to}`;
+     if (Array.isArray(leaveDates)) {
+        const fromMoment = moment(leaveDates[0]).tz('Asia/Kolkata');
+        const toMoment = moment(leaveDates[leaveDates.length - 1]).tz('Asia/Kolkata');
+        
+        if (fromMoment.isSame(toMoment, 'day')) {
+          formattedLeaveDates = fromMoment.format('DD MMMM YYYY');
+        } else {
+          formattedLeaveDates = `${fromMoment.format('DD MMMM YYYY')} to ${toMoment.format('DD MMMM YYYY')}`;
+        }
       } else {
-        formattedLeaveDates = formatDateToKolkata(leaveDates);
+        formattedLeaveDates = moment(leaveDates).tz('Asia/Kolkata').format('DD MMMM YYYY');
       }
 
     const ccEmails = [HR_EMAIL,...ADMIN_EMAILS];
@@ -133,14 +135,14 @@ const updateLeave = catchAsync(async (req, res) => {
           updatedData.status === 'approved'
             ? Helper.leaveWFHApproval(
                 mailReciever?.firstName,
-                'leave',
+                'Leave',
                 formattedLeaveDates,
                 leaveType?.name,
                 updatedData?.leaveReason
               )
             : Helper.leaveWFHReject(
                 mailReciever?.firstName,
-                'leave',
+                'Leave',
                 formattedLeaveDates,
                 leaveType?.name
                 // updatedData?.leaveReason
@@ -187,6 +189,12 @@ const deleteLeave = catchAsync(async (req, res) => {
     // Format leave date(s)
     let formattedLeaveDates = '';
     const leaveDates = leave?.dates;
+    const leaveTypeData = await leaveTypeModel
+      .findById(leave?.leaveTypeId)
+      .select('name');
+    const leaveType = leaveTypeData?.name;
+
+      console.log("Leave Type",leaveType);
 
     if (!leaveDates || (Array.isArray(leaveDates) && leaveDates.length === 0)) {
       throw new ApiError(
@@ -196,14 +204,16 @@ const deleteLeave = catchAsync(async (req, res) => {
     }
 
     if (Array.isArray(leaveDates)) {
-      const sortedDates = leaveDates
-        .map((d) => new Date(d))
-        .sort((a, b) => a - b);
-      const from = formatDateToKolkata(sortedDates[0]);
-      const to = formatDateToKolkata(sortedDates[sortedDates.length - 1]);
-      formattedLeaveDates = from === to ? from : `${from} to ${to}`;
+      const fromMoment = moment(leaveDates[0]).tz('Asia/Kolkata');
+      const toMoment = moment(leaveDates[leaveDates.length - 1]).tz('Asia/Kolkata');
+      
+      if (fromMoment.isSame(toMoment, 'day')) {
+        formattedLeaveDates = fromMoment.format('DD MMMM YYYY');
+      } else {
+        formattedLeaveDates = `${fromMoment.format('DD MMMM YYYY')} to ${toMoment.format('DD MMMM YYYY')}`;
+      }
     } else {
-      formattedLeaveDates = formatDateToKolkata(leaveDates);
+      formattedLeaveDates = moment(leaveDates).tz('Asia/Kolkata').format('DD MMMM YYYY');
     }
 
     const ccEmails = [...ADMIN_EMAILS];
@@ -222,8 +232,9 @@ const deleteLeave = catchAsync(async (req, res) => {
       subject: 'Revoked leave application',
       message: Helper.WfhLeaveRevoked(
         user?.firstName,
-        'leave',
-        formattedLeaveDates
+        'Leave',
+        formattedLeaveDates,
+        leaveType,
       ),
       cc: ccEmails,
     }).catch((err) =>
@@ -283,11 +294,12 @@ const applyForLeave = catchAsync(async (req, res) => {
         subject: 'Leave Applied',
         message: Helper.WfhLeaveApplication({
           userName: user?.firstName,
-          requestType: 'leave',
+          requestType: 'Leave',
           leaveType: leaveType?.name || 'Leave',
-          fromDate: new Date(from),
-          toDate: new Date(to),
+          fromDate: from,
+          toDate: to,
           reason: leaveReason,
+          dashboardUrl:process?.env?.HRMS_FRONTEND_URL,
         }),
         cc: ccEmails,
       }).catch((err) =>
