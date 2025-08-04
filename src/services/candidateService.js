@@ -3,6 +3,7 @@ const UserDetails = require('../models/userDetailsModel');
 const { generateCIFToken, cleanEmptyFields } = require('../utility/common');
 const _ = require('lodash');
 const jwt = require('jsonwebtoken');
+const User = require('../models/userModel');
 
 class CandidateService {
   async createCandidate(data, userId) {
@@ -20,42 +21,50 @@ class CandidateService {
     }
   }
 
-  async getCandidates({ page = 1, limit = 10, status, search }) {
-    const query = { isDeleted: false };
+ async getCandidates({ page = 1, limit = 10, status, search }, team) {
+  const query = { isDeleted: false };
 
-    if (status) query.status = status;
-
-    if (search) {
-      query.$or = [
-        { firstName: { $regex: search, $options: 'i' } },
-        { lastName: { $regex: search, $options: 'i' } },
-        { personalEmail: { $regex: search, $options: 'i' } },
-        { phoneNumber: { $regex: search, $options: 'i' } }
-      ];
-    }
-
-    const pageInt = parseInt(page);
-    const limitInt = parseInt(limit);
-    const skip = (pageInt - 1) * limitInt;
-
-    const [candidates, total] = await Promise.all([
-      Candidate.find(query)
-        .populate('pointOfContact', 'firstName lastName email')
-        .populate('department', 'name')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limitInt),
-      Candidate.countDocuments(query),
-    ]);
-
-    return {
-      candidates,
-      total,
-      page: pageInt,
-      pageSize: limitInt,
-      totalPages: Math.ceil(total / limitInt),
-    };
+  if (status) {
+    query.status = status;
   }
+
+  if (search) {
+    query.$or = [
+      { firstName: { $regex: search, $options: 'i' } },
+      { lastName: { $regex: search, $options: 'i' } },
+      { personalEmail: { $regex: search, $options: 'i' } },
+      { phoneNumber: { $regex: search, $options: 'i' } }
+    ];
+  }
+
+  const teamUsers = await User.find({ team }, '_id');
+  const teamUserIds = teamUsers.map(user => user._id);
+
+  query.pointOfContact = { $in: teamUserIds };
+
+  const pageInt = parseInt(page);
+  const limitInt = parseInt(limit);
+  const skip = (pageInt - 1) * limitInt;
+
+  const [candidates, total] = await Promise.all([
+    Candidate.find(query)
+      .populate('pointOfContact', 'firstName lastName email team')
+      .populate('department', 'name')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitInt),
+    Candidate.countDocuments(query),
+  ]);
+
+  return {
+    candidates,
+    total,
+    page: pageInt,
+    pageSize: limitInt,
+    totalPages: Math.ceil(total / limitInt),
+  };
+}
+
 
 
   async saveDraft(email, data) {
@@ -113,7 +122,7 @@ class CandidateService {
 
     await Candidate.findByIdAndUpdate(candidate._id, { status: newStatus });
 
-    return await Candidate.findById(candidate._id).populate('pointOfContact', 'firstName lastName email');;
+    return await Candidate.findById(candidate._id).populate('pointOfContact', 'firstName lastName email team');;
   }
 
 

@@ -28,7 +28,7 @@ const documentFields = [
 ];
 
 router.post('/', authenticateUser, authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]), candidateController.createCandidate);
-router.get('/', candidateController.getCandidates);
+router.get('/', authenticateUser, candidateController.getCandidates);
 router.get('/id/:id', candidateController.getCandidateDetailsById);
 
 router.get('/validate/:token', candidateController.validateToken);

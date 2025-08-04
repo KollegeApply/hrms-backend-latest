@@ -5,7 +5,7 @@ const assetsService = require('../services/assetService');
 const assetValidator = require('../validators/assetValidator');
 const User = require('../models/userModel');
 const Helper = require('../utility/helper');
-const { IT_EMAIL, HR_EMAIL, ADMIN_EMAILS } = require('../utility/constants');
+const { IT_EMAIL, HR_EMAIL, ADMIN_EMAILS, getTeamEmailConfig } = require('../utility/constants');
 
 const assignAsset = catchAsync(async (req, res) => {
   const data = req.body;
@@ -30,18 +30,21 @@ const assignAsset = catchAsync(async (req, res) => {
   if (sendMail && process.env.HRMS_FRONTEND_URL) {
     const { assetName, assetType, assignee } = validatedData;
     const employee = await User.findById(assignee);
+    const team = req?.user?.team;
     const emailSubject = `Asset Assignment Notification - ${assetName}`;
     const emailMessage = Helper.getAssetAssignmentEmail(
       employee.firstName,
       assetName,
       assetType,
-      process.env.HRMS_FRONTEND_URL
+      process.env.HRMS_FRONTEND_URL,
+      team,
     );
 
     const pocEmail = req?.user?.email;
+    const configEmails = getTeamEmailConfig(team);
 
     const receiverEmails = [employee.email];
-    const cc = [pocEmail, HR_EMAIL, ...ADMIN_EMAILS];
+    const cc = [pocEmail, configEmails?.HR_EMAIL, ...configEmails?.ADMIN_EMAILS];
 
     logger.info(`Sending asset assignment email to ${employee.email}`);
 
@@ -52,6 +55,7 @@ const assignAsset = catchAsync(async (req, res) => {
       fromHR: false,
       fromIT: true,
       cc,
+      team
     }).catch((err) => {
       logger.error(
         `Failed to send asset assignment email to ${employee.email}:`,
@@ -70,6 +74,7 @@ const assignAsset = catchAsync(async (req, res) => {
 
 const fetchAssignedAssets = catchAsync(async (req, res) => {
   const { page, limit, search } = req.query;
+  const team = req?.user?.team;
 
   const validatedQuery = await assetValidator.getAllUsersSchema.validateAsync({
     page,
@@ -80,7 +85,8 @@ const fetchAssignedAssets = catchAsync(async (req, res) => {
   const assignedAssetsResult = await assetsService?.fetchAssignedAssets(
     validatedQuery?.page,
     validatedQuery?.limit,
-    validatedQuery?.search
+    validatedQuery?.search,
+    team
   );
 
   res.status(httpStatus.OK).json({
@@ -122,15 +128,17 @@ const updateAssignedAsset = catchAsync(async (req, res) => {
         process.env.HRMS_FRONTEND_URL
       );
 
+      const configEmails = getTeamEmailConfig(req.user.team);
+
       const receiverEmails = [
-        HR_EMAIL,
-        IT_EMAIL,
+        configEmails?.HR_EMAIL,
+        configEmails?.IT_EMAIL,
         employee?.email,
       ];
 
       const ccEmails = [
         req.user.email,
-        ...ADMIN_EMAILS,
+        ...configEmails?.ADMIN_EMAILS,
       ].filter(Boolean);
 
       Helper.sendEmail({
@@ -140,6 +148,7 @@ const updateAssignedAsset = catchAsync(async (req, res) => {
         fromHR: false,
         fromIt: true,
         cc: ccEmails,
+        team:req.user.team,
       }).catch((err) => {
         logger.error(
           `Failed to send asset return confirmation email for ${updatedRequest.assetName}:`,
@@ -218,12 +227,13 @@ const acknowledgeAsset = catchAsync(async (req, res) => {
       process.env.HRMS_FRONTEND_URL
     );
 
+    const configEmails = getTeamEmailConfig(req.user.team);
 
-    const receiverEmails = [HR_EMAIL, poc.email, IT_EMAIL, employee?.email];
+    const receiverEmails = [configEmails?.HR_EMAIL, poc.email, configEmails?.IT_EMAIL, employee?.email];
 
     const ccEmails = [
       req.user?.email !== employee?.email ? req.user?.email : null,
-      ...ADMIN_EMAILS,
+      ...configEmails?.ADMIN_EMAILS,
     ].filter(Boolean);
 
     logger.info(
@@ -237,6 +247,7 @@ const acknowledgeAsset = catchAsync(async (req, res) => {
       fromHR: false,
       fromIt: false,
       cc: ccEmails,
+      team:req.user.team,
     }).catch((err) => {
       logger.error(
         `Failed to send asset acknowledgment email to HR for asset ${assetName}:`,
@@ -257,6 +268,7 @@ const rejectAsset = catchAsync(async (req, res) => {
   const { id } = req.params;
   const userId = req.user?.id;
   const sendMail = req?.body?.sendMail === true;
+  const team = req.user.team;
 
   const assetAssignment = await assetsService.rejectAsset(id, userId);
 
@@ -284,12 +296,12 @@ const rejectAsset = catchAsync(async (req, res) => {
       process.env.HRMS_FRONTEND_URL
     );
 
-
-    const receiverEmails = [HR_EMAIL, poc.email, IT_EMAIL, employee?.email];
+    const configEmails = getTeamEmailConfig(team);
+    const receiverEmails = [configEmails?.HR_EMAIL, poc.email, configEmails?.IT_EMAIL, employee?.email];
 
     const ccEmails = [
       req.user?.email !== employee?.email ? req.user?.email : null,
-      ...ADMIN_EMAILS,
+      ...configEmails?.ADMIN_EMAILS,
     ].filter(Boolean);
 
     Helper.sendEmail({
@@ -299,6 +311,7 @@ const rejectAsset = catchAsync(async (req, res) => {
       fromHR: false,
       fromIT: false,
       cc: ccEmails,
+      team,
     }).catch((err) => {
       logger.error(
         `Failed to send asset rejection email to ${employee.email}:`,
@@ -317,6 +330,7 @@ const rejectAsset = catchAsync(async (req, res) => {
 const returnAsset = catchAsync(async (req, res) => {
   const { id } = req.params;
   const userId = req?.user?.id;
+  const team = req.user.team;
 
   // 1. Validate the request using the schema
   const validatedData = await assetValidator.returnAssetSchema.validateAsync({
@@ -354,12 +368,13 @@ const returnAsset = catchAsync(async (req, res) => {
       assetType,
       process.env.HRMS_FRONTEND_URL
     );
-
-    const receiverEmails = [HR_EMAIL, IT_EMAIL, poc.email].filter(Boolean);
+     
+    const configEmails = getTeamEmailConfig(team);
+    const receiverEmails = [configEmails?.HR_EMAIL, configEmails?.IT_EMAIL, poc.email].filter(Boolean);
     const ccEmails = [
       employee?.email !== req.user?.email ? req.user?.email : null,
       employee?.email,
-      ...ADMIN_EMAILS
+      ...configEmails?.ADMIN_EMAILS
     ].filter(Boolean);
 
 
@@ -370,6 +385,7 @@ const returnAsset = catchAsync(async (req, res) => {
       fromHR: false,
       fromIT: false,
       cc:ccEmails,
+      team,
     }).catch((err) => {
       logger.error(
         `Failed to send asset return request email to ${employee.email}:`,
@@ -387,13 +403,15 @@ const returnAsset = catchAsync(async (req, res) => {
 });
 
 const fetchAssetRequests = catchAsync(async (req, res) => {
-  const assetRequests = await assetsService.fetchAssetRequests();
+  const team = req.user.team;
+  const assetRequests = await assetsService.fetchAssetRequests(team);
   res.status(httpStatus.OK).json(assetRequests);
 });
 
 const handleAssetRequestUpdate = catchAsync(async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
+  const team = req.user.team;
 
   const validatedData =
     await assetValidator.handleAssetRequestUpdateSchema.validateAsync({
@@ -423,9 +441,10 @@ const handleAssetRequestUpdate = catchAsync(async (req, res) => {
       updStatus,
       process.env.HRMS_FRONTEND_URL
     );
-
+   
+    const configEmails = getTeamEmailConfig(team);
     const receiverEmails = [employee.email];
-    const ccEmails = [HR_EMAIL, IT_EMAIL, req.user.email, ...ADMIN_EMAILS].filter(Boolean);
+    const ccEmails = [configEmails?.HR_EMAIL, configEmails?.IT_EMAIL, req.user.email, ...configEmails?.ADMIN_EMAILS].filter(Boolean);
 
     logger.info(`Sending asset return ${updStatus} email to ${employee.email}`);
 
@@ -436,6 +455,7 @@ const handleAssetRequestUpdate = catchAsync(async (req, res) => {
       fromHR: false,
       fromIT: true,
       cc:ccEmails,
+      team,
     }).catch((err) => {
       logger.error(`Failed to send return ${updStatus} email to ${employee.email}:`, err);
     });

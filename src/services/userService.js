@@ -51,7 +51,7 @@ async getAllUsers(queryOptions, currentUser) {
     subTeamLeadId,
   } = queryOptions;
 
-  const query = { isDeleted: false };
+  const query = { team:currentUser?.team, isDeleted: false };
   const andConditions = [];
 
   // Department filter
@@ -264,7 +264,7 @@ if (subTeamLeadId && typeof subTeamLeadId === 'string' && subTeamLeadId.trim() !
     }
 
     // Auto-generate Employee ID
-    const lastUser = await User.findOne({ employeeId: { $regex: new RegExp(`^${process.env.TEAM_CODE}_\\d+$`) }})
+    const lastUser = await User.findOne({ employeeId: { $regex: new RegExp(`^${userData?.team || "SD"}_\\d+$`) }})
       .sort({ employeeId: -1 })
       .select('employeeId')
       .lean();
@@ -571,12 +571,18 @@ if (subTeamLeadId && typeof subTeamLeadId === 'string' && subTeamLeadId.trim() !
    * @param {string} id - The user's MongoDB ObjectId.
    * @returns {Promise<boolean>} - True if deletion was successful, false otherwise.
    */
-  async deleteUser(id) {
+  async deleteUser(id,team) {
     logger.info(`Attempting to soft delete user with ID: ${id}`);
     const result1 = await User.findById(id);
     if (result1.isDeleted) {
       return false;
     }
+
+    if (result1.team !== team) {
+      logger.warn(`Unauthorized delete attempt: Team mismatch. User team: ${userToDelete.team}, Requester team: ${team}`);
+      return false; 
+    }
+
     const result = await User.findByIdAndUpdate(
       id,
       { isDeleted: true }, // Mark as deleted
@@ -1062,9 +1068,9 @@ if (subTeamLeadId && typeof subTeamLeadId === 'string' && subTeamLeadId.trim() !
         .find({ employeeId })
         .populate({
           path: 'changedBy',
-          select: 'firstName lastName', // Adjust this as per your User schema fields
+          select: 'firstName lastName',
         })
-        .sort({ actionAt: -1 }) // Sort by most recent changes first
+        .sort({ actionAt: -1 }) 
         .lean();
 
 

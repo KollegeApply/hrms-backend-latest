@@ -134,7 +134,7 @@ const userSchema = new Schema(
       ref: 'Candidate',
       required: false,
     },
-    teamName:{
+    team:{
       type: String,
       required: true
     }
@@ -148,6 +148,7 @@ const userSchema = new Schema(
 // userSchema.index({ email: 1 });
 // userSchema.index({ employeeId: 1 });
 userSchema.index({ firstName: 'text', lastName: 'text', email: 'text' }); // For text search
+userSchema.index({ team: 1 });
 
 // Method to exclude password when converting to JSON
 userSchema.set('toJSON', {

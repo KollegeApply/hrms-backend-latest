@@ -103,6 +103,10 @@ const createUserSchema = Joi.object({
     'date.format': 'Date of Birth must be in YYYY-MM-DD format',
     'date.base': 'Date of Birth must be a valid date',
   }),
+  team: Joi.string().trim().min(1).required().messages({
+    'string.empty': 'Team name is required',
+    'any.required': 'Team name is required',
+  }),
 }).options({ stripUnknown: true }); // Remove fields not defined in the schema
 
 // Schema for updating an existing user

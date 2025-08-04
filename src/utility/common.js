@@ -24,7 +24,6 @@ async function paginate(
   select,
   populate
 ) {
-  // Ensure page and pageSize are positive integers
   page = Math.max(1, parseInt(page, 10) || 1);
   pageSize = Math.max(1, parseInt(pageSize, 10) || 10);
 

@@ -1,4 +1,5 @@
 const Department = require('../models/departmentModel');
+const User = require('../models/userModel');
 const ApiError = require('../utility/ApiError');
 const { default: httpStatus } = require('http-status');
 
@@ -10,40 +11,69 @@ const logger = {
 };
 
 class departmentService {
-  async createDepartment(departmentData) {
-    const existingDepartment = await Department.findOne({
-      name: departmentData.name,
-      isDeleted: false,
-    });
-    if (existingDepartment) {
-      throw new ApiError(httpStatus.CONFLICT, 'Department already exist');
-    }
-    const data = {
-      name: departmentData?.name,
-      description: departmentData?.description,
-      createdBy: departmentData?.userId,
-      edittedBy: departmentData?.userId,
-    };
+async createDepartment(departmentData) {
+  const creator = await User.findById(departmentData.userId).select('team');
 
-    const department = new Department(data);
-    return await department.save();
+  if (!creator) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid creator');
   }
+
+  const existingDepartment = await Department.findOne({
+    name: departmentData.name,
+    isDeleted: false,
+    createdBy: {
+      $in: await User.find({ team: creator.team }).distinct('_id'),
+    },
+  });
+
+  if (existingDepartment) {
+    throw new ApiError(httpStatus.CONFLICT, 'Department already exists.');
+  }
+
+  const department = new Department({
+    name: departmentData.name,
+    description: departmentData.description,
+    createdBy: departmentData.userId,
+    edittedBy: departmentData.userId,
+  });
+
+  return await department.save();
+}
+
 
   /**
    * Get all holidays (excluding soft-deleted ones).
    * @returns {Promise<Department[]>} - List of all non-deleted holidays, sorted by date.
    */
-  async getAllDepartment() {
-    const departments = await Department.find({ isDeleted: false }).sort({
-      date: 1,
-    });
-
-    if (!departments || departments?.length === 0) {
-      return departments;
+ async getAllDepartment(team) {
+  const departments = await Department.aggregate([
+    {
+      $match: { isDeleted: false }
+    },
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'createdBy',
+        foreignField: '_id',
+        as: 'creator'
+      }
+    },
+    {
+      $unwind: '$creator'
+    },
+    {
+      $match: {
+        'creator.team': team
+      }
+    },
+    {
+      $sort: { date: 1 }
     }
+  ]);
 
-    return departments;
-  }
+  return departments;
+}
+
 
   /**
    * Get a holiday by its ID.

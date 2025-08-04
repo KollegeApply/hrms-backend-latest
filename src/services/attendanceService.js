@@ -1,7 +1,7 @@
 const Attendance = require('../models/attendanceModel');
 const User = require('../models/userModel');
 const { startOfDay, endOfDay, parseISO, isValid } = require('date-fns');
-const moment = require('moment-timezone'); 
+const moment = require('moment-timezone');
 
 // Helper function to get the start and end of the current month
 const getCurrentMonthRange = () => {
@@ -249,11 +249,18 @@ const attendanceService = {
     }
   },
 
-
-async getTeamMembers(leaderId){
-  const teamUsers = await User.find({ teamLeadId: leaderId }, '_id');
-  return teamUsers.map((u) => u._id);
-},
+  async getTeamMembers(leaderId) {
+    const teamUsers = await User.find(
+      {
+        $or: [
+          { teamLeadId: leaderId },
+          { subTeamLeadId: leaderId }
+        ]
+      },
+      '_id'
+    );
+    return teamUsers.map((u) => u._id);
+  },
 
 
   async getAttendance(userId, role, startDateStr, endDateStr) {
@@ -300,12 +307,12 @@ async getTeamMembers(leaderId){
       }
       let query = { date: dateQuery };
 
-if (['teamlead', 'stl'].includes(role)) {
-  const teamMemberIds = await this.getTeamMembers(userId);
-  query.user = { $in: [userId, ...teamMemberIds] };
-} else if (!['hr', 'subadmin', 'admin'].includes(role)) {
-  query.user = userId;
-}
+      if (['teamlead', 'subteamlead'].includes(role)) {
+        const teamMemberIds = await this.getTeamMembers(userId);
+        query.user = { $in: [userId, ...teamMemberIds] };
+      } else if (!['hr', 'subadmin', 'admin'].includes(role)) {
+        query.user = userId;
+      }
 
       const attendance = await Attendance.find(query)
         .populate('user', 'firstName lastName employeeId workType')
@@ -403,7 +410,7 @@ if (['teamlead', 'stl'].includes(role)) {
 
       const attendanceOps = dates.map((date) => {
         const standardizedDate = moment(date).tz('Asia/Kolkata').startOf('day').toDate();
-        
+
         return {
           updateOne: {
             filter: { user: userId, date: standardizedDate },

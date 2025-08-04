@@ -8,11 +8,12 @@ const Helper = require('../utility/helper');
 const { validateCIFToken, transformDocumentPaths } = require('../utility/common');
 const candidateModel = require('../models/candidateModel');
 const { uploadToAzure } = require('../utility/azureBlob');
-const { HR_EMAIL } = require('../utility/constants');
+const { HR_EMAIL, getTeamEmailConfig } = require('../utility/constants');
 
 const createCandidate = catchAsync(async (req, res) => {
   const userId = req?.user?.id;
   const { candidateData } = req?.body;
+  const team = req.user.team;
   const validatedData = await candidateValidator.candidateCreateSchema.validateAsync(candidateData);
 
   const { candidate, token } = await CandidateService.createCandidate(validatedData, userId);
@@ -27,7 +28,7 @@ const createCandidate = catchAsync(async (req, res) => {
     const emailSubject = 'Complete Your Candidate Information Form (CIF)';
 
 
-    const emailMessage = Helper.getCandidateInviteEmail(candidate, inviteLink);
+    const emailMessage = Helper.getCandidateInviteEmail(candidate, inviteLink, team);
     const ccEmails = [currentUser?.email];
 
     await Helper.sendEmail({
@@ -36,6 +37,7 @@ const createCandidate = catchAsync(async (req, res) => {
       message: emailMessage,
       fromHR: true,
       cc: ccEmails,
+      team,
     });
   }
 
@@ -49,7 +51,8 @@ const createCandidate = catchAsync(async (req, res) => {
 });
 
 const getCandidates = catchAsync(async (req, res) => {
-  const result = await CandidateService.getCandidates(req.query);
+  const team = req.user.team;
+  const result = await CandidateService.getCandidates(req.query,team);
 
   res.status(httpStatus.OK).json({
     status: true,
@@ -73,6 +76,7 @@ const validateToken = catchAsync(async (req, res) => {
   return res.status(httpStatus.OK).json({ status: true, data: email, message: 'Token is valid.' });
 });
 
+
 const fetchCandidateDetails = catchAsync(async (req, res) => {
   const { token } = req.params;
   const { isValid, email } = await validateCIFToken(token);
@@ -83,6 +87,7 @@ const fetchCandidateDetails = catchAsync(async (req, res) => {
 
   const candidate = await candidateModel
     .findOne({ personalEmail: email })
+    .populate('pointOfContact','team')
     .populate('userDetails');
 
   if (!candidate) {
@@ -155,19 +160,23 @@ const finalSubmit = catchAsync(async (req, res) => {
 
   const sendMail = parsedBody?.sendMail ? true : false;
   if (sendMail && process.env.HRMS_FRONTEND_URL) {
+    const team = result?.pointOfContact?.team;
     try {
       const emailSubject = result.status === 'resubmitted'
         ? 'Candidate Information Form (CIF) Re-Submission'
         : 'Candidate Information Form (CIF) Submission';
 
+        const configEmails = getTeamEmailConfig(team);
+
       const emailMessage = Helper.getCandidateSubmissionEmail(result);
       const ccEmails = result.pointOfContact?.email ? [result.pointOfContact.email] : [];
       await Helper.sendEmail({
-        receiverEmails: [HR_EMAIL],
+        receiverEmails: [configEmails?.HR_EMAIL],
         subject: emailSubject,
         message: emailMessage,
         fromHR: false,
         cc: ccEmails,
+        team,
       });
 
       res.json({ status: true, data: result });
@@ -258,6 +267,7 @@ const approveCandidate = catchAsync(async (req, res) => {
 
 const resendCifInvite = catchAsync(async (req, res) => {
   const { id } = req.params;
+  const team = req.user.team;
   const { candidate, token } = await CandidateService.resendCifInvite(id);
 
   const inviteLink = `${process.env.HRMS_FRONTEND_URL}/invite-cif/form/${token}`;
@@ -265,7 +275,7 @@ const resendCifInvite = catchAsync(async (req, res) => {
   const comments = candidate.userDetails?.comments || 'Please review the feedback provided in the form.';
 
   const emailSubject = 'Action Required: Updates to Your Candidate Information Form (CIF)';
-  const emailMessage = Helper.getCandidateResendEmail(candidate, inviteLink, comments);
+  const emailMessage = Helper.getCandidateResendEmail(candidate, inviteLink, comments, team);
 
   const ccEmails = candidate.pointOfContact?.email ? [candidate.pointOfContact.email] : [];
 
@@ -275,6 +285,7 @@ const resendCifInvite = catchAsync(async (req, res) => {
     message: emailMessage,
     fromHR: true,
     cc: ccEmails,
+    team,
   });
 
   res.json({ status: true, message: 'CIF invite has been resent successfully.' });
@@ -283,6 +294,7 @@ const resendCifInvite = catchAsync(async (req, res) => {
 const requestDevice = catchAsync(async (req, res) => {
   const { id } = req.params;
   const requestData = req.body;
+  const team = req.user.team;
 
   const { candidate, requests } = await CandidateService.requestDevice(id, requestData);
 
@@ -293,12 +305,13 @@ const requestDevice = catchAsync(async (req, res) => {
   if (policies.length > 0) {
     const policyText = policies.join(' & ');
     const emailSubject = `Welcome! Please review the ${policyText} onboarding policies`;
-    const emailMessage = Helper.getOnboardingPolicyEmail(candidate, policies);
+    const emailMessage = Helper.getOnboardingPolicyEmail(candidate, policies, team);
 
     await Helper.sendEmail({
       receiverEmails: [candidate.personalEmail],
       subject: emailSubject,
       message: emailMessage,
+      team,
     });
   }
 
