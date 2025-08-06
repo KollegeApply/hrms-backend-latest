@@ -5,7 +5,7 @@ const ApiError = require('../utility/ApiError');
 const catchAsync = require('../utility/catchAsync');
 const logger = require('../config/logger');
 const Helper = require('../utility/helper');
-const { HR_EMAIL, LEAVETYPES, ADMIN_EMAILS, getTeamEmailConfig } = require('../utility/constants');
+const { getTeamEmailConfig } = require('../utility/constants');
 const User = require('../models/userModel');
 const { formatDateToKolkata } = require('../utility/common');
 const LeaveApplication = require('../models/leaveApplicationModel');
@@ -14,7 +14,6 @@ const moment = require("moment-timezone");
 
 const getAllLeave = catchAsync(async (req, res) => {
   const currentUser = req.user;
-  console.log(currentUser);
   let leaves;
 
   if (
@@ -170,7 +169,7 @@ const updateLeave = catchAsync(async (req, res) => {
 // delete leave
 const deleteLeave = catchAsync(async (req, res) => {
   const userId = req.user.id;
-  const team = req.user.team;
+  const teamCode = req?.user?.team;
   const validatedData = await leaveValidator?.leaveIdSchema?.validateAsync({
     id: req?.params?.id,
   });
@@ -218,9 +217,9 @@ const deleteLeave = catchAsync(async (req, res) => {
       formattedLeaveDates = moment(leaveDates).tz('Asia/Kolkata').format('DD MMMM YYYY');
     }
 
-    const configEmails = getTeamEmailConfig(team);
+    const configEmails = getTeamEmailConfig(teamCode);
 
-    const ccEmails = [...configEmails.ADMIN_EMAILS];
+    const ccEmails = [...configEmails?.ADMIN_EMAILS];
     if (user?.teamLeadId?.email) {
       ccEmails.push(user.teamLeadId.email);
     }
@@ -239,10 +238,11 @@ const deleteLeave = catchAsync(async (req, res) => {
         'Leave',
         formattedLeaveDates,
         leaveType,
-        team,
+        null,
+        teamCode,
       ),
       cc: ccEmails,
-      team,
+      team:teamCode,
     }).catch((err) =>
       logger.error(
         `Failed to send revoke email to ${user?.teamLeadId?.email} and others:`,

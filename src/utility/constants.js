@@ -81,6 +81,7 @@ const TEAM_SD = process.env.TEAM_SD;
 const TEAM_KAP = process.env.TEAM_KAP;
 
 function getTeamEmailConfig(team) {
+  console.log(team);
   const normalizedTeam = team?.toUpperCase();
   const config = {
     TEAM_NAME: process.env[`TEAM_${normalizedTeam}`],

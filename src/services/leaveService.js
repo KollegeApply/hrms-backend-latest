@@ -337,6 +337,7 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
           userId,
           status: { $in: ['approved', 'pending'] },
           dates: { $elemMatch: { $gte: startDate, $lte: endDate } },
+          isDeleted:false,
         }),
         Attendance.find({
           userId,
@@ -372,7 +373,6 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
       while (pointer.isSameOrBefore(endMoment, 'day')) {
         const dateStr = pointer.format('YYYY-MM-DD');
         const istDay = pointer.day(); // 0 = Sunday, 1 = Monday...
-
         if (istDay === 0) {
           // addReason('Sunday', dateStr);
         } else if (existingLeaveDates.has(dateStr)) {
@@ -385,6 +385,7 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
               $gte: pointer.toDate(),
               $lt: pointer.clone().add(1, 'day').toDate(),
             },
+            isDeleted:false,
           });
 
           if (holiday) {
@@ -484,6 +485,7 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
           rejectedReasons: groupedRejectedReasons,
         };
       }
+      
 
       if (totalRequestedDays === 0) {
         return {
@@ -772,6 +774,7 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
         };
       }
 
+
       // Validate dates
       const validationResult = await this.validateLeaveDates(
         userId,
@@ -779,6 +782,7 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
         endDate,
         leaveType
       );
+
 
       if (!validationResult.isValid) {
         return {
