@@ -56,7 +56,7 @@ const candidateDraftSchema = Joi.object({
       then: Joi.string().isoDate().required(),
       otherwise: Joi.optional(),
     }),
-    
+
     // Optional children fields
     child1Name: Joi.string().optional().allow(''),
     child1Dob: Joi.string().isoDate().optional().allow(''),
@@ -64,7 +64,6 @@ const candidateDraftSchema = Joi.object({
     child2Name: Joi.string().optional().allow(''),
     child2Dob: Joi.string().isoDate().optional().allow(''),
     child2Gender: Joi.string().valid("male", "female", "other").optional().allow(''),
-
 
     nationality: Joi.string().min(1).optional(),
     aadharCard: Joi.string().pattern(AADHAR_REGEX).optional(),
@@ -264,65 +263,64 @@ const finalSubmitSchema = candidateDraftSchema.concat(
       sameAsCurrentAddress: Joi.boolean().required(),
     }).required(),
 
-   educationDetails: Joi.object({
-  tenth: Joi.object({
-    institute: Joi.string().min(1).required().messages({
-      'string.min': 'Institute required',
-      'string.empty': 'Institute required',
-    }),
-    board: Joi.string().min(1).required().messages({
-      'string.min': 'Board required',
-      'string.empty': 'Board required',
-    }),
-    passoutYear: Joi.string().min(1).required().messages({
-      'string.min': 'Passout year required',
-      'string.empty': 'Passout year required',
-    }),
-  }),
-  twelfth: Joi.object({
-    institute: Joi.string().min(1).required().messages({
-      'string.min': 'Institute required',
-      'string.empty': 'Institute required',
-    }),
-    board: Joi.string().min(1).required().messages({
-      'string.min': 'Board required',
-      'string.empty': 'Board required',
-    }),
-    stream: Joi.string().min(1).required().messages({
-      'string.min': 'Stream required',
-      'string.empty': 'Stream required',
-    }),
-    passoutYear: Joi.string().min(1).required().messages({
-      'string.min': 'Passout year required',
-      'string.empty': 'Passout year required',
-    }),
-  }),
-  graduation: Joi.object({
-    institute: Joi.string().min(1).required().messages({
-      'string.min': 'Institute required',
-      'string.empty': 'Institute required',
-    }),
-    course: Joi.string().min(1).required().messages({
-      'string.min': 'Course required',
-      'string.empty': 'Course required',
-    }),
-    type: Joi.string().min(1).required().messages({
-      'string.min': 'Type required',
-      'string.empty': 'Type required',
-    }),
-    passoutYear: Joi.string().min(1).required().messages({
-      'string.min': 'Passout year required',
-      'string.empty': 'Passout year required',
-    }),
-  }),
-  postGraduation: Joi.object({
-    institute: Joi.string().allow('', null),
-    course: Joi.string().allow('', null),
-    type: Joi.string().allow('', null),
-    passoutYear: Joi.string().allow('', null),
-  }),
-}).required(),
-
+    educationDetails: Joi.object({
+      tenth: Joi.object({
+        institute: Joi.string().min(1).required().messages({
+          'string.min': 'Institute required',
+          'string.empty': 'Institute required',
+        }),
+        board: Joi.string().min(1).required().messages({
+          'string.min': 'Board required',
+          'string.empty': 'Board required',
+        }),
+        passoutYear: Joi.string().min(1).required().messages({
+          'string.min': 'Passout year required',
+          'string.empty': 'Passout year required',
+        }),
+      }),
+      twelfth: Joi.object({
+        institute: Joi.string().min(1).required().messages({
+          'string.min': 'Institute required',
+          'string.empty': 'Institute required',
+        }),
+        board: Joi.string().min(1).required().messages({
+          'string.min': 'Board required',
+          'string.empty': 'Board required',
+        }),
+        stream: Joi.string().min(1).required().messages({
+          'string.min': 'Stream required',
+          'string.empty': 'Stream required',
+        }),
+        passoutYear: Joi.string().min(1).required().messages({
+          'string.min': 'Passout year required',
+          'string.empty': 'Passout year required',
+        }),
+      }),
+      graduation: Joi.object({
+        institute: Joi.string().min(1).required().messages({
+          'string.min': 'Institute required',
+          'string.empty': 'Institute required',
+        }),
+        course: Joi.string().min(1).required().messages({
+          'string.min': 'Course required',
+          'string.empty': 'Course required',
+        }),
+        type: Joi.string().min(1).required().messages({
+          'string.min': 'Type required',
+          'string.empty': 'Type required',
+        }),
+        passoutYear: Joi.string().min(1).required().messages({
+          'string.min': 'Passout year required',
+          'string.empty': 'Passout year required',
+        }),
+      }),
+      postGraduation: Joi.object({
+        institute: Joi.string().allow('', null),
+        course: Joi.string().allow('', null),
+        type: Joi.string().allow('', null),
+        passoutYear: Joi.string().allow('', null),
+      }),
+    }).required(),
 
     employment: Joi.array()
       .items(
@@ -377,7 +375,7 @@ const finalSubmitSchema = candidateDraftSchema.concat(
       accountType: Joi.string().valid("savings", "current").required(),
     }).required(),
 
-documents: Joi.object({
+    documents: Joi.object({
       // --- Required Documents ---
       photograph: Joi.string().required(),
       signature: Joi.string().required(),
@@ -400,7 +398,7 @@ documents: Joi.object({
       salarySlipTwo: Joi.string().optional().allow(null, ''),
       salarySlipThree: Joi.string().optional().allow(null, ''),
     }).required(),
-     certification: Joi.boolean().valid(true).required().messages({
+    certification: Joi.boolean().valid(true).required().messages({
       "any.only": "You must certify the information to submit",
     }),
   })

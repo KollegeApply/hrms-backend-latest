@@ -1,5 +1,3 @@
-/* eslint-disable no-console */
-/* eslint-disable prettier/prettier */
 const { MongoClient } = require('mongodb');
 const { Types } = require('mongoose');
 // SKIPPING Holidays collection
