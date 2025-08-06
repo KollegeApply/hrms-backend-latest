@@ -25,12 +25,16 @@ class leaveService {
    * Get all Leave (excluding soft-deleted ones).
    * @returns {Promise<Leave[]>} - List of all non-deleted Leaves, sorted by date.
    */
-  async getAllLeave() {
-    const leaves = await LeaveApplication.find()
+  async getAllLeave(team) {
+
+  const leaves = await LeaveApplication.find()
       .sort({
         createdAt: -1,
       })
-      .populate('userId')
+       .populate({
+      path: 'userId',
+      match: { team },
+    })
       .populate({
         path: 'leaveTypeId',
         select: 'name',
@@ -40,7 +44,7 @@ class leaveService {
       return leaves;
     }
 
-    return leaves;
+     return leaves.filter(leave => leave.userId !== null);
   }
 
   /**
@@ -70,7 +74,7 @@ class leaveService {
     const oldLeave = await LeaveApplication.findOne({
       _id: leaveData.leaveId,
       isDeleted: false,
-    }).populate('leaveTypeId'); // To access code if needed later
+    }).populate('leaveTypeId');
 
     if (!oldLeave) {
       throw new ApiError(httpStatus.NOT_FOUND, 'Leave not found.');
@@ -170,16 +174,17 @@ class leaveService {
     return await oldLeave.save();
   }
 
-  async getLeaveTl({ id }) {
+  async getLeaveTl({ id, team }) {
     const leadUsers = await User.find(
       {
+        team: team, 
         $or: [{ teamLeadId: id }, { subTeamLeadId: id }],
       },
       'id'
     );
 
     const userIds = leadUsers.map((user) => user._id.toString());
-    userIds.push(id); // includes itself
+    userIds.push(id);
 
     const leaveEntries = await LeaveApplication.find({
       userId: { $in: userIds },

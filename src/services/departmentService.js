@@ -21,9 +21,6 @@ async createDepartment(departmentData) {
   const existingDepartment = await Department.findOne({
     name: departmentData.name,
     isDeleted: false,
-    createdBy: {
-      $in: await User.find({ team: creator.team }).distinct('_id'),
-    },
   });
 
   if (existingDepartment) {
@@ -45,7 +42,7 @@ async createDepartment(departmentData) {
    * Get all holidays (excluding soft-deleted ones).
    * @returns {Promise<Department[]>} - List of all non-deleted holidays, sorted by date.
    */
- async getAllDepartment(team) {
+async getAllDepartment(team) {
   const departments = await Department.aggregate([
     {
       $match: { isDeleted: false }
@@ -59,11 +56,9 @@ async createDepartment(departmentData) {
       }
     },
     {
-      $unwind: '$creator'
-    },
-    {
-      $match: {
-        'creator.team': team
+      $unwind: {
+        path: '$creator',
+        preserveNullAndEmptyArrays: true
       }
     },
     {
@@ -73,6 +68,7 @@ async createDepartment(departmentData) {
 
   return departments;
 }
+
 
 
   /**

@@ -195,7 +195,9 @@ class Helper {
     `;
   }
 
-  static leaveWFHApproval(userName, requestType, date, leaveType = '', reason) {
+  static leaveWFHApproval(userName, requestType, date, leaveType = '', reason, team) {
+    const displayTeam = getTeamEmailConfig(team);
+
     return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
   <div style="text-align: center; margin-bottom: 20px;">
@@ -231,7 +233,7 @@ class Helper {
       Take care and enjoy your time!
     </p>
 
-    <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Team ${process?.env?.TEAM}</strong></p>
+    <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Team ${displayTeam?.TEAM_NAME}</strong></p>
   </div>
   <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
     This is an automated message. Please do not reply directly to this email.
@@ -246,8 +248,11 @@ class Helper {
     requestType,
     date,
     leaveType = '',
-    reason = ''
+    reason = '',
+    team,
   ) {
+
+    const displayTeam = getTeamEmailConfig(team);
     return `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
         <div style="text-align: center; margin-bottom: 20px;">
@@ -275,7 +280,7 @@ class Helper {
             Please make note of the change and adjust any responsibilities or schedules accordingly.
           </p>
   
-          <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Team ${process?.env?.TEAM}</strong></p>
+          <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Team ${displayTeam?.TEAM_NAME}</strong></p>
         </div>
         <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
           This is an automated message. Please do not reply directly to this email.
@@ -345,7 +350,8 @@ class Helper {
     fromDate,
     toDate,
     reason,
-    dashboardUrl
+    dashboardUrl,
+    team,
   }) {
      const fromMoment = moment(fromDate).tz('Asia/Kolkata');
      const toMoment = moment(toDate).tz('Asia/Kolkata');
@@ -358,6 +364,8 @@ class Helper {
     } else {
       leaveMessage = `${fromMoment.format('DD MMMM YYYY')} to ${toMoment.format('DD MMMM YYYY')}`;
     }
+
+    const displayTeam = getTeamEmailConfig(team);
 
     return `
       <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
@@ -381,10 +389,10 @@ class Helper {
               <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Date:</strong> ${leaveMessage}</li>
               <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>
               <li style="margin: 30px 0;">
-           <a href="${dashboardUrl}/leave" 
-   style="display: inline-block; background-color: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 16px; font-weight: bold; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); text-align: center; transition: background-color 0.3s ease;">
-  Take Action
-</a>
+          <a href="${dashboardUrl}/leave" 
+             style="display: inline-block; background-color: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 16px; font-weight: bold; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); text-align: center; transition: background-color 0.3s ease;">
+            Take Action
+          </a>
             </li>
             </ul>
           </div>
@@ -393,7 +401,7 @@ class Helper {
             Kindly review and take necessary actions.
           </p>
   
-          <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>${process?.env?.TEAM} Support Team</strong></p>
+          <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>${displayTeam?.TEAM_NAME} Support Team</strong></p>
         </div>
   
         <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">

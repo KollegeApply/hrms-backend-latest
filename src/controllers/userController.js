@@ -375,11 +375,12 @@ const getUserHistory = async (req, res) => {
 const getUserByTlId = async (req, res) => {
   try {
    const userId = req?.query?.userId;
-const userRole = req?.query?.userRole;
+   const userRole = req?.query?.userRole;
+   const userTeam = req?.user?.team;
 
     const validateData =
       await userValidator?.getUserByTlIdSchema?.validateAsync({ userId, userRole });
-    const result = await userService.getUserByTlId(validateData?.userId, userRole);
+    const result = await userService.getUserByTlId(validateData?.userId, userRole, userTeam);
     return res.status(result.statusCode).json(result);
   } catch (error) {
     console.error('Error in getUserByTlId controller:', error);

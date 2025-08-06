@@ -263,11 +263,14 @@ if (subTeamLeadId && typeof subTeamLeadId === 'string' && subTeamLeadId.trim() !
       }
     }
 
+    console.log(userData);
+
     // Auto-generate Employee ID
     const lastUser = await User.findOne({ employeeId: { $regex: new RegExp(`^${userData?.team || "SD"}_\\d+$`) }})
       .sort({ employeeId: -1 })
       .select('employeeId')
       .lean();
+    console.log(lastUser);
     const nextNumber = autoGenerateEmpId(lastUser);
     const paddedNumber = String(nextNumber).padStart(3, '0');
 
@@ -301,7 +304,7 @@ if (subTeamLeadId && typeof subTeamLeadId === 'string' && subTeamLeadId.trim() !
     // Create and Save User
     const user = new User({
       ...userData,
-      employeeId: `${process.env.TEAM_CODE}_${paddedNumber}`,
+      employeeId: `${userData?.team}_${paddedNumber}`,
       password: hashedPassword,
       email: userData?.email?.toLowerCase(),
       leavePolicyId: assignedPolicy._id,
@@ -1089,10 +1092,10 @@ if (subTeamLeadId && typeof subTeamLeadId === 'string' && subTeamLeadId.trim() !
     }
   }
 
-async getUserByTlId(userId, userRole) {
+async getUserByTlId(userId, userRole, userTeam) {
   try {
     let user;
-    const statusQuery = { status: { $in: ['probation', 'onroll'] } };
+    const query = { status: { $in: ['probation', 'onroll'] }, team:userTeam };
     const commonSelectFields = 'id firstName lastName email role employeeId';
 
     if (
@@ -1100,7 +1103,7 @@ async getUserByTlId(userId, userRole) {
       userRole === 'subadmin' ||
       userRole === 'hr'
     ) {
-      user = await User.find(statusQuery).select(commonSelectFields);
+      user = await User.find(query).select(commonSelectFields);
     } else if (userRole === 'teamlead' || userRole === 'subteamlead') {
 
       const allowedRoles = ['admin', 'subadmin', 'hr', 'IT'];
@@ -1117,7 +1120,7 @@ async getUserByTlId(userId, userRole) {
 
       user = await User.find({
         $and: [
-          statusQuery,
+          query,
           {
             $or: [
               { role: { $in: allowedRoles } },
@@ -1136,7 +1139,7 @@ async getUserByTlId(userId, userRole) {
 
       user = await User.find({
         $and: [
-          statusQuery,
+          query,
           {
             $or: [
               { _id: { $in: allowedUserIds } },
@@ -1160,7 +1163,7 @@ async getUserByTlId(userId, userRole) {
 
       user = await User.find({
         $and: [
-          statusQuery,
+          query,
           {
             $or: [
               { role: { $in: allowedRoles } },
