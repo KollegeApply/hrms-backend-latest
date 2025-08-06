@@ -26,7 +26,8 @@ const createDepartment = catchAsync(async (req, res) => {
 
 // Get all department
 const getAllDepartment = catchAsync(async (req, res) => {
-  const departments = await departmentService.getAllDepartment();
+  const team = req?.user?.team;
+  const departments = await departmentService.getAllDepartment(team);
 
   res?.status(httpStatus.OK).json({
     status: true,

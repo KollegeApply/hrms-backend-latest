@@ -11,6 +11,7 @@ const LeaveType = require('../models/leaveTypeModel');
 const LeavePolicy = require('../models/leavePolicyModel');
 const LeavePolicyMapping = require('../models/leavePolicyMappingModel');
 const EmployeeLeaveBalance = require('../models/employeeLeaveBalanceModel');
+const moment = require('moment-timezone');
 
 class leaveService {
   /**
@@ -24,12 +25,16 @@ class leaveService {
    * Get all Leave (excluding soft-deleted ones).
    * @returns {Promise<Leave[]>} - List of all non-deleted Leaves, sorted by date.
    */
-  async getAllLeave() {
-    const leaves = await LeaveApplication.find()
+  async getAllLeave(team) {
+
+  const leaves = await LeaveApplication.find()
       .sort({
         createdAt: -1,
       })
-      .populate('userId')
+       .populate({
+      path: 'userId',
+      match: { team },
+    })
       .populate({
         path: 'leaveTypeId',
         select: 'name',
@@ -39,7 +44,7 @@ class leaveService {
       return leaves;
     }
 
-    return leaves;
+     return leaves.filter(leave => leave.userId !== null);
   }
 
   /**
@@ -69,7 +74,7 @@ class leaveService {
     const oldLeave = await LeaveApplication.findOne({
       _id: leaveData.leaveId,
       isDeleted: false,
-    }).populate('leaveTypeId'); // To access code if needed later
+    }).populate('leaveTypeId');
 
     if (!oldLeave) {
       throw new ApiError(httpStatus.NOT_FOUND, 'Leave not found.');
@@ -169,16 +174,17 @@ class leaveService {
     return await oldLeave.save();
   }
 
-  async getLeaveTl({ id }) {
+  async getLeaveTl({ id, team }) {
     const leadUsers = await User.find(
       {
+        team: team, 
         $or: [{ teamLeadId: id }, { subTeamLeadId: id }],
       },
       'id'
     );
 
     const userIds = leadUsers.map((user) => user._id.toString());
-    userIds.push(id); // includes itself
+    userIds.push(id);
 
     const leaveEntries = await LeaveApplication.find({
       userId: { $in: userIds },
@@ -246,35 +252,26 @@ class leaveService {
     }
   }
 
-  async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
+async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
     try {
-      // ✅ 1. Helper to get UTC date at 18:30 (IST midnight)
-      const toISTMidnightUTC = (date) => {
-        const d = new Date(date);
-        d.setUTCHours(18, 30, 0, 0);
-        return new Date(d);
-      };
+      const today = moment().tz('Asia/Kolkata').startOf('day').toDate();
 
-      const today = toISTMidnightUTC(new Date());
+      const startMoment = moment(startDate).tz('Asia/Kolkata').startOf('day');
+      const endMoment = moment(endDate).tz('Asia/Kolkata').startOf('day');
 
-      const formatDateOnly = (date) => {
-        const istDate = new Date(date.getTime() + 5.5 * 60 * 60 * 1000);
-        return istDate.toISOString().split('T')[0];
-      };
-
-      // ✅ 2. Convert and Validate Range
-      const currentDate = toISTMidnightUTC(startDate);
-      const lastDate = toISTMidnightUTC(endDate);
-
-      if (!currentDate || !lastDate || currentDate > lastDate) {
+      if (!startMoment.isValid() || !endMoment.isValid() || startMoment.isAfter(endMoment)) {
         return {
           isValid: false,
           reason: 'Invalid date range provided',
           rejectedReasons: ['Start date or end date is invalid'],
         };
       }
+      
+      const currentDate = startMoment.toDate();
+      const lastDate = endMoment.toDate();
 
-      // ✅ 3. Fetch User, Leave Type, and Policy Mapping
+      const formatDateOnly = (date) => moment(date).tz('Asia/Kolkata').format('YYYY-MM-DD');
+
       const employee = await User.findById(userId);
       if (!employee || !employee.leavePolicyId) {
         return { isValid: false, reason: 'User or leave policy not found' };
@@ -297,10 +294,9 @@ class leaveService {
         };
       }
 
-      // ✅ 4. Birthday Leave Rule
       if (leaveType.code === 'BIRTHDAY') {
         const birthDate = new Date(employee.dateOfBirth);
-        if (currentDate.getMonth() !== birthDate.getMonth()) {
+        if (moment(currentDate).month() !== moment(birthDate).month()) {
           return {
             isValid: false,
             reason: 'Birthday leave can only be taken on your birthday month',
@@ -313,13 +309,8 @@ class leaveService {
         leaveTypeId: leaveType._id,
       });
 
-      // ✅ 6. Leave Balance
-      const currentYear = today.getFullYear();
-      // const balance = await EmployeeLeaveBalance.findOne({
-      //   userId,
-      //   leaveTypeId: leaveType._id,
-      // });
-
+      const currentYear = moment().tz('Asia/Kolkata').year();
+      
       // Calculate pending leaves for this type
       const pendingLeaves = await LeaveApplication.find({
         userId,
@@ -338,20 +329,15 @@ class leaveService {
           ? Infinity
           : accrued + carryForwarded - (used + totalPendingDays);
 
-      // ✅ 7. Month Start & End for Accrual
-      const currentMonthStart = toISTMidnightUTC(
-        new Date(today.getFullYear(), today.getMonth(), 1)
-      );
-      const currentMonthEnd = toISTMidnightUTC(
-        new Date(today.getFullYear(), today.getMonth() + 1, 0)
-      );
+      const currentMonthStart = moment().tz('Asia/Kolkata').startOf('month').toDate();
+      const currentMonthEnd = moment().tz('Asia/Kolkata').endOf('month').toDate();
 
-      // ✅ 8. Fetch Existing Leaves & Attendance
       const [existingLeaves, existingAttendance] = await Promise.all([
         LeaveApplication.find({
           userId,
           status: { $in: ['approved', 'pending'] },
           dates: { $elemMatch: { $gte: startDate, $lte: endDate } },
+          isDeleted:false,
         }),
         Attendance.find({
           userId,
@@ -372,7 +358,6 @@ class leaveService {
         existingAttendanceDates.add(formatDateOnly(att.date));
       });
 
-      // ✅ 9. Day-by-Day Date Validation
       const validDates = [];
       const reasonMap = {};
 
@@ -382,20 +367,12 @@ class leaveService {
         }
         reasonMap[reason].push(dateStr);
       };
-      let pointer = new Date(currentDate);
+      
+      let pointer = moment(currentDate).tz('Asia/Kolkata');
 
-      // Allow future dates for annual and casual sick leaves
-      // const allowFutureDates = ['ANNUAL', 'CASUAL', 'PROBATION'].includes(
-      //   leaveType.code
-      // );
-
-      while (pointer <= lastDate) {
-        const dateStr = formatDateOnly(pointer);
-        const dateObj = toISTMidnightUTC(pointer);
-        const istDay = new Date(
-          dateObj.getTime() + 5.5 * 60 * 60 * 1000
-        ).getDay();
-
+      while (pointer.isSameOrBefore(endMoment, 'day')) {
+        const dateStr = pointer.format('YYYY-MM-DD');
+        const istDay = pointer.day(); // 0 = Sunday, 1 = Monday...
         if (istDay === 0) {
           // addReason('Sunday', dateStr);
         } else if (existingLeaveDates.has(dateStr)) {
@@ -405,19 +382,20 @@ class leaveService {
         } else {
           const holiday = await Holiday.findOne({
             date: {
-              $gte: dateObj,
-              $lt: new Date(dateObj.getTime() + 1000 * 60 * 60 * 24),
+              $gte: pointer.toDate(),
+              $lt: pointer.clone().add(1, 'day').toDate(),
             },
+            isDeleted:false,
           });
 
           if (holiday) {
             // addReason(`Holiday (${holiday.name})`, dateStr);
           } else {
-            validDates.push(new Date(dateObj));
+            validDates.push(pointer.toDate());
           }
         }
 
-        pointer.setDate(pointer.getDate() + 1);
+        pointer.add(1, 'day');
       }
 
       // ✅ 10. Bereavement Leave Rule
@@ -493,7 +471,6 @@ class leaveService {
         };
       }
 
-      // ✅ 12. Final Return
       const totalRequestedDays = validDates.length;
       const groupedRejectedReasons = Object.entries(reasonMap).map(
         ([reason, dates]) => `${reason}: ${dates.join(', ')}`
@@ -508,6 +485,7 @@ class leaveService {
           rejectedReasons: groupedRejectedReasons,
         };
       }
+      
 
       if (totalRequestedDays === 0) {
         return {
@@ -796,6 +774,7 @@ class leaveService {
         };
       }
 
+
       // Validate dates
       const validationResult = await this.validateLeaveDates(
         userId,
@@ -803,6 +782,7 @@ class leaveService {
         endDate,
         leaveType
       );
+
 
       if (!validationResult.isValid) {
         return {

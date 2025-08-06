@@ -16,9 +16,13 @@ const {
   IT_MAIL_USER,
   IT_MAIL_PASS,
   MAIL_FROM_IT,
+  TEAM_KAP,
+  TEAM_SD,
+  getTeamEmailConfig,
 } = require('./constants');
 const { OTP_EXPIRY_MINUTES } = require('./constants');
 const { formatDateToKolkata } = require('./common');
+const moment = require('moment-timezone');
 
 class Helper {
   /**
@@ -38,59 +42,70 @@ class Helper {
    * @param {string} mailData.message - Email body (HTML).
    * @returns {Promise<void>}
    */
-  static async sendEmail({
-    receiverEmails,
-    subject,
-    message,
-    fromHR = false,
-    fromIT = false,
-    cc = [],
-  }) {
-    if (!MAIL_USER || !MAIL_PASS) {
-      logger.error(
-        'SMTP credentials (MAIL_USER, MAIL_PASS) are not configured. Cannot send email.'
-      );
-      return;
-    }
-
-    // Determine sender credentials and "from" label
-    let user = MAIL_USER;
-    let pass = MAIL_PASS;
-    let from = `"Support" <${MAIL_FROM_SUPPORT}>`;
-
-    if (fromHR) {
-      user = HR_MAIL_USER;
-      pass = HR_MAIL_PASS;
-      from = `"HR Department" <${MAIL_FROM_HR}>`;
-    } else if (fromIT) {
-      user = IT_MAIL_USER;
-      pass = IT_MAIL_PASS;
-      from = `"IT Department" <${MAIL_FROM_IT}>`;
-    }
-
-    const transporter = nodemailer.createTransport({
-      host: MAIL_HOST,
-      port: MAIL_PORT,
-      secure: MAIL_SECURE,
-      ...(MAIL_SERVICE && { service: MAIL_SERVICE }),
-      auth: { user, pass },
-    });
-
-    const mailOptions = {
-      from,
-      to: receiverEmails.join(','),
-      cc: cc.length > 0 ? cc.join(',') : undefined,
-      subject,
-      html: message,
-    };
-
-    try {
-      const info = await transporter.sendMail(mailOptions);
-      logger.info('Email sent successfully:', info.messageId);
-    } catch (error) {
-      logger.error('Failed to send email:', error?.message || error);
-    }
+ static async sendEmail({
+  receiverEmails,
+  subject,
+  message,
+  fromHR = false,
+  fromIT = false,
+  cc = [],
+  team,
+}) {
+  if (!team) {
+    logger.error('Team must be provided to send email.');
+    return;
   }
+
+  let config;
+  try {
+    config = getTeamEmailConfig(team);
+  } catch (err) {
+    logger.error(`Invalid team configuration: ${err.message}`);
+    return;
+  }
+
+  let user = config.MAIL_USER;
+  let pass = config.MAIL_PASS;
+  let from = `"Support" <${config.MAIL_FROM_SUPPORT}>`;
+
+  if (fromHR) {
+    user = config.HR_MAIL_USER;
+    pass = config.HR_MAIL_PASS;
+    from = `"HR Department" <${config.MAIL_FROM_HR}>`;
+  } else if (fromIT) {
+    user = config.IT_MAIL_USER;
+    pass = config.IT_MAIL_PASS;
+    from = `"IT Department" <${config.MAIL_FROM_IT}>`;
+  }
+
+  if (!user || !pass) {
+    logger.error('SMTP credentials are missing for the selected sender.');
+    return;
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: MAIL_HOST,
+    port: parseInt(MAIL_PORT, 10),
+    secure: MAIL_SECURE === 'true',
+    ...(MAIL_SERVICE && { service: MAIL_SERVICE }),
+    auth: { user, pass },
+  });
+
+  const mailOptions = {
+    from,
+    to: receiverEmails.join(','),
+    cc: cc.length > 0 ? cc.join(',') : undefined,
+    subject,
+    html: message,
+  };
+
+  try {
+    const info = await transporter.sendMail(mailOptions);
+    logger.info(`Email sent to ${receiverEmails.join(', ')} | ID: ${info.messageId}`);
+  } catch (error) {
+    logger.error('Failed to send email:', error?.message || error);
+  }
+}
 
 
   /**
@@ -102,19 +117,19 @@ class Helper {
    * @param {string} loginUrl - URL to the HRMS login page.
    * @returns {string} - HTML email content.
    */
-  static getWelcomeEmail(firstName, userEmail, password, loginUrl) {
+  static getWelcomeEmail(firstName, userEmail, password, loginUrl, team) {
     // SECURITY NOTE: Sending passwords via email is generally discouraged.
     // Consider sending a password reset link instead.
     // This template includes the password as requested based on the LMS example.
     return `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
   <div style="text-align: center; margin-bottom: 20px;">
-    <h1 style="color: #333;">Welcome to ${process?.env?.TEAM}!</h1>
+    <h1 style="color: #333;">Welcome to ${team}!</h1>
   </div>
   <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
     <p style="color: #555; font-size: 16px; line-height: 1.6;">Hi <strong>${firstName}</strong>,</p>
     <p style="color: #555; font-size: 16px; line-height: 1.6;">
-      Welcome aboard! We're excited to have you as part of the <strong>${process?.env?.TEAM}</strong> family.
+      Welcome aboard! We're excited to have you as part of the <strong>${team}</strong> family.
     </p>
     <p style="color: #555; font-size: 16px; line-height: 1.6;">
       Your account has been successfully set up. Here's what you need to log in:
@@ -133,14 +148,14 @@ class Helper {
     </p>
 
     <div style="text-align: center; margin: 30px 0;">
-      <a href="${loginUrl}" style="background-color: #007bff; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">Login to ${process?.env?.TEAM}</a>
+      <a href="${loginUrl}" style="background-color: #007bff; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">Login to ${team}</a>
     </div>
 
     <p style="color: #555; font-size: 16px; line-height: 1.6;">
       Welcome again, and let’s get started!
     </p>
 
-    <p style="color: #777; font-size: 14px; line-height: 1.5;">Cheers!<br><strong>Team ${process?.env?.TEAM}</strong></p>
+    <p style="color: #777; font-size: 14px; line-height: 1.5;">Cheers!<br><strong>Team ${team}</strong></p>
   </div>
   <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
     This is an automated message. Please do not reply directly to this email.
@@ -180,7 +195,9 @@ class Helper {
     `;
   }
 
-  static leaveWFHApproval(userName, requestType, date, leaveType = '', reason) {
+  static leaveWFHApproval(userName, requestType, date, leaveType = '', reason, team) {
+    const displayTeam = getTeamEmailConfig(team);
+
     return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
   <div style="text-align: center; margin-bottom: 20px;">
@@ -198,7 +215,7 @@ class Helper {
     <div style="background-color: #eef; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #66f;">
       <h2 style="color: #333; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Request Details</h2>
       <ul style="list-style: none; padding: 0; margin: 0;">
-        ${requestType === 'leave' ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${leaveType}</li>` : ''}
+        ${requestType === 'Leave' ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${leaveType}</li>` : ''}
         <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Date:</strong> ${date}</li>
         <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>
       </ul>
@@ -216,7 +233,7 @@ class Helper {
       Take care and enjoy your time!
     </p>
 
-    <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Team ${process?.env?.TEAM}</strong></p>
+    <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Team ${displayTeam?.TEAM_NAME}</strong></p>
   </div>
   <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
     This is an automated message. Please do not reply directly to this email.
@@ -231,8 +248,11 @@ class Helper {
     requestType,
     date,
     leaveType = '',
-    reason = ''
+    reason = '',
+    team,
   ) {
+
+    const displayTeam = getTeamEmailConfig(team);
     return `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
         <div style="text-align: center; margin-bottom: 20px;">
@@ -250,7 +270,7 @@ class Helper {
           <div style="background-color: #ffecec; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #ff4c4c;">
             <h2 style="color: #333; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Revocation Details</h2>
             <ul style="list-style: none; padding: 0; margin: 0;">
-              ${requestType === 'leave' ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Leave Type:</strong> ${leaveType}</li>` : ''}
+              ${requestType === 'Leave' ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Leave Type:</strong> ${leaveType}</li>` : ''}
               <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Date(s):</strong> ${Array.isArray(date) ? date.join(', ') : date}</li>
               ${reason ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>` : ''}
             </ul>
@@ -260,7 +280,7 @@ class Helper {
             Please make note of the change and adjust any responsibilities or schedules accordingly.
           </p>
   
-          <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Team ${process?.env?.TEAM}</strong></p>
+          <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Team ${displayTeam?.TEAM_NAME}</strong></p>
         </div>
         <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
           This is an automated message. Please do not reply directly to this email.
@@ -269,7 +289,10 @@ class Helper {
     `;
   }
 
-  static fullTimeConversion(userName, date, jobTitle) {
+  static fullTimeConversion(userName, date, jobTitle, team) {
+    const displayTeam = getTeamEmailConfig(team);
+
+      const formattedDate = moment.tz(date, 'Asia/Kolkata').format('DD MMMM YYYY');
     return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
   <div style="text-align: center; margin-bottom: 20px;">
@@ -282,7 +305,7 @@ class Helper {
     </p>
     
     <p style="color: #555; font-size: 16px; line-height: 1.6;">
-      It is with pleasure that we confirm your transition to full-time employment with <strong>${process?.env?.TEAM}</strong>, effective from <strong>${date}</strong>.
+      It is with pleasure that we confirm your transition to full-time employment with <strong>${displayTeam?.TEAM_NAME}</strong>, effective from <strong>${formattedDate}</strong>.
     </p>
 
     <p style="color: #555; font-size: 16px; line-height: 1.6;">
@@ -294,7 +317,7 @@ class Helper {
       <ul style="list-style: none; padding: 0; margin: 0;">
         <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Job Title:</strong> ${jobTitle}</li>
         <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Employment Status:</strong> Confirmed Full-Time</li>
-        <li style="color: #555; font-size: 15px;"><strong>Effective Date:</strong> ${date}</li>
+        <li style="color: #555; font-size: 15px;"><strong>Effective Date:</strong> ${formattedDate}</li>
       </ul>
     </div>
 
@@ -310,7 +333,7 @@ class Helper {
       Congratulations once again!
     </p>
 
-    <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Team ${process?.env?.TEAM}</strong></p>
+    <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Team ${displayTeam?.TEAM_NAME}</strong></p>
   </div>
   <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
     This is an automated message. Please do not reply directly to this email.
@@ -327,25 +350,22 @@ class Helper {
     fromDate,
     toDate,
     reason,
+    dashboardUrl,
+    team,
   }) {
-    // Format the dates for the email
-    const fromFormatted = formatDateToKolkata(fromDate);
-    const toFormatted = formatDateToKolkata(toDate);
+     const fromMoment = moment(fromDate).tz('Asia/Kolkata');
+     const toMoment = moment(toDate).tz('Asia/Kolkata');
+
 
     let leaveMessage = '';
 
-    if (leaveType) {
-      // If leave is for a single day
-      if (fromDate.toDateString() === toDate.toDateString()) {
-        leaveMessage = `Leave applied for: ${fromFormatted}`;
-      }
-      // If leave is for multiple days
-      else {
-        leaveMessage = `Leave applied from ${fromFormatted} to ${toFormatted}`;
-      }
+    if (fromMoment.isSame(toMoment, 'day')) {
+      leaveMessage = `${fromMoment.format('DD MMMM YYYY')}`;
     } else {
-      leaveMessage = `${fromFormatted}`;
+      leaveMessage = `${fromMoment.format('DD MMMM YYYY')} to ${toMoment.format('DD MMMM YYYY')}`;
     }
+
+    const displayTeam = getTeamEmailConfig(team);
 
     return `
       <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
@@ -365,9 +385,15 @@ class Helper {
           <div style="background-color: #eef; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #66f;">
             <h2 style="color: #333; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Request Details</h2>
             <ul style="list-style: none; padding: 0; margin: 0;">
-              ${requestType === 'leave' ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${leaveType}</li>` : ''}
+              ${requestType === 'Leave' ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${leaveType}</li>` : ''}
               <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Date:</strong> ${leaveMessage}</li>
               <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>
+              <li style="margin: 30px 0;">
+          <a href="${dashboardUrl}/leave" 
+             style="display: inline-block; background-color: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 16px; font-weight: bold; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); text-align: center; transition: background-color 0.3s ease;">
+            Take Action
+          </a>
+            </li>
             </ul>
           </div>
   
@@ -375,7 +401,7 @@ class Helper {
             Kindly review and take necessary actions.
           </p>
   
-          <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>${process?.env?.TEAM} Support Team</strong></p>
+          <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>${displayTeam?.TEAM_NAME} Support Team</strong></p>
         </div>
   
         <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
@@ -453,7 +479,7 @@ class Helper {
         </div>
 
         <p style="color: #555; font-size: 16px; line-height: 1.6;">
-          You can review and process the request in the <a href="${dashboardUrl}/assets/returns" style="color: #007bff;">HRMS dashboard</a>.
+          You can review and process the request in the <a href="${dashboardUrl}/assets" style="color: #007bff;">HRMS dashboard</a>.
         </p>
 
         <p style="color: #999; font-size: 14px;">This is an automated email. Please do not reply.</p>
@@ -464,7 +490,7 @@ class Helper {
 
 
 
-  static getAssetAssignmentEmail(firstName, assetName, assetType, loginUrl) {
+  static getAssetAssignmentEmail(firstName, assetName, assetType, loginUrl,team) {
     return `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
   <div style="text-align: center; margin-bottom: 20px;">
@@ -489,7 +515,7 @@ class Helper {
     </p>
 
     <div style="text-align: center; margin: 30px 0;">
-      <a href="${loginUrl}" style="background-color: #007bff; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Go to Dashboard</a>
+      <a href="${loginUrl}/dashboard" style="background-color: #007bff; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Go to Dashboard</a>
     </div>
 
     <p style="color: #777; font-size: 14px;">Thank you,<br>IT Department</p>
@@ -547,108 +573,192 @@ class Helper {
   `;
   }
 
-  static getAssetReturnStatusEmail(firstName, employeeId, assetName, assetType, status, dashboardUrl) {
-    const statusColor = status === 'approved' ? '#28a745' : '#dc3545';
-    const capitalizedStatus = status.charAt(0).toUpperCase() + status.slice(1);
+ static getAssetReturnStatusEmail(firstName, employeeId, assetName, assetType, status, dashboardUrl) {
+  const statusColor = status === 'approved' ? '#28a745' : '#dc3545';
+  const capitalizedStatus = status.charAt(0).toUpperCase() + status.slice(1);
 
-    return `
-  <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
-    <div style="text-align: center; margin-bottom: 20px;">
-      <h1 style="color: #333;">Asset Return Request ${capitalizedStatus}</h1>
+  return `
+  <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 24px; border: 1px solid #ddd; border-radius: 8px; background-color: #fdfdfd;">
+    <div style="text-align: center; margin-bottom: 24px;">
+      <h2 style="color: #333; font-size: 22px;">Asset Return Request <span style="color: ${statusColor};">${capitalizedStatus}</span></h2>
     </div>
-    <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
-      <p style="color: #555; font-size: 16px; line-height: 1.6;">Hello <strong>${firstName}</strong>,</p>
-      <p style="color: #555; font-size: 16px; line-height: 1.6;">
-        Your return request for the following asset has been 
-        <strong style="color: ${statusColor};">${capitalizedStatus}</strong>:
+
+    <div style="background-color: #fff; padding: 28px 24px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
+      <p style="font-size: 16px; color: #333; line-height: 1.5; margin-bottom: 16px;">
+        Hello <strong>${firstName}</strong>,
       </p>
-      <p style="color: #555; font-size: 16px; line-height: 1.6;">
-        <strong>Employee ID:</strong> ${employeeId}<br>
-        <strong>Asset Name:</strong> ${assetName}<br>
-        <strong>Asset Type:</strong> ${assetType}
+
+      <p style="font-size: 15px; color: #555; line-height: 1.5; margin-bottom: 16px;">
+        Your asset return request has been 
+        <strong style="color: ${statusColor};">${capitalizedStatus}</strong>. Below are the request details:
       </p>
-       <div style="text-align: center; margin: 30px 0;">
-        You can view the request status by visiting your dashboard: <br>
-        <a href="${dashboardUrl}/assets/assigned" style="background-color: #007bff; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">View Asset Details</a>
-       </div>
-    </div>
-  </div>
-  `;
-  }
 
+      <table style="width: 100%; font-size: 14px; color: #555; margin-bottom: 24px;">
+        <tr>
+          <td style="padding: 8px 0;"><strong>Employee ID:</strong></td>
+          <td style="padding: 8px 0;">${employeeId}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0;"><strong>Asset Name:</strong></td>
+          <td style="padding: 8px 0;">${assetName}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0;"><strong>Asset Type:</strong></td>
+          <td style="padding: 8px 0;">${assetType}</td>
+        </tr>
+      </table>
 
-  static getAssetRejectionEmail(
-    employeeName,
-    employeeId,
-    assetName,
-    assetType,
-    dashboardUrl
-  ) {
-    return `
-<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
-  <div style="text-align: center; margin-bottom: 20px;">
-    <h1 style="color: #333;">Asset Rejection Notification</h1>
-  </div>
-  <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
-    <p style="color: #555; font-size: 16px; line-height: 1.6;">Hello Team,</p>
-    <p style="color: #555; font-size: 16px; line-height: 1.6;">
-      The following asset has been rejected by the employee:
-    </p>
-
-    <div style="background-color: #eef; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #f00;">
-      <p style="color: #555; font-size: 15px;">
-        <strong>Employee Name:</strong> ${employeeName}<br>
-        <strong>Employee ID:</strong> ${employeeId}<br>
-        <strong>Asset Name:</strong> ${assetName}<br>
-        <strong>Asset Type:</strong> ${assetType}
-      </p>
-    </div>
-
-    <p style="color: #555; font-size: 16px; line-height: 1.6;">
-      You can review the asset rejection in the dashboard.
-    </p>
-
-    <div style="text-align: center; margin: 30px 0;">
-      <a href="${dashboardUrl}/assets/assigned" style="background-color: #dc3545; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">View Rejected Asset</a>
-    </div>
-
-    <p style="color: #777; font-size: 14px; line-height: 1.5;">Thank you,<br>IT Department</p>
-  </div>
-  <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
-    This is an automated message. Please do not reply directly to this email.
-  </div>
-</div>
-  `;
-  }
-
-
-  static getAssetReceivedConfirmationEmail(firstName, employeeId, assetName, assetType, dashboardUrl) {
-    return `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
-      <div style="text-align: center; margin-bottom: 20px;">
-        <h1 style="color: #333;">Asset Received Confirmation</h1>
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="${dashboardUrl}" style="background-color: #007bff; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+          View Request in Dashboard
+        </a>
       </div>
-      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
-        <p style="color: #555; font-size: 16px; line-height: 1.6;">Hello Team,</p>
-        <p style="color: #555; font-size: 16px; line-height: 1.6;">
-          The following asset has been successfully returned and received from the employee:
-        </p>
-        <ul style="color: #555; font-size: 16px; line-height: 1.6; list-style: none; padding-left: 0;">
-          <li><strong>Employee Name:</strong> ${firstName}</li>
-          <li><strong>Employee ID:</strong> ${employeeId}</li>
-          <li><strong>Asset Name:</strong> ${assetName}</li>
-          <li><strong>Asset Type:</strong> ${assetType}</li>
-        </ul>
-        <p style="color: #555; font-size: 16px; line-height: 1.6;">
-          You can review the record in the <a href="${dashboardUrl}" style="color: #007bff;">HRMS dashboard</a>.
-        </p>
-        <p style="color: #999; font-size: 14px;">This is an automated email. Please do not reply.</p>
-      </div>
-    </div>
-  `;
-  }
 
-  static getFeedbackEmail({ givenByUser, givenToUser, dashboardUrl, feedbackId }) {
+      <p style="font-size: 14px; color: #777; line-height: 1.5; margin-bottom: 24px;">
+        If you have any questions or concerns, please feel free to contact the IT department.
+      </p>
+
+      <p style="font-size: 15px; color: #555; line-height: 1.6; margin-bottom: 8px;">
+        Thanks & regards,<br>
+        <strong>IT Department</strong>
+      </p>
+    </div>
+
+    <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
+      This is an automated message. Please do not reply directly to this email.
+    </div>
+  </div>
+  `;
+}
+
+
+
+static getAssetRejectionEmail(
+  employeeName,
+  employeeId,
+  assetName,
+  assetType,
+  dashboardUrl
+) {
+  return `
+  <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 24px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+    <div style="text-align: center; margin-bottom: 24px;">
+      <h2 style="color: #dc3545; font-size: 22px;">🚫 Asset Rejection Notification</h2>
+    </div>
+
+    <div style="background-color: #fff; padding: 28px 24px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
+      <p style="font-size: 16px; color: #333; line-height: 1.5; margin-bottom: 16px;">
+        Hello Team,
+      </p>
+
+      <p style="font-size: 15px; color: #555; line-height: 1.5; margin-bottom: 16px;">
+        The following asset has been <strong>rejected</strong> by the employee:
+      </p>
+
+      <table style="width: 100%; font-size: 14px; color: #555; margin-bottom: 24px;">
+        <tr>
+          <td style="padding: 8px 0;"><strong>Employee Name:</strong></td>
+          <td style="padding: 8px 0;">${employeeName}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0;"><strong>Employee ID:</strong></td>
+          <td style="padding: 8px 0;">${employeeId}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0;"><strong>Asset Name:</strong></td>
+          <td style="padding: 8px 0;">${assetName}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0;"><strong>Asset Type:</strong></td>
+          <td style="padding: 8px 0;">${assetType}</td>
+        </tr>
+      </table>
+
+      <p style="font-size: 15px; color: #555; line-height: 1.5; margin-bottom: 20px;">
+        You can review this rejection in the dashboard below:
+      </p>
+
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="${dashboardUrl}" style="background-color: #dc3545; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+          View Rejected Asset
+        </a>
+      </div>
+
+      <p style="font-size: 15px; color: #555; line-height: 1.5; margin-bottom: 8px;">
+        Thank you,<br>
+        <strong>IT Department</strong>
+      </p>
+    </div>
+
+    <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
+      This is an automated message. Please do not reply directly to this email.
+    </div>
+  </div>
+  `;
+}
+
+
+
+static getAssetReceivedConfirmationEmail(firstName, employeeId, assetName, assetType, dashboardUrl) {
+  return `
+  <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 24px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+    <div style="text-align: center; margin-bottom: 24px;">
+      <h2 style="color: #28a745; font-size: 22px;">Asset Received Confirmation</h2>
+    </div>
+
+    <div style="background-color: #fff; padding: 28px 24px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
+      <p style="font-size: 16px; color: #333; line-height: 1.5; margin-bottom: 16px;">
+        Hello Team,
+      </p>
+
+      <p style="font-size: 15px; color: #555; line-height: 1.5; margin-bottom: 16px;">
+        The following asset has been successfully <strong>returned and received</strong> from the employee:
+      </p>
+
+      <table style="width: 100%; font-size: 14px; color: #555; margin-bottom: 24px;">
+        <tr>
+          <td style="padding: 8px 0;"><strong>Employee Name:</strong></td>
+          <td style="padding: 8px 0;">${firstName}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0;"><strong>Employee ID:</strong></td>
+          <td style="padding: 8px 0;">${employeeId}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0;"><strong>Asset Name:</strong></td>
+          <td style="padding: 8px 0;">${assetName}</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px 0;"><strong>Asset Type:</strong></td>
+          <td style="padding: 8px 0;">${assetType}</td>
+        </tr>
+      </table>
+
+      <p style="font-size: 15px; color: #555; line-height: 1.5; margin-bottom: 20px;">
+        You can review the full record in the dashboard below:
+      </p>
+
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="${dashboardUrl}" style="background-color: #007bff; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+          Go to HRMS Dashboard
+        </a>
+      </div>
+
+      <p style="font-size: 15px; color: #555; line-height: 1.5; margin-bottom: 8px;">
+        Thank you,<br>
+        <strong>IT Department</strong>
+      </p>
+    </div>
+
+    <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
+      This is an automated message. Please do not reply directly to this email.
+    </div>
+  </div>
+  `;
+}
+
+  static getFeedbackEmail({ givenByUser, givenToUser, dashboardUrl, feedbackId, team }) {
+    const displayTeam = getTeamEmailConfig(team);
     return `
     <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
       <div style="text-align: center; margin-bottom: 20px;">
@@ -672,13 +782,13 @@ class Helper {
         </div>
 
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${dashboardUrl}/feedback/view/${feedbackId}" 
+          <a href="${dashboardUrl}/feedbacks/view/${feedbackId}" 
              style="display: inline-block; background-color: #4CAF50; color: white; padding: 12px 20px; border-radius: 5px; text-decoration: none; font-size: 15px;">
             View Feedback
           </a>
         </div>
 
-        <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>${process?.env?.TEAM || 'HRMS'} Support Team</strong></p>
+        <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>${displayTeam?.TEAM_NAME || 'HRMS'} Support Team</strong></p>
       </div>
 
       <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
@@ -692,7 +802,10 @@ class Helper {
     raisedByUser,
     dashboardUrl,
     feedbackId,
+    team,
   }) {
+     
+    const displayTeam = getTeamEmailConfig(team);
     return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
       <div style="text-align: center; margin-bottom: 20px;">
@@ -715,11 +828,11 @@ class Helper {
         </div>
 
         <p style="font-size: 16px; color: #555;">
-          <a href="${dashboardUrl}/feedback/view/${feedbackId}" style="color: #dc2626; text-decoration: none;">Click here to view the feedback</a>.
+          <a href="${dashboardUrl}/feedbacks/view/${feedbackId}" style="color: #dc2626; text-decoration: none;">Click here to view the feedback</a>.
         </p>
 
         <p style="color: #777; font-size: 14px; margin-top: 30px;">
-          Best regards,<br><strong>${process?.env?.TEAM || 'HRMS'} Support Team</strong>
+          Best regards,<br><strong>${displayTeam?.TEAM_NAME || 'HRMS'} Support Team</strong>
         </p>
       </div>
 
@@ -735,7 +848,9 @@ class Helper {
     givenToUser,
     dashboardUrl,
     feedbackId,
+    team,
   }) {
+    const displayTeam = getTeamEmailConfig(team);
     return `
     <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #fefefe;">
       <div style="text-align: center; margin-bottom: 20px;">
@@ -757,13 +872,13 @@ class Helper {
         </p>
 
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${dashboardUrl}/feedback/approve-edit/${feedbackId}" 
+          <a href="${dashboardUrl}/feedbacks" 
              style="display: inline-block; background-color: #3b82f6; color: white; padding: 12px 20px; border-radius: 5px; text-decoration: none; font-size: 15px;">
             Review Edit Request
           </a>
         </div>
 
-        <p style="color: #666; font-size: 14px;">Thank you,<br><strong>${process?.env?.TEAM || 'HRMS'} Support Team</strong></p>
+        <p style="color: #666; font-size: 14px;">Thank you,<br><strong>${displayTeam?.TEAM_NAME || 'HRMS'} Support Team</strong></p>
       </div>
 
       <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
@@ -778,11 +893,14 @@ class Helper {
     givenToUser,
     status,
     dashboardUrl,
-    feedbackId
+    feedbackId,
+    team,
   }) {
     const isApproved = status === 'approved';
     const subjectText = isApproved ? 'approved' : 'rejected';
     const color = isApproved ? '#16a34a' : '#dc2626';
+
+    const displayTeam = getTeamEmailConfig(team);
 
     return `
     <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #fefefe;">
@@ -805,13 +923,13 @@ class Helper {
       }
 
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${dashboardUrl}/feedback/view/${feedbackId}" 
+          <a href="${dashboardUrl}/feedbacks/view/${feedbackId}" 
              style="display: inline-block; background-color: ${color}; color: white; padding: 12px 20px; border-radius: 5px; text-decoration: none; font-size: 15px;">
             View Feedback
           </a>
         </div>
 
-        <p style="color: #777; font-size: 14px;">Best regards,<br><strong>${process?.env?.TEAM || 'HRMS'} Support Team</strong></p>
+        <p style="color: #777; font-size: 14px;">Best regards,<br><strong>${displayTeam?.TEAM_NAME || 'HRMS'} Support Team</strong></p>
       </div>
 
       <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
@@ -821,13 +939,15 @@ class Helper {
   `;
   }
 
-
   static getFeedbackUpdatedEmail({
     givenByUser,
     givenToUser,
     dashboardUrl,
     feedbackId,
+    team,
   }) {
+       const displayTeam = getTeamEmailConfig(team);
+
     return `
     <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #ffffff;">
       <div style="text-align: center; margin-bottom: 20px;">
@@ -850,14 +970,14 @@ class Helper {
         </div>
 
         <div style="text-align: center; margin: 30px 0;">
-          <a href="${dashboardUrl}/feedback/view/${feedbackId}" 
+          <a href="${dashboardUrl}/feedbacks/view/${feedbackId}" 
              style="display: inline-block; background-color: #2563eb; color: white; padding: 12px 20px; border-radius: 5px; text-decoration: none; font-size: 15px;">
             View Updated Feedback
           </a>
         </div>
 
         <p style="color: #6b7280; font-size: 14px;">
-          Best regards,<br><strong>${process?.env?.TEAM || 'HRMS'} Support Team</strong>
+          Best regards,<br><strong>${displayTeam?.TEAM_NAME || 'HRMS'} Support Team</strong>
         </p>
       </div>
 
@@ -868,37 +988,281 @@ class Helper {
   `;
   }
 
+static getTicketCreatedEmailForTeam(subject, type, raisedByName, baseUrl, ticketId, team) {
+  const displayTeam = getTeamEmailConfig(team);
+  
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h2 style="color: #333;">New Ticket Created</h2>
+        <p style="font-size: 14px; color: #777;">Ticket ID: <strong>${ticketId}</strong></p>
+      </div>
+      
+      <div style="background-color: #fff; padding: 20px; border-radius: 8px;">
+        <p style="font-size: 16px; color: #555;">Hello Team,</p>
+        <p style="font-size: 16px; color: #555;">
+          A new <strong>${type}</strong> ticket has been raised by <strong>${raisedByName}</strong>.
+        </p>
 
-
-
-  static getTicketCreatedEmailForTeam(subject, type, raisedByName, baseUrl, ticketId) {
-    return `
-    <p>Hello Team,</p>
-    <p>A new <strong>${type}</strong> ticket has been raised by ${raisedByName}.</p>
-    <p><strong>Subject:</strong> ${subject}</p>
-
-    <p style="color: #555; font-size: 16px; line-height: 1.6;">
-          You can review the record in the <a href="${baseUrl}/tickets" style="color: #007bff;">HRMS DASHBOARD</a>.
-    </p>
+        <p style="font-size: 16px; color: #555;"><strong>Subject:</strong> ${subject}</p>
         
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${baseUrl}/tickets" style="background-color: #007bff; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+            View Ticket in Dashboard
+          </a>
+        </div>
+        
+        <p style="font-size: 14px; color: #777;">Best regards,<br><strong>${displayTeam?.TEAM_NAME} Support Team</strong></p>
+      </div>
 
-     <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>${process?.env?.TEAM} Support Team</strong></p>
+      <div style="text-align: center; font-size: 12px; color: #aaa; margin-top: 20px;">
+        This is an automated message. Please do not reply directly to this email.
+      </div>
+    </div>
   `;
-  }
+}
 
-  static getTicketStatusUpdateEmail(employeeName, subject, status, baseUrl, ticketId) {
+
+static getTicketStatusUpdateEmail(employeeName, subject, status, baseUrl, ticketId, teamName) {
+  const capitalizedStatus = status.charAt(0).toUpperCase() + status.slice(1);
+  const statusColor =
+    status === "approved"
+      ? "#28a745"
+      : status === "rejected"
+      ? "#dc3545"
+      : "#007bff";
+
+  return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h2 style="color: #333;">Ticket Status Updated</h2>
+        <p style="font-size: 14px; color: #777;">Ticket ID: <strong>${ticketId}</strong></p>
+      </div>
+
+      <div style="background-color: #fff; padding: 25px; border-radius: 8px;">
+        <p style="font-size: 16px; color: #555;">Hi <strong>${employeeName}</strong>,</p>
+        <p style="font-size: 16px; color: #555;">
+          Your ticket regarding <strong>${subject}</strong> has been 
+          <strong style="color: ${statusColor};">${capitalizedStatus}</strong>.
+        </p>
+
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${baseUrl}/tickets" target="_blank" rel="noopener noreferrer"
+             style="background-color: #007bff; color: white; padding: 12px 24px; border-radius: 5px; text-decoration: none; font-weight: bold;">
+            View Ticket in Dashboard
+          </a>
+        </div>
+
+        <p style="font-size: 15px; color: #555;">
+          If you need further assistance, please contact your HR or support team.
+        </p>
+
+        <p style="font-size: 14px; color: #777; margin-top: 30px;">
+          Best regards,<br>
+          <strong>${teamName} Support Team</strong>
+        </p>
+      </div>
+
+      <div style="text-align: center; font-size: 12px; color: #999; margin-top: 20px;">
+        This is an automated message. Please do not reply directly to this email.
+      </div>
+    </div>
+  `;
+}
+
+
+  static getCandidateInviteEmail(candidate, inviteLink, team) {
+    const displayTeam = getTeamEmailConfig(team);
+
     return `
-    <p>Hi ${employeeName},</p>
-    <p>Your ticket regarding <strong>${subject}</strong> has been <strong>${status}</strong>.</p>
-    <p style="color: #555; font-size: 16px; line-height: 1.6;">
-      You can review the record in the 
-      <a href="${baseUrl}/tickets" target="_blank" rel="noopener noreferrer" style="color: #007bff;">
-        HRMS Dashboard
-      </a>.
-    </p>
-    <p>If you need further assistance, please contact your HR or support team.</p>
+      <p>Dear ${candidate?.firstName},</p>
+  
+      <p>Welcome aboard! We're excited to have you as part of the Sportsdunia family.</p>
+  
+      <p>
+        Please complete your Candidate Information Form (CIF) by clicking the button below.
+        This form will be valid for <strong>7 days</strong> from the date you received this email.
+      </p>
+  
+      <p>
+        <a href="${inviteLink}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #007bff; color: #fff; padding: 12px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">
+          Access Your Form
+        </a>
+      </p>
+  
+      <p>The Candidate Information Form (CIF) is a comprehensive form that helps us collect essential information required at onboarding. Please be prepared to provide the following types of details:</p>
+  
+      <ul>
+        <li><strong>Personal Details</strong> – Name, contact info, date of birth, marital status, Aadhar/PAN</li>
+        <li><strong>Address Information</strong> – Current and permanent addresses with supporting docs</li>
+        <li><strong>Educational Background</strong> – Schooling, graduation, post-grad, certifications</li>
+        <li><strong>Employment History</strong> – Job roles, experiences, previous employers</li>
+        <li><strong>Medical Information</strong> – Blood group and any medical history (if applicable)</li>
+        <li><strong>Background Check Info</strong> – Court/legal proceedings or convictions (if any)</li>
+        <li><strong>Bank Details</strong> – For salary disbursement</li>
+        <li><strong>Document Uploads</strong> – PAN, Aadhar, address proof, resume, offer letter, etc.</li>
+      </ul>
+  
+      <p>Please ensure all required information is accurate and complete.</p>
+  
+      <p>Best regards,<br/>HR Team - ${displayTeam?.TEAM_NAME}</p>
+    `;
+  }
+
+  static getCandidateSubmissionEmail(candidate) {
+    const submissionDate = new Date().toLocaleString('en-US', {
+      dateStyle: 'long',
+      timeStyle: 'short',
+    });
+
+    const statusTitle =
+      candidate.status === 'resubmitted'
+        ? 'Candidate Information Form Re-Submitted'
+        : 'Candidate Information Form Submitted';
+
+    const statusMessage =
+      candidate.status === 'resubmitted'
+        ? 'The following candidate has re-submitted their Candidate Information Form (CIF):'
+        : 'The following candidate has successfully submitted their Candidate Information Form (CIF):';
+
+    return `
+    <div>
+      <h3>${statusTitle}</h3>
+
+      <p>${statusMessage}</p>
+
+      <ul>
+        <li><strong>Name:</strong> ${candidate?.firstName || 'N/A'} ${candidate?.lastName || ''}</li>
+        <li><strong>Email:</strong> ${candidate?.personalEmail || 'N/A'}</li>
+        <li><strong>Phone:</strong> ${candidate?.phoneNumber || 'N/A'}</li>
+        <li><strong>Submission Date:</strong> ${submissionDate}</li>
+      </ul>
+
+      <p>You can now begin reviewing their information in the HRMS system.</p>
+
+      <p>Regards,<br/>HRMS System</p>
+      
+      <p style="font-size: 12px; color: #888;">This is an automated notification.</p>
+    </div>
   `;
   }
+
+  static getCandidateResendEmail(candidate, inviteLink, comments, team) {
+     
+    const displayTeam = getTeamEmailConfig(team);
+    return `
+      <p>Dear ${candidate?.firstName},</p>
+  
+      <p>Our HR team has reviewed your Candidate Information Form (CIF) and has requested some updates. Please access the form using the button below to review the comments and make the necessary changes.</p>
+      
+      <p><strong>Comments from HR:</strong></p>
+      <p>${comments ? comments : "N/A"}</p>
+
+
+      <p><strong>Please note:</strong> Some fields that have already been verified may be locked and cannot be edited. Please focus on completing the unlocked fields.</p>
+
+      <p>This new link will be valid for <strong>3 days</strong>.</p>
+  
+      <p>
+        <a href="${inviteLink}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #f0ad4e; color: #fff; padding: 12px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">
+          Update Your Form
+        </a>
+      </p>
+  
+      <p>Thank you for your prompt attention to this matter.</p>
+  
+      <p>Best regards,<br/>HR Team - ${displayTeam?.TEAM_NAME}</p>
+    `;
+  }
+
+  static getOnboardingPolicyEmail(candidate, policies, team) {
+    const displayTeam = getTeamEmailConfig(team);
+    const policyList = policies.map(policy => `<li><strong>${policy}</strong></li>`).join('');
+
+    return `
+      <p>Hello ${candidate.firstName},</p>
+      <p>As part of our onboarding policy, you are required to make arrangements for the following:</p>
+      <ul>
+        ${policyList}
+      </ul>
+      <p>Please ensure the required items are available and ready on your joining day.</p>
+      <p>If you have any questions or need support, please reach out to the HR team.</p>
+      <p>Regards,<br/>HR Team - ${displayTeam?.TEAM_NAME}</p>
+    `;
+  }
+
+
+  static dailyAttendanceSummary(userName, date, summaryHtml, team) {
+    const displayTeam = getTeamEmailConfig(team);
+    return `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h1 style="color: #333;">Discrepancy Detected in Your Attendance</h1>
+        </div>
+        <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+          <p style="color: #555; font-size: 16px; line-height: 1.6;">
+            Hi <strong>${userName}</strong>,
+          </p>
+          <p style="color: #555; font-size: 16px; line-height: 1.6;">
+            Here is a summary of your attendance for today.
+          </p>
+
+          <div style="background-color: #fdf6e3; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #ffc107;">
+            ${summaryHtml}
+          </div>
+          <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>HR Team - ${displayTeam?.TEAM_NAME}</strong></p>
+        </div>
+        <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
+          This is an automated message. Please do not reply directly to this email.
+        </div>
+      </div>
+    `;
+  }
+
+
+static teamWeeklyReportEmail(teamLeadName, startDate, endDate, tableRows, team) {
+    // FIX: All styles are now inline for email client compatibility.
+    const containerStyle = "font-family: Arial, sans-serif; auto; color: #333; max-width: 900px;";
+    const h1Style = "color: #2a2a2a;";
+    const pStyle = "font-size: 16px; line-height: 1.5;";
+    const tableStyle = "width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 20px;";
+    const thStyle = "border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #9faebeff; font-weight: bold;";
+
+    const displayTeam = getTeamEmailConfig(team);
+
+    return `
+    <div style="${containerStyle}">
+        <p style="${pStyle}">Hi <strong>${teamLeadName}</strong>,</p>
+       <p style="${pStyle}">
+        Here's your team's attendance overview for the week. 
+       </p>
+
+        <table style="${tableStyle}">
+            <thead>
+                <tr>
+                    <th style="${thStyle}">Department</th>
+                    <th style="${thStyle}">Employee ID</th>
+                    <th style="${thStyle}">Employee Name</th>
+                    <th style="${thStyle}">Late Check-Ins</th>
+                    <th style="${thStyle}">Early Check-Outs</th>
+                    <th style="${thStyle}">No Check-Out</th>
+                    <th style="${thStyle}">No Attendance</th>
+                    <th style="${thStyle}">Weekly Stats</th>
+                    <th style="${thStyle}">Weekly Total Hours</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${tableRows}
+            </tbody>
+        </table>
+        <p style="font-size: 14px; margin-top: 25px;">
+  This report has been generated automatically. Kindly review the data and take necessary action on any discrepancies or irregularities in attendance.
+</p>
+        <p style="color: #777; font-size: 14px;">Regards,<br><strong>HRMS System - ${displayTeam.TEAM_NAME}</strong></p>
+    </div>
+    `;
+}
+
 }
 
 module.exports = Helper;

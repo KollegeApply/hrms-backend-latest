@@ -92,6 +92,12 @@ const assignedAssetSchema = new Schema(
   }
 );
 
+assignedAssetSchema.index({
+  assetName: 'text',
+  assetType: 'text',
+  serialNumber: 'text',
+});
+
 const Assets = mongoose.model('Assets', assignedAssetSchema);
 
 module.exports = Assets;

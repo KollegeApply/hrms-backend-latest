@@ -1,4 +1,5 @@
 const Feedback = require("../models/feedbackModel");
+const User = require("../models/userModel");
 
 
 class FeedbacksService {
@@ -23,22 +24,30 @@ class FeedbacksService {
         return feedback;
     }
 
-    getAllFeedbacks = async (userId, userRole) => {
-        const isAdmin = ['admin', 'subadmin', 'hr'].includes(userRole);
+   getAllFeedbacks = async (userId, userRole, userTeam) => {
+    const teamUsers = await User.find({ team: userTeam }, '_id');
+    const teamUserIds = teamUsers.map(user => user._id);
 
-        const filter = isAdmin
-            ? {}
-            : {
-                $or: [{ givenBy: userId }, { givenTo: userId }],
-            };
+    const isAdmin = ['admin', 'subadmin', 'hr'].includes(userRole);
 
-        const feedbacks = await Feedback.find(filter)
-            .populate('givenBy', 'firstName lastName email role employeeId')
-            .populate('givenTo', 'firstName lastName email role employeeId')
-            .sort({ createdAt: -1 });
+    const filter = isAdmin
+        ? { givenBy: { $in: teamUserIds } }
+        : {
+            $or: [
+                { givenBy: userId },          
+                { givenTo: userId },   
+                { givenBy: { $in: teamUserIds } }
+            ]
+        };
 
-        return feedbacks;
-    };
+    const feedbacks = await Feedback.find(filter)
+        .populate('givenBy', 'firstName lastName email role employeeId team')
+        .populate('givenTo', 'firstName lastName email role employeeId team')
+        .sort({ createdAt: -1 });
+
+    return feedbacks;
+};
+
 
 
     async getFeedbackById(feedbackId, userId, userRole) {

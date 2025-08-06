@@ -5,13 +5,13 @@ const ApiError = require('../utility/ApiError');
 const catchAsync = require('../utility/catchAsync');
 const logger = require('../config/logger');
 const Helper = require('../utility/helper');
-const { HR_EMAIL, LEAVETYPES } = require('../utility/constants');
+const { getTeamEmailConfig } = require('../utility/constants');
 const User = require('../models/userModel');
 const { formatDateToKolkata } = require('../utility/common');
 const LeaveApplication = require('../models/leaveApplicationModel');
 const leaveTypeModel = require('../models/leaveTypeModel');
+const moment = require("moment-timezone");
 
-// Get all leave
 const getAllLeave = catchAsync(async (req, res) => {
   const currentUser = req.user;
   let leaves;
@@ -21,16 +21,13 @@ const getAllLeave = catchAsync(async (req, res) => {
     currentUser.role === 'subadmin' ||
     currentUser.role === 'hr'
   ) {
-    // Admin/HR can see all leaves
-    leaves = await leaveService?.getAllLeave();
+    leaves = await leaveService?.getAllLeave(currentUser.team);
   } else if (
     currentUser.role === 'teamlead' ||
     currentUser.role === 'subteamlead'
   ) {
-    // Team leads can see leaves of their team members
-    leaves = await leaveService?.getLeaveTl({ id: currentUser.id });
+    leaves = await leaveService?.getLeaveTl({ id: currentUser.id, team:currentUser.team });
   } else {
-    // Regular users can only see their own leaves
     leaves = await leaveService?.getLeaveById({ id: currentUser.id });
   }
 
@@ -41,7 +38,7 @@ const getAllLeave = catchAsync(async (req, res) => {
   });
 });
 
-// // Get leave by Id
+// Get leave by Id
 const getLeaveById = catchAsync(async (req, res) => {
   const validatedData = await leaveValidator?.leaveIdSchema?.validateAsync({
     id: req?.params?.id,
@@ -68,6 +65,7 @@ const updateLeave = catchAsync(async (req, res) => {
   const status = req?.body?.status;
   const edittorId = req?.user?.id;
   const user = req?.user;
+  const team = user?.team;
   const validatedData = await leaveValidator?.updateLeaveSchema?.validateAsync({
     leaveId,
     status,
@@ -89,9 +87,9 @@ const updateLeave = catchAsync(async (req, res) => {
 
   // Send email notification if status changed
   if (updatedData.status && updatedData.status !== 'pending') {
-    const mailReciever = await User.findById(updatedData.userId);
+    const mailReciever = await User.findById(updatedData.userId).populate('teamLeadId', 'email')
+      .populate('subTeamLeadId', 'email');;
     if (mailReciever?.email) {
-      // Format leave date(s)
       let formattedLeaveDates = '';
       const leaveDates = updatedData.dates;
 
@@ -105,16 +103,28 @@ const updateLeave = catchAsync(async (req, res) => {
         );
       }
 
-      if (Array.isArray(leaveDates)) {
-        const sortedDates = leaveDates
-          .map((d) => new Date(d))
-          .sort((a, b) => a - b);
-        const from = formatDateToKolkata(sortedDates[0]);
-        const to = formatDateToKolkata(sortedDates[sortedDates.length - 1]);
-        formattedLeaveDates = from === to ? from : `${from} to ${to}`;
+     if (Array.isArray(leaveDates)) {
+        const fromMoment = moment(leaveDates[0]).tz('Asia/Kolkata');
+        const toMoment = moment(leaveDates[leaveDates.length - 1]).tz('Asia/Kolkata');
+        
+        if (fromMoment.isSame(toMoment, 'day')) {
+          formattedLeaveDates = fromMoment.format('DD MMMM YYYY');
+        } else {
+          formattedLeaveDates = `${fromMoment.format('DD MMMM YYYY')} to ${toMoment.format('DD MMMM YYYY')}`;
+        }
       } else {
-        formattedLeaveDates = formatDateToKolkata(leaveDates);
+        formattedLeaveDates = moment(leaveDates).tz('Asia/Kolkata').format('DD MMMM YYYY');
       }
+
+    const configEmails = getTeamEmailConfig(team);  
+
+    const ccEmails = [configEmails?.HR_EMAIL,...configEmails?.ADMIN_EMAILS];
+    if (mailReciever?.teamLeadId?.email) {
+      ccEmails.push(mailReciever.teamLeadId.email);
+    }
+    if (mailReciever?.subTeamLeadId?.email) {
+      ccEmails.push(mailReciever.subTeamLeadId.email);
+    }
 
       // Send rejection email
       Helper.sendEmail({
@@ -124,18 +134,22 @@ const updateLeave = catchAsync(async (req, res) => {
           updatedData.status === 'approved'
             ? Helper.leaveWFHApproval(
                 mailReciever?.firstName,
-                'leave',
+                'Leave',
                 formattedLeaveDates,
                 leaveType?.name,
-                updatedData?.leaveReason
+                updatedData?.leaveReason,
+                team,
               )
             : Helper.leaveWFHReject(
                 mailReciever?.firstName,
-                'leave',
+                'Leave',
                 formattedLeaveDates,
-                leaveType?.name
+                leaveType?.name,
+                team,
                 // updatedData?.leaveReason
               ),
+        cc: ccEmails,
+        team,
       }).catch((err) =>
         logger.error(
           `Failed to send update on leave request email to ${mailReciever?.email}:`,
@@ -155,6 +169,7 @@ const updateLeave = catchAsync(async (req, res) => {
 // delete leave
 const deleteLeave = catchAsync(async (req, res) => {
   const userId = req.user.id;
+  const teamCode = req?.user?.team;
   const validatedData = await leaveValidator?.leaveIdSchema?.validateAsync({
     id: req?.params?.id,
   });
@@ -177,6 +192,10 @@ const deleteLeave = catchAsync(async (req, res) => {
     // Format leave date(s)
     let formattedLeaveDates = '';
     const leaveDates = leave?.dates;
+    const leaveTypeData = await leaveTypeModel
+      .findById(leave?.leaveTypeId)
+      .select('name');
+    const leaveType = leaveTypeData?.name;
 
     if (!leaveDates || (Array.isArray(leaveDates) && leaveDates.length === 0)) {
       throw new ApiError(
@@ -186,29 +205,44 @@ const deleteLeave = catchAsync(async (req, res) => {
     }
 
     if (Array.isArray(leaveDates)) {
-      const sortedDates = leaveDates
-        .map((d) => new Date(d))
-        .sort((a, b) => a - b);
-      const from = formatDateToKolkata(sortedDates[0]);
-      const to = formatDateToKolkata(sortedDates[sortedDates.length - 1]);
-      formattedLeaveDates = from === to ? from : `${from} to ${to}`;
+      const fromMoment = moment(leaveDates[0]).tz('Asia/Kolkata');
+      const toMoment = moment(leaveDates[leaveDates.length - 1]).tz('Asia/Kolkata');
+      
+      if (fromMoment.isSame(toMoment, 'day')) {
+        formattedLeaveDates = fromMoment.format('DD MMMM YYYY');
+      } else {
+        formattedLeaveDates = `${fromMoment.format('DD MMMM YYYY')} to ${toMoment.format('DD MMMM YYYY')}`;
+      }
     } else {
-      formattedLeaveDates = formatDateToKolkata(leaveDates);
+      formattedLeaveDates = moment(leaveDates).tz('Asia/Kolkata').format('DD MMMM YYYY');
+    }
+
+    const configEmails = getTeamEmailConfig(teamCode);
+
+    const ccEmails = [...configEmails?.ADMIN_EMAILS];
+    if (user?.teamLeadId?.email) {
+      ccEmails.push(user.teamLeadId.email);
+    }
+    if (user?.subTeamLeadId?.email) {
+      ccEmails.push(user.subTeamLeadId.email);
     }
 
     // Send email
     Helper.sendEmail({
       receiverEmails: [
-        HR_EMAIL,
-        user?.teamLeadId?.email,
-        user?.subTeamLeadId?.email,
+        configEmails?.HR_EMAIL
       ],
       subject: 'Revoked leave application',
       message: Helper.WfhLeaveRevoked(
         user?.firstName,
-        'leave',
-        formattedLeaveDates
+        'Leave',
+        formattedLeaveDates,
+        leaveType,
+        null,
+        teamCode,
       ),
+      cc: ccEmails,
+      team:teamCode,
     }).catch((err) =>
       logger.error(
         `Failed to send revoke email to ${user?.teamLeadId?.email} and others:`,
@@ -228,6 +262,7 @@ const applyForLeave = catchAsync(async (req, res) => {
   try {
     const userId = req.user.id;
     const leaveData = req.body;
+    const team = req.user.team;
 
     const result = await leaveService.applyForLeave(userId, leaveData);
 
@@ -250,24 +285,34 @@ const applyForLeave = catchAsync(async (req, res) => {
     const to = result?.data?.dates[result?.data?.dates?.length - 1];
     const leaveReason = result?.data?.leaveReason;
 
+    const configEmails = getTeamEmailConfig(team);
+
+    const ccEmails = [...configEmails.ADMIN_EMAILS];
+    if (user?.teamLeadId?.email) {
+      ccEmails.push(user.teamLeadId.email);
+    }
+    if (user?.subTeamLeadId?.email) {
+      ccEmails.push(user.subTeamLeadId.email);
+    }
+
     const sendMail = req?.body?.sendMail === true;
     if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
       logger.info(`Sending leave email to ${user?.teamLeadId}`);
       Helper.sendEmail({
-        receiverEmails: [
-          HR_EMAIL,
-          user?.teamLeadId?.email,
-          user?.subTeamLeadId?.email,
-        ],
+        receiverEmails: [configEmails.HR_EMAIL],
         subject: 'Leave Applied',
         message: Helper.WfhLeaveApplication({
           userName: user?.firstName,
-          requestType: 'leave',
+          requestType: 'Leave',
           leaveType: leaveType?.name || 'Leave',
-          fromDate: new Date(from),
-          toDate: new Date(to),
+          fromDate: from,
+          toDate: to,
           reason: leaveReason,
+          dashboardUrl:process?.env?.HRMS_FRONTEND_URL,
+          team,
         }),
+        cc: ccEmails,
+        team,
       }).catch((err) =>
         logger.error(`Failed to send leave email to ${user?.teamLeadId}:`, err)
       );

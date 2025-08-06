@@ -3,14 +3,16 @@ const jwt = require('jsonwebtoken');
 const { default: httpStatus } = require('http-status');
 const ApiError = require('../utility/ApiError');
 const logger = require('../config/logger');
+const User = require('../models/userModel');
 
 /**
  * Middleware to authenticate user requests using JWT.
  * Verifies the token from the 'x-auth-token' header.
  * Attaches the decoded user payload (id, role) to `req.user`.
  */
-const authenticateUser = (req, res, next) => {
+const authenticateUser = async (req, res, next) => {
   const token = req.header('x-auth-token'); // Standard practice: use 'Authorization': 'Bearer TOKEN'
+  const team = req.header('x-team');
 
   if (!token) {
     logger.warn('Authentication failed: No token provided');
@@ -24,8 +26,17 @@ const authenticateUser = (req, res, next) => {
     // Verify the token using the secret key
     const decoded = jwt.verify(token, process.env.SECRET_KEY);
 
-    // Attach user information (payload) to the request object
-    req.user = decoded; // Decoded payload usually contains { id: '...', role: '...' }
+    const user = await User.findById(decoded.id).select('+team');
+
+    if (!user) {
+     return res.status(401).json({ message: 'User not found' });
+   }
+
+   if(team){
+     user.team = team;
+   }
+    
+    req.user = user;
     logger.info(
       `User authenticated: ${req?.user?.id}, Role: ${req?.user?.role}`
     );

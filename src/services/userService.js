@@ -22,6 +22,7 @@ const leavePolicyMappingModel = require('../models/leavePolicyMappingModel');
 const employeeLeaveBalanceModel = require('../models/employeeLeaveBalanceModel');
 const leaveTypeModel = require('../models/leaveTypeModel');
 const { default: mongoose } = require('mongoose');
+const candidateModel = require('../models/candidateModel');
 
 class UserService {
   /**
@@ -34,140 +35,149 @@ class UserService {
    * @returns {Promise<object>} - Paginated user data or list of all users.
    */
 
-async getAllUsers(queryOptions, currentUser) {
-  const {
-    page,
-    limit,
-    search,
-    department,
-    role,
-    status,
-    sortBy,
-    sortOrder,
-    isPaginated,
-    isAttendanceLog,
-    teamLeadId,
-    subTeamLeadId,
-  } = queryOptions;
-
-  const query = { isDeleted: false };
-  const andConditions = [];
-
-  // Department filter
-  if (typeof department === 'string' && department.trim().length > 0) {
-    andConditions.push({ department: department.trim() });
-  }
-
-  // Role filter
-  if (role) {
-    andConditions.push({ role });
-  }
-
-  // Team-based filter
-  const teamFilter = [];
-  if (currentUser?.role === 'teamlead') {
-    teamFilter.push({ teamLeadId: currentUser.id });
-  } else if (currentUser?.role === 'subteamlead') {
-    teamFilter.push({ subTeamLeadId: currentUser.id });
-  }
-
-  // Search filter
-  const searchFilters = [];
-  if (typeof search === 'string' && search.trim().length > 0) {
-    const regex = new RegExp(search.trim(), 'i');
-    searchFilters.push(
-      { firstName: regex },
-      { lastName: regex },
-      { email: regex },
-      { employeeId: regex }
-    );
-  }
-
-  if (isAttendanceLog) {
-    // Only users who are onroll or probation or the current user
-    const statusFilter = {
-      status: { $in: ['onroll', 'probation'] },
-    };
-
-    const attendanceConditions = [];
-
-    if (teamFilter.length > 0) {
-      attendanceConditions.push({ ...statusFilter, ...teamFilter[0] });
-    } else {
-      attendanceConditions.push(statusFilter);
-    }
-
-    // Always include current user
-    attendanceConditions.push({ _id: currentUser.id });
-
-    if (searchFilters.length > 0) {
-      andConditions.push({
-        $or: searchFilters,
-      });
-    }
-
-    andConditions.push({
-      $or: attendanceConditions,
-    });
-  } else {
-    // Normal flow (non-attendance)
-    if (teamFilter.length > 0) {
-      andConditions.push(teamFilter[0]);
-    }
-
-    if (status) {
-      andConditions.push({ status });
-    }
-
-    if (searchFilters.length > 0) {
-      andConditions.push({
-        $or: searchFilters,
-      });
-    }
-  }
-
-  if(!isAttendanceLog){
-   
-if (teamLeadId && typeof teamLeadId === 'string' && teamLeadId.trim() !== '') {
-  andConditions.push({ teamLeadId: teamLeadId.trim() });
-}
-
-if (subTeamLeadId && typeof subTeamLeadId === 'string' && subTeamLeadId.trim() !== '') {
-  andConditions.push({ subTeamLeadId: subTeamLeadId.trim() });
-}
-}
-
-  if (andConditions.length > 0) {
-    query.$and = andConditions;
-  }
-
-  const sort = {};
-  sort[sortBy || 'createdAt'] = sortOrder === 'desc' ? -1 : 1;
-
-  const populateOptions = [
-    { path: 'teamLeadId', select: 'id firstName lastName email' },
-    { path: 'subTeamLeadId', select: '_id firstName lastName email' },
-    { path: 'department', select: '_id name' },
-  ];
-
-  if (isPaginated) {
-    console.log(query);
-    const paginatedResult = await paginate(
-      User,
-      query,
+  async getAllUsers(queryOptions, currentUser) {
+    const {
       page,
       limit,
-      sort,
-      null,
-      populateOptions
-    );
-    return paginatedResult;
-  } else {
-    const users = await User.find(query).sort(sort).populate(populateOptions);
-    return { data: users };
-  }
-}
+      search,
+      department,
+      role,
+      status = null,
+      sortBy,
+      sortOrder,
+      isPaginated,
+      isAttendanceLog,
+      teamLeadId,
+      subTeamLeadId,
+    } = queryOptions;
 
+    const query = {
+      team: currentUser?.team,
+      status: status === null ? { $in: ['probation', 'onroll'] } : status,
+      isDeleted: false,
+    };
+    const andConditions = [];
+
+    // Department filter
+    if (typeof department === 'string' && department.trim().length > 0) {
+      andConditions.push({ department: department.trim() });
+    }
+
+    // Role filter
+    if (role) {
+      andConditions.push({ role });
+    }
+
+    // Team-based filter
+    const teamFilter = [];
+    if (currentUser?.role === 'teamlead') {
+      teamFilter.push({ teamLeadId: currentUser.id });
+    } else if (currentUser?.role === 'subteamlead') {
+      teamFilter.push({ subTeamLeadId: currentUser.id });
+    }
+
+    // Search filter
+    const searchFilters = [];
+    if (typeof search === 'string' && search.trim().length > 0) {
+      const regex = new RegExp(search.trim(), 'i');
+      searchFilters.push(
+        { firstName: regex },
+        { lastName: regex },
+        { email: regex },
+        { employeeId: regex }
+      );
+    }
+
+    if (isAttendanceLog) {
+      // Only users who are onroll or probation or the current user
+      const statusFilter = {
+        status: { $in: ['onroll', 'probation'] },
+      };
+
+      const attendanceConditions = [];
+
+      if (teamFilter.length > 0) {
+        attendanceConditions.push({ ...statusFilter, ...teamFilter[0] });
+      } else {
+        attendanceConditions.push(statusFilter);
+      }
+
+      // Always include current user
+      attendanceConditions.push({ _id: currentUser.id });
+
+      if (searchFilters.length > 0) {
+        andConditions.push({
+          $or: searchFilters,
+        });
+      }
+
+      andConditions.push({
+        $or: attendanceConditions,
+      });
+    } else {
+      // Normal flow (non-attendance)
+      if (teamFilter.length > 0) {
+        andConditions.push(teamFilter[0]);
+      }
+
+      if (status) {
+        andConditions.push({ status });
+      }
+
+      if (searchFilters.length > 0) {
+        andConditions.push({
+          $or: searchFilters,
+        });
+      }
+    }
+
+    if (!isAttendanceLog) {
+      if (
+        teamLeadId &&
+        typeof teamLeadId === 'string' &&
+        teamLeadId.trim() !== ''
+      ) {
+        andConditions.push({ teamLeadId: teamLeadId.trim() });
+      }
+
+      if (
+        subTeamLeadId &&
+        typeof subTeamLeadId === 'string' &&
+        subTeamLeadId.trim() !== ''
+      ) {
+        andConditions.push({ subTeamLeadId: subTeamLeadId.trim() });
+      }
+    }
+
+    if (andConditions.length > 0) {
+      query.$and = andConditions;
+    }
+
+    const sort = {};
+    sort[sortBy || 'createdAt'] = sortOrder === 'desc' ? -1 : 1;
+
+    const populateOptions = [
+      { path: 'teamLeadId', select: 'id firstName lastName email' },
+      { path: 'subTeamLeadId', select: '_id firstName lastName email' },
+      { path: 'department', select: '_id name' },
+    ];
+
+    if (isPaginated) {
+      const paginatedResult = await paginate(
+        User,
+        query,
+        page,
+        limit,
+        sort,
+        null,
+        populateOptions
+      );
+      return paginatedResult;
+    } else {
+      const users = await User.find(query).sort(sort).populate(populateOptions);
+      return { data: users };
+    }
+  }
 
   /**
    * Get a single user by their ID.
@@ -263,11 +273,16 @@ if (subTeamLeadId && typeof subTeamLeadId === 'string' && subTeamLeadId.trim() !
       }
     }
 
+    console.log(userData);
+
     // Auto-generate Employee ID
-    const lastUser = await User.findOne({ employeeId: { $regex: new RegExp(`^${process.env.TEAM_CODE}_\\d+$`) }})
+    const lastUser = await User.findOne({
+      employeeId: { $regex: new RegExp(`^${userData?.team || 'SD'}_\\d+$`) },
+    })
       .sort({ employeeId: -1 })
       .select('employeeId')
       .lean();
+    console.log(lastUser);
     const nextNumber = autoGenerateEmpId(lastUser);
     const paddedNumber = String(nextNumber).padStart(3, '0');
 
@@ -301,7 +316,7 @@ if (subTeamLeadId && typeof subTeamLeadId === 'string' && subTeamLeadId.trim() !
     // Create and Save User
     const user = new User({
       ...userData,
-      employeeId: `${process.env.TEAM_CODE}_${paddedNumber}`,
+      employeeId: `${userData?.team}_${paddedNumber}`,
       password: hashedPassword,
       email: userData?.email?.toLowerCase(),
       leavePolicyId: assignedPolicy._id,
@@ -335,9 +350,16 @@ if (subTeamLeadId && typeof subTeamLeadId === 'string' && subTeamLeadId.trim() !
         total: accrued || mapping.quota,
       };
     });
-
-    // Save all balances
     await employeeLeaveBalanceModel.insertMany(balances);
+
+    if (userData?.candidateId) {
+      const candidate = await candidateModel.findById(userData?.candidateId);
+      if (!candidate) {
+        throw new ApiError(httpStatus.NOT_FOUND, 'Candidate not found');
+      }
+      candidate.status = 'completed';
+      await candidate.save();
+    }
 
     logger.info(`User created successfully with ID: ${savedUser?.id}`);
     return savedUser.toJSON();
@@ -563,12 +585,20 @@ if (subTeamLeadId && typeof subTeamLeadId === 'string' && subTeamLeadId.trim() !
    * @param {string} id - The user's MongoDB ObjectId.
    * @returns {Promise<boolean>} - True if deletion was successful, false otherwise.
    */
-  async deleteUser(id) {
+  async deleteUser(id, team) {
     logger.info(`Attempting to soft delete user with ID: ${id}`);
     const result1 = await User.findById(id);
     if (result1.isDeleted) {
       return false;
     }
+
+    if (result1.team !== team) {
+      logger.warn(
+        `Unauthorized delete attempt: Team mismatch. User team: ${userToDelete.team}, Requester team: ${team}`
+      );
+      return false;
+    }
+
     const result = await User.findByIdAndUpdate(
       id,
       { isDeleted: true }, // Mark as deleted
@@ -938,7 +968,7 @@ if (subTeamLeadId && typeof subTeamLeadId === 'string' && subTeamLeadId.trim() !
       const saltRounds = 10;
       const usersReadyForInsert = [];
       const lastUser = await User.findOne({
-        employeeId: { $regex: new RegExp(`^${process.env.TEAM_CODE}_\\d+$`)},
+        employeeId: { $regex: new RegExp(`^${process.env.TEAM_CODE}_\\d+$`) },
       })
         .sort({ employeeId: -1 })
         .select('employeeId')
@@ -1054,11 +1084,10 @@ if (subTeamLeadId && typeof subTeamLeadId === 'string' && subTeamLeadId.trim() !
         .find({ employeeId })
         .populate({
           path: 'changedBy',
-          select: 'firstName lastName', // Adjust this as per your User schema fields
+          select: 'firstName lastName',
         })
-        .sort({ actionAt: -1 }) // Sort by most recent changes first
+        .sort({ actionAt: -1 })
         .lean();
-
 
       return {
         status: true,
@@ -1075,106 +1104,122 @@ if (subTeamLeadId && typeof subTeamLeadId === 'string' && subTeamLeadId.trim() !
     }
   }
 
-async getUserByTlId(userId, userRole) {
-  try {
-    let user;
-    const statusQuery = { status: { $in: ['probation', 'onroll'] } };
-    const commonSelectFields = 'id firstName lastName email role employeeId';
+  async getUserByTlId(userId, userRole, userTeam) {
+    try {
+      let user;
+      const query = {
+        status: { $in: ['probation', 'onroll'] },
+        team: userTeam,
+      };
+      const commonSelectFields = 'id firstName lastName email role employeeId';
 
-    if (
-      userRole === 'admin' ||
-      userRole === 'subadmin' ||
-      userRole === 'hr'
-    ) {
-      user = await User.find(statusQuery).select(commonSelectFields);
-    } else if (userRole === 'teamlead' || userRole === 'subteamlead') {
+      if (
+        userRole === 'admin' ||
+        userRole === 'subadmin' ||
+        userRole === 'hr'
+      ) {
+        user = await User.find(query).select(commonSelectFields);
+      } else if (userRole === 'teamlead' || userRole === 'subteamlead') {
+        const allowedRoles = ['admin', 'subadmin', 'hr', 'IT'];
 
-      const allowedRoles = ['admin', 'subadmin', 'hr', 'IT'];
+        const currentUser = await User.findById(userId).select(
+          'teamLeadId subTeamLeadId'
+        );
+        const managersToInclude = [];
+        if (currentUser && currentUser.teamLeadId) {
+          managersToInclude.push(currentUser.teamLeadId);
+        }
+        if (currentUser && currentUser.subTeamLeadId) {
+          managersToInclude.push(currentUser.subTeamLeadId);
+        }
+        const uniqueManagersToInclude = [
+          ...new Set(managersToInclude.filter(Boolean)),
+        ];
 
-      const currentUser = await User.findById(userId).select('teamLeadId subTeamLeadId');
-      const managersToInclude = [];
-      if (currentUser && currentUser.teamLeadId) {
-        managersToInclude.push(currentUser.teamLeadId);
+        user = await User.find({
+          $and: [
+            query,
+            {
+              $or: [
+                { role: { $in: allowedRoles } },
+                userRole === 'teamlead'
+                  ? { teamLeadId: userId }
+                  : { subTeamLeadId: userId },
+                { _id: { $in: uniqueManagersToInclude } },
+              ],
+            },
+          ],
+        }).select(commonSelectFields);
+      } else if (userRole === 'employee') {
+        const currentUser = await User.findById(userId).select(
+          'teamLeadId subTeamLeadId'
+        );
+        const allowedUserIds = [
+          currentUser.teamLeadId,
+          currentUser.subTeamLeadId,
+        ].filter(Boolean);
+
+        const allowedRoles = ['admin', 'subadmin', 'hr', 'IT'];
+
+        user = await User.find({
+          $and: [
+            query,
+            {
+              $or: [
+                { _id: { $in: allowedUserIds } },
+                { role: { $in: allowedRoles } },
+              ],
+            },
+          ],
+        }).select(commonSelectFields);
+      } else if (userRole === 'IT') {
+        const allowedRoles = ['hr', 'admin', 'subadmin'];
+
+        const currentUser = await User.findById(userId).select(
+          'teamLeadId subTeamLeadId'
+        );
+        const managersToInclude = [];
+        if (currentUser && currentUser.teamLeadId) {
+          managersToInclude.push(currentUser.teamLeadId);
+        }
+        if (currentUser && currentUser.subTeamLeadId) {
+          managersToInclude.push(currentUser.subTeamLeadId);
+        }
+        const uniqueManagersToInclude = [
+          ...new Set(managersToInclude.filter(Boolean)),
+        ];
+
+        user = await User.find({
+          $and: [
+            query,
+            {
+              $or: [
+                { role: { $in: allowedRoles } },
+                { teamLeadId: userId },
+                { subTeamLeadId: userId },
+                { _id: { $in: uniqueManagersToInclude } },
+              ],
+            },
+          ],
+        }).select(commonSelectFields);
+      } else {
+        user = [];
       }
-      if (currentUser && currentUser.subTeamLeadId) {
-        managersToInclude.push(currentUser.subTeamLeadId);
-      }
-      const uniqueManagersToInclude = [...new Set(managersToInclude.filter(Boolean))];
 
-      user = await User.find({
-        $and: [
-          statusQuery,
-          {
-            $or: [
-              { role: { $in: allowedRoles } },
-              userRole === 'teamlead' ? { teamLeadId: userId } : { subTeamLeadId: userId },
-              { _id: { $in: uniqueManagersToInclude } }
-            ]
-          }
-        ]
-      }).select(commonSelectFields);
-
-    } else if (userRole === 'employee') {
-      const currentUser = await User.findById(userId).select('teamLeadId subTeamLeadId');
-      const allowedUserIds = [currentUser.teamLeadId, currentUser.subTeamLeadId].filter(Boolean);
-
-      const allowedRoles = ['admin', 'subadmin', 'hr', 'IT'];
-
-      user = await User.find({
-        $and: [
-          statusQuery,
-          {
-            $or: [
-              { _id: { $in: allowedUserIds } },
-              { role: { $in: allowedRoles } },
-            ]
-          }
-        ]
-      }).select(commonSelectFields);
-    } else if (userRole === 'IT') {
-      const allowedRoles = ['hr', 'admin', 'subadmin'];
-      
-      const currentUser = await User.findById(userId).select('teamLeadId subTeamLeadId');
-      const managersToInclude = [];
-      if (currentUser && currentUser.teamLeadId) {
-        managersToInclude.push(currentUser.teamLeadId);
-      }
-      if (currentUser && currentUser.subTeamLeadId) {
-        managersToInclude.push(currentUser.subTeamLeadId);
-      }
-      const uniqueManagersToInclude = [...new Set(managersToInclude.filter(Boolean))];
-
-      user = await User.find({
-        $and: [
-          statusQuery,
-          {
-            $or: [
-              { role: { $in: allowedRoles } },
-              { teamLeadId: userId },
-              { subTeamLeadId: userId },
-              { _id: { $in: uniqueManagersToInclude } }
-            ]
-          }
-        ]
-      }).select(commonSelectFields);
-    } else {
-      user = []; 
+      return {
+        status: true,
+        statusCode: 200,
+        data: user.filter((u) => u.id.toString() !== userId.toString()),
+      };
+    } catch (error) {
+      console.error('Error in getUserByTlId service:', error);
+      return {
+        status: false,
+        statusCode: 500,
+        message: 'An unexpected server error occurred.',
+      };
     }
-
-    return {
-      status: true,
-      statusCode: 200,
-      data: user.filter(u => u.id.toString() !== userId.toString()),
-    };
-  } catch (error) {
-    console.error('Error in getUserByTlId service:', error);
-    return {
-      status: false,
-      statusCode: 500,
-      message: 'An unexpected server error occurred.',
-    };
   }
-}
 }
 
 module.exports = new UserService(); // Export an instance

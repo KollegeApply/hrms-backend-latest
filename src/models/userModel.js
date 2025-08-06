@@ -112,8 +112,11 @@ const userSchema = new Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'LeavePolicy',
     },
+    dateOfBirth: {
+      type: Date,
+      required: false,
+    },
     // Add other relevant HRMS fields as needed:
-    // dateOfBirth: Date,
     // reportingManager: { type: Schema.Types.ObjectId, ref: 'User' },
     // emergencyContact: { name: String, phone: String, relationship: String },
     passwordResetOtp: {
@@ -126,6 +129,15 @@ const userSchema = new Schema(
       required: false,
       select: false, // Don't return expiry by default
     },
+    candidateId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Candidate',
+      required: false,
+    },
+    team:{
+      type: String,
+      required: true
+    }
   },
   {
     timestamps: true, // Adds createdAt and updatedAt automatically
@@ -136,6 +148,7 @@ const userSchema = new Schema(
 // userSchema.index({ email: 1 });
 // userSchema.index({ employeeId: 1 });
 userSchema.index({ firstName: 'text', lastName: 'text', email: 'text' }); // For text search
+userSchema.index({ team: 1 });
 
 // Method to exclude password when converting to JSON
 userSchema.set('toJSON', {

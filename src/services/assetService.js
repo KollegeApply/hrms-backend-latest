@@ -45,6 +45,11 @@ class AssetsService {
       throw new Error('Assigned by user not found');
     }
 
+
+    if(user?.team !== assignedByUser?.team){
+      throw new Error("You can't assign this user.")
+    }
+
     const newAssignment = new Assets({
       assetType,
       assetName,
@@ -63,10 +68,18 @@ class AssetsService {
    * Fetches all assigned assets.
    * @returns {Promise<AssignedAsset[]>} - List of assigned assets.
    */
-  async fetchAssignedAssets(page, limit, search) {
+async fetchAssignedAssets(page, limit, search, team) {
     const query = {};
-    if (search) {
-      query.Type = { $regex: new RegExp(search, 'i') };
+
+     if (search) {
+      query.$text = { $search: search };
+    }
+
+    if (team) {
+      const usersInTeam = await User.find({ team: team }).select('_id');
+      
+      const userIds = usersInTeam.map(user => user._id);
+      query.assignedBy = { $in: userIds };
     }
 
     const populateOptions = [
@@ -76,7 +89,7 @@ class AssetsService {
       },
       {
         path: 'assignedBy',
-        select: 'firstName lastName employeeId email'
+        select: 'firstName lastName employeeId email team'
       }
     ];
 
@@ -85,14 +98,14 @@ class AssetsService {
       query,
       page,
       limit,
-      { assignedDate: -1 }, // Default sort by assigned date descending
+      { assignedDate: -1 },
       null,
       populateOptions
     );
 
     logger.info('Assigned assets fetched successfully:', paginationResult);
     return paginationResult;
-  }
+}
 
   /**
    * Updates the status and/or specifications of an assigned asset.
@@ -156,6 +169,7 @@ class AssetsService {
    */
   async fetchAssignedAssetByUserId(userId) {
     const assignedAsset = await Assets.find({ assignee: userId })
+      .sort({ createdAt: -1 })
       .populate('assignee', 'firstName lastName employeeId email')
       .populate('assignedBy', 'firstName lastName employeeId email');
     if (!assignedAsset) {
@@ -218,22 +232,66 @@ class AssetsService {
     return updatedAssignment;
   }
 
-  async fetchAssetRequests() {
-    try {
-      const requests = await Assets.find({
-        status: {
-          $in: ['return_requested', 'return_approved', 'return_rejected'],
+ async fetchAssetRequests(team) {
+  try {
+    const requests = await Assets.aggregate([
+      {
+        $match: {
+          status: {
+            $in: ['return_requested', 'return_approved', 'return_rejected'],
+          },
         },
-      })
-        .sort({ createdAt: -1 })
-        .populate('assignee', 'firstName lastName employeeId email');
-      logger.info('Pending asset requests fetched successfully:', requests);
-      return requests;
-    } catch (error) {
-      logger.error('Error fetching pending asset requests:', error);
-      throw error;
-    }
+      },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'assignee',
+          foreignField: '_id',
+          as: 'assignee',
+        },
+      },
+      {
+        $unwind: '$assignee',
+      },
+      {
+        $match: {
+          'assignee.team': team,
+        },
+      },
+      {
+        $project: {
+          assetType: 1,
+          assetName: 1,
+          serialNumber: 1,
+          specifications: 1,
+          status: 1,
+          assignedBy: 1,
+          assignedDate: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          assignee: {
+            _id: '$assignee._id',
+            firstName: '$assignee.firstName',
+            lastName: '$assignee.lastName',
+            email: '$assignee.email',
+            employeeId: '$assignee.employeeId',
+            team: '$assignee.team',
+          },
+        },
+      },
+      {
+        $sort: { createdAt: -1 },
+      },
+    ]);
+
+    logger.info(`Asset requests for team ${team} fetched successfully`);
+    return requests;
+  } catch (error) {
+    logger.error('Error fetching team-based asset requests:', error);
+    throw error;
   }
+}
+
 
   async updateAssetRequestStatus(requestId, newStatus) {
     try {

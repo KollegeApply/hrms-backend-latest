@@ -1,6 +1,7 @@
 const Attendance = require('../models/attendanceModel');
 const User = require('../models/userModel');
 const { startOfDay, endOfDay, parseISO, isValid } = require('date-fns');
+const moment = require('moment-timezone');
 
 // Helper function to get the start and end of the current month
 const getCurrentMonthRange = () => {
@@ -407,20 +408,24 @@ if (['teamlead', 'subteamlead'].includes(role)) {
         throw new Error('No dates provided for bulk leave attendance.');
       }
 
-      const attendanceOps = dates.map((date) => ({
-        updateOne: {
-          filter: { user: userId, date },
-          update: {
-            $set: {
-              user: userId,
-              date,
-              status: 'leave_applied',
-              leaveId,
+      const attendanceOps = dates.map((date) => {
+        const standardizedDate = moment(date).tz('Asia/Kolkata').startOf('day').toDate();
+
+        return {
+          updateOne: {
+            filter: { user: userId, date: standardizedDate },
+            update: {
+              $set: {
+                user: userId,
+                date: standardizedDate,
+                status: 'leave_applied',
+                leaveId,
+              },
             },
+            upsert: true,
           },
-          upsert: true,
-        },
-      }));
+        };
+      });
 
       await Attendance.bulkWrite(attendanceOps);
 
@@ -443,10 +448,14 @@ if (['teamlead', 'subteamlead'].includes(role)) {
     if (!Array.isArray(leaveDates) || leaveDates.length === 0) return;
 
     try {
+      const standardizedDates = leaveDates.map((date) =>
+        moment(date).tz('Asia/Kolkata').startOf('day').toDate()
+      );
+
       const result = await Attendance.deleteMany({
         user: userId,
         leaveId: leaveId,
-        date: { $in: leaveDates.map((date) => new Date(date)) },
+        date: { $in: standardizedDates },
       });
 
       console.log(
