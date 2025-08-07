@@ -1,5 +1,6 @@
 const { MongoClient } = require('mongodb');
 const { Types } = require('mongoose');
+require('dotenv').config({ path: './.env.production' });
 // SKIPPING Holidays collection
 
 const SPORTSDUNIA_URI = 'mongodb://localhost:27017';

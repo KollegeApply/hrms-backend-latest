@@ -31,6 +31,8 @@ router.post('/', authenticateUser, authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?
 router.get('/', authenticateUser, candidateController.getCandidates);
 router.get('/id/:id', candidateController.getCandidateDetailsById);
 
+router.post('/invite-user/:id',authenticateUser, candidateController.inviteUser);
+
 router.get('/validate/:token', candidateController.validateToken);
 router.get('/user-details/:token', candidateController.fetchCandidateDetails);
 router.post('/save/:token', candidateController.saveDraft);

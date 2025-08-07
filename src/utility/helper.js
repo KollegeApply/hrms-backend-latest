@@ -1192,6 +1192,47 @@ static getTicketStatusUpdateEmail(employeeName, subject, status, baseUrl, ticket
   }
 
 
+  static getEmployeeDataRequestEmail(employee, formLink, team) {
+  const displayTeam = getTeamEmailConfig(team);
+
+  return `
+    <p>Dear ${employee?.firstName},</p>
+
+    <p>Hope you're doing well!</p>
+
+    <p>As part of our initiative to streamline and update our records in the HRMS (Human Resource Management System), we kindly request you to complete or verify your employee information by accessing the form below.</p>
+
+    <p>
+      <a href="${formLink}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #007bff; color: #fff; padding: 12px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">
+        Update Your Information
+      </a>
+    </p>
+
+     <p>
+  We kindly request you to complete the form <strong>at your earliest convenience</strong> to help us maintain accurate HR records.
+</p>
+
+    <p>You will be asked to verify and, if needed, update the following information:</p>
+
+    <ul>
+      <li><strong>Personal Details</strong> – Name, contact information, date of birth, Aadhar/PAN, marital status</li>
+      <li><strong>Address Information</strong> – Current and permanent addresses with proof</li>
+      <li><strong>Educational Background</strong> – Academic qualifications and certifications</li>
+      <li><strong>Employment History</strong> – Previous roles and employers</li>
+      <li><strong>Medical Information</strong> – Blood group and health history (if applicable)</li>
+      <li><strong>Background Check Information</strong> – Any legal/court proceedings (if any)</li>
+      <li><strong>Bank Details</strong> – Required for payroll</li>
+      <li><strong>Document Uploads</strong> – PAN, Aadhar, address proof, offer letter, resume, etc.</li>
+    </ul>
+
+    <p>We appreciate your cooperation in helping us maintain accurate and up-to-date records.</p>
+
+    <p>Warm regards,<br/>HR Team - ${displayTeam?.TEAM_NAME}</p>
+  `;
+}
+
+
+
   static dailyAttendanceSummary(userName, date, summaryHtml, team) {
     const displayTeam = getTeamEmailConfig(team);
     return `

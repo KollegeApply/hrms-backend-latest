@@ -21,54 +21,62 @@ class CandidateService {
     }
   }
 
- async getCandidates({ page = 1, limit = 10, status, search }, team) {
-  const query = { isDeleted: false };
+  async getCandidates({ page = 1, limit = 10, status, search }, team) {
+    const query = { isDeleted: false };
 
-  if (status) {
-    query.status = status;
+    if (status) {
+      query.status = status;
+    }
+
+    if (search) {
+      query.$or = [
+        { firstName: { $regex: search, $options: 'i' } },
+        { lastName: { $regex: search, $options: 'i' } },
+        { personalEmail: { $regex: search, $options: 'i' } },
+        { phoneNumber: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const teamUsers = await User.find({ team }, '_id');
+    const teamUserIds = teamUsers.map(user => user._id);
+
+    query.pointOfContact = { $in: teamUserIds };
+
+    const pageInt = parseInt(page);
+    const limitInt = parseInt(limit);
+    const skip = (pageInt - 1) * limitInt;
+
+    const [candidates, total] = await Promise.all([
+      Candidate.find(query)
+        .populate('pointOfContact', 'firstName lastName email team')
+        .populate('department', 'name')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitInt),
+      Candidate.countDocuments(query),
+    ]);
+
+    return {
+      candidates,
+      total,
+      page: pageInt,
+      pageSize: limitInt,
+      totalPages: Math.ceil(total / limitInt),
+    };
   }
-
-  if (search) {
-    query.$or = [
-      { firstName: { $regex: search, $options: 'i' } },
-      { lastName: { $regex: search, $options: 'i' } },
-      { personalEmail: { $regex: search, $options: 'i' } },
-      { phoneNumber: { $regex: search, $options: 'i' } }
-    ];
-  }
-
-  const teamUsers = await User.find({ team }, '_id');
-  const teamUserIds = teamUsers.map(user => user._id);
-
-  query.pointOfContact = { $in: teamUserIds };
-
-  const pageInt = parseInt(page);
-  const limitInt = parseInt(limit);
-  const skip = (pageInt - 1) * limitInt;
-
-  const [candidates, total] = await Promise.all([
-    Candidate.find(query)
-      .populate('pointOfContact', 'firstName lastName email team')
-      .populate('department', 'name')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limitInt),
-    Candidate.countDocuments(query),
-  ]);
-
-  return {
-    candidates,
-    total,
-    page: pageInt,
-    pageSize: limitInt,
-    totalPages: Math.ceil(total / limitInt),
-  };
-}
 
 
 
   async saveDraft(email, data) {
-    const candidate = await Candidate.findOne({ personalEmail: email });
+    const user = await User.findOne({ email: email });
+    let candidate;
+
+    if (user) {
+      candidate = await User
+        .findOne({ email: email });
+    } else {
+      candidate = await Candidate.findOne({ personalEmail: email });
+    }
     if (!candidate) {
       throw new Error('Candidate not found');
     }
@@ -88,9 +96,18 @@ class CandidateService {
       const userDetails = await UserDetails.create(cleanedData);
       candidate.userDetails = userDetails._id;
     }
+    const isPendingOrDraft = (value) => value === 'pending' || value === 'draft';
 
-    if (candidate.status === 'pending' || candidate.status === 'draft') {
-      candidate.status = 'draft';
+    if (
+      isPendingOrDraft(candidate?.status) ||
+      isPendingOrDraft(candidate?.formStatus)
+    ) {
+      if (isPendingOrDraft(candidate?.status)) {
+        candidate.status = 'draft';
+      }
+      if (isPendingOrDraft(candidate?.formStatus)) {
+        candidate.formStatus = 'draft';
+      }
     }
     if (candidate.status === 'resended' || candidate.status === 'redraft') {
       candidate.status = 'redraft';
@@ -103,7 +120,15 @@ class CandidateService {
 
 
   async finalSubmit(email, data) {
-    const candidate = await Candidate.findOne({ personalEmail: email });
+     const user = await User.findOne({ email: email });
+    let candidate;
+
+    if (user) {
+      candidate = await User
+        .findOne({ email: email });
+    } else {
+      candidate = await Candidate.findOne({ personalEmail: email });
+    }
     if (!candidate) throw new Error('Candidate not found');
     if (!candidate.userDetails) throw new Error('UserDetails not found');
 
@@ -120,7 +145,11 @@ class CandidateService {
 
     await UserDetails.findByIdAndUpdate(candidate.userDetails, { ...data }, { new: true });
 
-    await Candidate.findByIdAndUpdate(candidate._id, { status: newStatus });
+    const updateFields = {};
+    if ('status' in candidate) updateFields.status = newStatus;
+    if ('formStatus' in candidate) updateFields.formStatus = newStatus;
+
+    await Candidate.findByIdAndUpdate(candidate._id, updateFields);
 
     return await Candidate.findById(candidate._id).populate('pointOfContact', 'firstName lastName email team');;
   }

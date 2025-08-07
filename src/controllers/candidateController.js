@@ -5,10 +5,12 @@ const CandidateService = require('../services/candidateService');
 const candidateValidator = require('../validators/candidateValidator');
 const UserDetails = require('../models/userDetailsModel');
 const Helper = require('../utility/helper');
-const { validateCIFToken, transformDocumentPaths } = require('../utility/common');
+const { validateCIFToken, transformDocumentPaths, generateCIFToken } = require('../utility/common');
 const candidateModel = require('../models/candidateModel');
 const { uploadToAzure } = require('../utility/azureBlob');
 const { HR_EMAIL, getTeamEmailConfig } = require('../utility/constants');
+const logger = require('../config/logger');
+const User = require('../models/userModel');
 
 const createCandidate = catchAsync(async (req, res) => {
   const userId = req?.user?.id;
@@ -85,10 +87,20 @@ const fetchCandidateDetails = catchAsync(async (req, res) => {
     return res.status(httpStatus.NOT_FOUND).json({ message: 'Invalid or expired link.' });
   }
 
-  const candidate = await candidateModel
+
+  const user = await User.findOne({ email: email});
+  let candidate;
+
+  if(user){
+    candidate = await User
+    .findOne({ email: email })
+    .populate('userDetails');
+  }else{
+    candidate = await candidateModel
     .findOne({ personalEmail: email })
     .populate('pointOfContact','team')
     .populate('userDetails');
+  }
 
   if (!candidate) {
     return res.status(httpStatus.NOT_FOUND).json({ message: 'Candidate not found.' });
@@ -125,16 +137,24 @@ const finalSubmit = catchAsync(async (req, res) => {
   }
 
   const files = req.files || {};
-  const uploadedPaths = {};
 
-  for (const [field, fileArray] of Object.entries(files)) {
-    if (fileArray && fileArray[0]) {
+  const uploadedEntries = await Promise.all(
+  Object.entries(files).map(async ([field, fileArray]) => {
+    if (fileArray?.[0]) {
       const file = fileArray[0];
-      const relativePath = await uploadToAzure(file.buffer, file.originalname);
       const simpleField = field.replace('documents.', '');
-      uploadedPaths[simpleField] = relativePath;
+      const relativePath = await uploadToAzure(file.buffer, file.originalname);
+      return [simpleField, relativePath];
     }
-  }
+    return null;
+  })
+);
+
+
+const uploadedPaths = Object.fromEntries(
+  uploadedEntries.filter(Boolean)
+);
+
 
   const parsedBody = {};
   for (const key in req.body) {
@@ -179,11 +199,12 @@ const finalSubmit = catchAsync(async (req, res) => {
         team,
       });
 
-      res.json({ status: true, data: result });
+      logger.info("Email sent successfully");
     } catch (error) {
       console.error("Error sending email:", error);
     }
   }
+  res.json({ status: true, data: result });
 });
 
 const reviewUpdateCandidate = catchAsync(async (req, res) => {
@@ -318,6 +339,44 @@ const requestDevice = catchAsync(async (req, res) => {
   res.json({ status: true, message: 'Request sent successfully.' });
 });
 
+const inviteUser = catchAsync(async (req, res) => {
+  const userId = req?.user?.id;
+  const team = req.user.team;
+  const user = await User.findById(req.params.id);
+
+  const token = generateCIFToken(user?.email);
+
+  const inviteLink = `${process.env.HRMS_FRONTEND_URL}/invite-user/form/${token}`;
+
+  if (process.env.HRMS_FRONTEND_URL) {
+    const currentUser = await UserDetails.findById(userId).select('firstName lastName email');
+    const emailSubject = 'Complete Your Candidate Information Form (CIF)';
+
+
+    const emailMessage = Helper.getEmployeeDataRequestEmail(user,inviteLink, team);
+    const ccEmails = [currentUser?.email];
+
+    await Helper.sendEmail({
+      receiverEmails: [user?.email],
+      subject: emailSubject,
+      message: emailMessage,
+      fromHR: true,
+      cc: ccEmails,
+      team,
+    });
+  }
+
+  user.formStatus = "pending";
+  await user.save();
+
+  res.status(httpStatus.CREATED).json({
+    status: true,
+    message: 'Invite email sent.',
+    data: user,
+    inviteLink,
+  });
+});
+
 module.exports = {
   createCandidate,
   getCandidates,
@@ -331,4 +390,5 @@ module.exports = {
   approveCandidate,
   resendCifInvite,
   requestDevice,
+  inviteUser,
 };

@@ -325,18 +325,18 @@ const finalSubmitSchema = candidateDraftSchema.concat(
     employment: Joi.array()
       .items(
         Joi.object({
-          organization: Joi.string().min(1).optional(),
+          organization: Joi.string().optional(),
           from: Joi.string().isoDate().optional(),
           to: Joi.string().isoDate().optional(),
-          address: Joi.string().min(1).optional(),
-          jobTitle: Joi.string().min(1).optional(),
-          reasonForLeaving: Joi.string().min(1).optional(),
-          finalSalary: Joi.string().min(1).optional(),
-          supervisorName: Joi.string().min(1).optional(),
-          supervisorContact: Joi.string().min(1).optional(),
-          employmentType: Joi.string().min(1).optional(),
-          expectedCTC: Joi.string().min(1).optional(),
-          expectedJoiningDate: Joi.string().isoDate().optional(),
+          address: Joi.string().optional(),
+          jobTitle: Joi.string().optional(),
+          reasonForLeaving: Joi.string().optional(),
+          finalSalary: Joi.string().optional(),
+          supervisorName: Joi.string().optional(),
+          supervisorContact: Joi.string().optional(),
+          employmentType: Joi.string().optional(),
+          expectedCTC: Joi.string().optional(),
+          expectedJoiningDate: Joi.string().isoDate().optional().allow('', null),
         })
       )
       .optional(),
@@ -398,9 +398,7 @@ const finalSubmitSchema = candidateDraftSchema.concat(
       salarySlipTwo: Joi.string().optional().allow(null, ''),
       salarySlipThree: Joi.string().optional().allow(null, ''),
     }).required(),
-    certification: Joi.boolean().valid(true).required().messages({
-      "any.only": "You must certify the information to submit",
-    }),
+    certification: Joi.optional(),
   })
 );
 

@@ -129,15 +129,25 @@ const userSchema = new Schema(
       required: false,
       select: false, // Don't return expiry by default
     },
+    formStatus : {
+      type: String,
+      enum: ["pending","draft","submitted"],
+      required: false,
+    },
     candidateId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Candidate',
       required: false,
     },
+    userDetails: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'UserDetails',
+      required: false,
+    },
     team:{
       type: String,
       required: true
-    }
+    },
   },
   {
     timestamps: true, // Adds createdAt and updatedAt automatically

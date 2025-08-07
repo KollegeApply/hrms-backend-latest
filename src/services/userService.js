@@ -190,7 +190,8 @@ class UserService {
       .populate('department', 'name')
       .populate('teamLeadId', 'firstName lastName')
       .populate('subTeamLeadId', 'firstName lastName')
-      .populate('hrPocId', 'firstName lastName email');
+      .populate('hrPocId', 'firstName lastName email')
+      .populate('userDetails');
     if (!user) {
       logger.warn(`User not found with ID: ${id}`);
     }
