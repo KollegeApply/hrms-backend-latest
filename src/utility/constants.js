@@ -52,6 +52,11 @@ const CANDIDATE_STATUS = {
   BACKOUT: 'backout'
 };
 
+const LAPTOP_TYPES = {
+  MACOS: 'macos',
+  WINDOWS: 'windows',
+}
+
 
 const MAIL_HOST = 'smtp.gmail.com';
 const MAIL_PORT = 465;
@@ -81,7 +86,6 @@ const TEAM_SD = process.env.TEAM_SD;
 const TEAM_KAP = process.env.TEAM_KAP;
 
 function getTeamEmailConfig(team) {
-  console.log(team);
   const normalizedTeam = team?.toUpperCase();
   const config = {
     TEAM_NAME: process.env[`TEAM_${normalizedTeam}`],
@@ -176,6 +180,7 @@ module.exports = {
   VALID_USER_ROLES: Object.values(USER_ROLES),
   VALID_EMPLOYEE_STATUS: Object.values(EMPLOYEE_STATUS),
   VALID_ASSETS_STATUS: Object.values(ASSETS_STATUS),
+  VALID_LAPTOP_TYPES: Object.values(LAPTOP_TYPES),
   CANDIDATE_STATUS,
   VALID_CANDIDATE_STATUS: Object.values(CANDIDATE_STATUS),
   MAIL_HOST,

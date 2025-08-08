@@ -323,23 +323,24 @@ const finalSubmitSchema = candidateDraftSchema.concat(
     }).required(),
 
     employment: Joi.array()
-      .items(
-        Joi.object({
-          organization: Joi.string().optional(),
-          from: Joi.string().isoDate().optional(),
-          to: Joi.string().isoDate().optional(),
-          address: Joi.string().optional(),
-          jobTitle: Joi.string().optional(),
-          reasonForLeaving: Joi.string().optional(),
-          finalSalary: Joi.string().optional(),
-          supervisorName: Joi.string().optional(),
-          supervisorContact: Joi.string().optional(),
-          employmentType: Joi.string().optional(),
-          expectedCTC: Joi.string().optional(),
-          expectedJoiningDate: Joi.string().isoDate().optional().allow('', null),
-        })
-      )
-      .optional(),
+  .items(
+    Joi.object({
+      organization: Joi.string().allow('', null).optional(),
+      from: Joi.string().isoDate().optional().allow('', null),
+      to: Joi.string().isoDate().optional().allow('', null),
+      address: Joi.string().allow('', null).optional(),
+      jobTitle: Joi.string().allow('', null).optional(),
+      reasonForLeaving: Joi.string().allow('', null).optional(),
+      finalSalary: Joi.string().allow('', null).optional(),
+      supervisorName: Joi.string().allow('', null).optional(),
+      supervisorContact: Joi.string().allow('', null).optional(),
+      employmentType: Joi.string().allow('', null).optional(),
+      expectedCTC: Joi.string().allow('', null).optional(),
+      expectedJoiningDate: Joi.string().isoDate().optional().allow('', null),
+    })
+  )
+  .optional(),
+
 
     medicalInfo: Joi.object({
       bloodGroup: Joi.string().optional(),

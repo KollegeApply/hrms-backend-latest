@@ -3,11 +3,9 @@ const { Types } = require('mongoose');
 require('dotenv').config({ path: './.env.production' });
 // SKIPPING Holidays collection
 
-const SPORTSDUNIA_URI = 'mongodb://localhost:27017';
-const KOLLEGEAPPLY_URI = 'mongodb://localhost:27017';
+const SPORTSDUNIA_URI = process.env.SPORTSDUNIA_URI;
+const KOLLEGEAPPLY_URI = process.env.KOLLEGEAPPLY_URI;
 
-const SPORTSDUNIA_DB_NAME = 'sportsdunia_dev';
-const KOLLEGEAPPLY_DB_NAME = 'kollegeapply_dev';
 
 const LeavePolicyMap = new Map();
 const LeaveTypeMap = new Map();
@@ -111,8 +109,6 @@ async function MergingDepartment(sportsduniaDb, kollegeapplyDb) {
                     isDeleted: department.isDeleted
                 });
             }
-
-
         }
     } catch (error) {
         console.error("❌ Error merging departments:", error);
@@ -181,7 +177,7 @@ async function MergingUser(sportsduniaDb, kollegeapplyDb) {
 
             // Modifying 2 things before inserting
             user.leavePolicyId = LeavePolicyMap.get(user?.leavePolicyId?.toString())?.newId || user.leavePolicyId;
-            user.departmentId = DepartmentMap.get(user?.departmentId?.toString())?.newId || user.departmentId;
+            user.department = DepartmentMap.get(user?.department?.toString())?.newId || user.department;
 
             const { insertedId } = await usersCollectionSD.insertOne(user);
             console.log(`✅ Inserted user "${user.email}" → _id: ${insertedId}`);
@@ -487,9 +483,8 @@ async function main() {
         await kollegeapplyClient.connect();
         console.log('✅ Connected to KollegeApply database');
 
-        // eslint-disable-next-line prettier/prettier
-        const sportsduniaDb = sportsduniaClient.db(SPORTSDUNIA_DB_NAME);
-        const kollegeapplyDb = kollegeapplyClient.db(KOLLEGEAPPLY_DB_NAME);
+        const sportsduniaDb = sportsduniaClient.db();
+        const kollegeapplyDb = kollegeapplyClient.db();
 
         await MergingLeavePolicies(sportsduniaDb, kollegeapplyDb);
         await MergingLeaveTypes(sportsduniaDb, kollegeapplyDb);

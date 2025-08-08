@@ -18,7 +18,7 @@ const User = require('../models/userModel');
 const generateToken = (user) => {
   const payload = { id: user?.id, role: user?.role };
   // Use a reasonable expiration time (e.g., '1d', '7d', '1h')
-  return jwt.sign(payload, process?.env?.SECRET_KEY, { expiresIn: '1d' });
+  return jwt.sign(payload, process?.env?.SECRET_KEY, { expiresIn: '7d' });
 };
 
 // Wrap controller methods with catchAsync for cleaner error handling

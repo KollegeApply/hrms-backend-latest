@@ -12,11 +12,9 @@ const assignAsset = catchAsync(async (req, res) => {
   const assignedId = req.user?.id;
   data.assignedBy = assignedId;
 
-  // 1. Validate the request using the schema
   const validatedData =
     await assetValidator.assetAssignmentSchema.validateAsync(req.body);
 
-  // 2. Delegate the main logic to the service
   const newAssignment = await assetsService?.assignAsset(validatedData);
 
   if (!newAssignment) {
@@ -332,13 +330,11 @@ const returnAsset = catchAsync(async (req, res) => {
   const userId = req?.user?.id;
   const team = req.user.team;
 
-  // 1. Validate the request using the schema
   const validatedData = await assetValidator.returnAssetSchema.validateAsync({
     id,
     userId,
   });
 
-  // 2. Delegate the main logic to the service
   const updatedAssignment = await assetsService?.returnAsset(
     validatedData.id,
     validatedData.userId
@@ -394,7 +390,6 @@ const returnAsset = catchAsync(async (req, res) => {
     });
   }
 
-  // 3. Send Response
   res.status(httpStatus.OK).json({
     status: true,
     message: 'Asset return request successfully.',
@@ -469,6 +464,26 @@ const handleAssetRequestUpdate = catchAsync(async (req, res) => {
   });
 });
 
+
+const getPCDepartmentSummary = catchAsync(async (req, res) => {
+  const { user } = req;
+  const team = user?.team;
+
+  if (!team) {
+    return res.status(httpStatus.UNAUTHORIZED).json({
+      status: false,
+      message: 'User is not associated with a team.',
+    });
+  }
+
+  const summary = await assetsService.getPCDepartmentSummary(team);
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Asset summary fetched successfully.',
+    data: summary,
+  });
+});
+
 module.exports = {
   assignAsset,
   fetchAssignedAssets,
@@ -479,4 +494,5 @@ module.exports = {
   returnAsset,
   fetchAssetRequests,
   handleAssetRequestUpdate,
+  getPCDepartmentSummary,
 };

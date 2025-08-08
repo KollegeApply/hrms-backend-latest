@@ -1200,7 +1200,7 @@ static getTicketStatusUpdateEmail(employeeName, subject, status, baseUrl, ticket
 
     <p>Hope you're doing well!</p>
 
-    <p>As part of our initiative to streamline and update our records in the HRMS (Human Resource Management System), we kindly request you to complete or verify your employee information by accessing the form below.</p>
+    <p>As part of our initiative to streamline and update our records in the HRMS, we kindly request you to complete or verify your employee information by accessing the form below.</p>
 
     <p>
       <a href="${formLink}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #007bff; color: #fff; padding: 12px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">
@@ -1208,9 +1208,9 @@ static getTicketStatusUpdateEmail(employeeName, subject, status, baseUrl, ticket
       </a>
     </p>
 
-     <p>
-  We kindly request you to complete the form <strong>at your earliest convenience</strong> to help us maintain accurate HR records.
-</p>
+    <p>
+      We kindly request you to complete the form <strong>at your earliest convenience</strong> to help us maintain accurate HR records.
+    </p>
 
     <p>You will be asked to verify and, if needed, update the following information:</p>
 
@@ -1230,6 +1230,36 @@ static getTicketStatusUpdateEmail(employeeName, subject, status, baseUrl, ticket
     <p>Warm regards,<br/>HR Team - ${displayTeam?.TEAM_NAME}</p>
   `;
 }
+
+static getEmployeeDataReminderEmail(employee, formLink, team) {
+  const displayTeam = getTeamEmailConfig(team);
+
+  return `
+    <p>Dear ${employee?.firstName},</p>
+
+    <p>We hope you’re doing well.</p>
+
+    <p>This is a gentle reminder to complete your <strong>Candidate Information Form</strong>. 
+    It looks like we haven’t received your updated details yet, and we’d like to make sure your records are accurate.</p>
+
+    <p>
+      <a href="${formLink}" target="_blank" rel="noopener noreferrer" 
+         style="display: inline-block; background-color: #007bff; color: #fff; padding: 12px 20px; 
+                border-radius: 6px; text-decoration: none; font-weight: bold;">
+        Complete Your Information
+      </a>
+    </p>
+
+    <p>It only takes a few minutes, and it will help us ensure smooth HR and payroll processes.</p>
+
+    <p>If you’ve already completed the form, you can ignore this email. Otherwise, we’d appreciate it if you could update your details at your earliest convenience.</p>
+
+    <p>Thank you for your time and cooperation.</p>
+
+    <p>Warm regards,<br/>HR Team - ${displayTeam?.TEAM_NAME}</p>
+  `;
+}
+
 
 
 

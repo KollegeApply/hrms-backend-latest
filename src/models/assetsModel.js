@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { VALID_ASSETS_STATUS } = require('../utility/constants');
+const { VALID_ASSETS_STATUS, VALID_LAPTOP_TYPES } = require('../utility/constants');
 const { Schema } = mongoose;
 
 const assignedAssetSchema = new Schema(
@@ -21,6 +21,17 @@ const assignedAssetSchema = new Schema(
     serialNumber: {
       type: String,
       required: false,
+    },
+    laptopType: {
+      type: String,
+      required: function() {
+        return this.assetType === 'laptop';
+      },
+      enum: {
+        values: VALID_LAPTOP_TYPES,
+        message: 'Invalid laptop type: {VALUE}',
+      },
+      trim: true,
     },
     specifications: {
       type: Schema.Types.Mixed,
@@ -96,6 +107,7 @@ assignedAssetSchema.index({
   assetName: 'text',
   assetType: 'text',
   serialNumber: 'text',
+  laptopType: 'text', 
 });
 
 const Assets = mongoose.model('Assets', assignedAssetSchema);

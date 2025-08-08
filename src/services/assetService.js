@@ -19,6 +19,7 @@ class AssetsService {
       specifications,
       status = 'assigned',
       assignedBy,
+      laptopType,
     } = assignmentData;
 
     // Validate the asset ID
@@ -58,6 +59,7 @@ class AssetsService {
       specifications,
       status: status,
       assignedBy,
+      laptopType, 
     });
     await newAssignment.save();
     logger.info('Asset assigned successfully:', newAssignment);
@@ -319,6 +321,91 @@ async fetchAssignedAssets(page, limit, search, team) {
       throw error;
     }
   }
+
+async getPCDepartmentSummary() {
+    try {
+      const summary = await Assets.aggregate([
+        // Step 1: Only consider assets that are laptops, are assigned, AND have a laptopType field.
+        {
+          $match: {
+            assetType: 'laptop',
+            laptopType: { $exists: true, $ne: null }, // <-- This line ensures laptopType is present
+            status: { $nin: ['returned', 'cancelled', 'not_acknowledged'] },
+          },
+        },
+        // Step 2: Join with the 'users' collection to get department ID
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'assignee',
+            foreignField: '_id',
+            as: 'assigneeDetails',
+          },
+        },
+        // Step 3: Unwind the assigneeDetails array
+        {
+          $unwind: '$assigneeDetails',
+        },
+        // Step 4: Join with the 'departments' collection to get department name
+        {
+          $lookup: {
+            from: 'departments',
+            localField: 'assigneeDetails.department',
+            foreignField: '_id',
+            as: 'departmentDetails',
+          },
+        },
+        // Step 5: Unwind departmentDetails array
+        {
+          $unwind: '$departmentDetails',
+        },
+        // Step 6: Group by laptopType and department name to get counts
+        {
+          $group: {
+            _id: {
+              laptopType: '$laptopType',
+              departmentName: '$departmentDetails.name',
+            },
+            count: { $sum: 1 },
+          },
+        },
+        // Step 7: Group by laptopType to structure the data for pivoting
+        {
+          $group: {
+            _id: '$_id.laptopType',
+            totalDevices: { $sum: '$count' },
+            departments: {
+              $push: {
+                departmentName: '$_id.departmentName',
+                count: '$count',
+              },
+            },
+          },
+        },
+        // Step 8: Project to format the final output
+        {
+          $project: {
+            _id: 0,
+            pcType: '$_id',
+            totalDevices: 1,
+            departments: 1,
+          },
+        },
+        // Step 9: Sort for consistent output
+        {
+          $sort: { pcType: 1 },
+        },
+      ]);
+
+      return summary;
+    } catch (error) {
+      logger.error('Error fetching PC department summary:', error);
+      throw error;
+    }
+  }
 }
+
+
+
 
 module.exports = new AssetsService();

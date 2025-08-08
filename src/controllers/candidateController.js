@@ -339,23 +339,39 @@ const requestDevice = catchAsync(async (req, res) => {
   res.json({ status: true, message: 'Request sent successfully.' });
 });
 
-const inviteUser = catchAsync(async (req, res) => {
+const inviteOrRemindUser = catchAsync(async (req, res) => {
   const userId = req?.user?.id;
   const team = req.user.team;
   const user = await User.findById(req.params.id);
 
-  const token = generateCIFToken(user?.email);
+  if (!user) {
+    return res.status(httpStatus.NOT_FOUND).json({
+      status: false,
+      message: "User not found",
+    });
+  }
 
-  const inviteLink = `${process.env.HRMS_FRONTEND_URL}/invite-user/form/${token}`;
+  const token = generateCIFToken(user?.email);
+  const inviteLink = `${process.env.HRMS_FRONTEND_URL}/invite-cif/form/${token}`;
+
+  const currentUser = await User.findById(userId).select("firstName lastName email");
+  const ccEmails = [currentUser?.email];
+
+  const reminderStatuses = ["pending", "draft","reminder_sent"];
+
+  let emailSubject, emailMessage, newStatus;
+
+  if (reminderStatuses.includes(user.formStatus)) {
+    emailSubject = "Gentle Reminder: Complete Your Candidate Information Form (CIF)";
+    emailMessage = Helper.getEmployeeDataReminderEmail(user, inviteLink, team);
+    newStatus = "reminder_sent";
+  } else {
+    emailSubject = "Complete Your Candidate Information Form (CIF)";
+    emailMessage = Helper.getEmployeeDataRequestEmail(user, inviteLink, team);
+    newStatus = "pending";
+  }
 
   if (process.env.HRMS_FRONTEND_URL) {
-    const currentUser = await UserDetails.findById(userId).select('firstName lastName email');
-    const emailSubject = 'Complete Your Candidate Information Form (CIF)';
-
-
-    const emailMessage = Helper.getEmployeeDataRequestEmail(user,inviteLink, team);
-    const ccEmails = [currentUser?.email];
-
     await Helper.sendEmail({
       receiverEmails: [user?.email],
       subject: emailSubject,
@@ -366,16 +382,20 @@ const inviteUser = catchAsync(async (req, res) => {
     });
   }
 
-  user.formStatus = "pending";
+  user.formStatus = newStatus;
   await user.save();
 
   res.status(httpStatus.CREATED).json({
     status: true,
-    message: 'Invite email sent.',
+    message: newStatus === "reminder_sent"
+      ? "Gentle reminder email sent successfully"
+      : "Invite email sent successfully",
     data: user,
     inviteLink,
   });
 });
+
+
 
 module.exports = {
   createCandidate,
@@ -390,5 +410,5 @@ module.exports = {
   approveCandidate,
   resendCifInvite,
   requestDevice,
-  inviteUser,
+  inviteOrRemindUser,
 };

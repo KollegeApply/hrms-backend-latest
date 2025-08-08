@@ -119,40 +119,58 @@ class CandidateService {
   }
 
 
-  async finalSubmit(email, data) {
-     const user = await User.findOne({ email: email });
-    let candidate;
+async finalSubmit(email, data) {
+  const user = await User.findOne({ email: email });
+  let candidate;
+  let existingUser = false;
 
-    if (user) {
-      candidate = await User
-        .findOne({ email: email });
-    } else {
-      candidate = await Candidate.findOne({ personalEmail: email });
-    }
-    if (!candidate) throw new Error('Candidate not found');
-    if (!candidate.userDetails) throw new Error('UserDetails not found');
-
-    if (candidate.status === "backout") {
-      throw new Error('Candidate has already backed out.');
-    }
-
-    let newStatus;
-    if (candidate.status === "pending" || candidate.status === "draft") {
-      newStatus = "submitted";
-    } else {
-      newStatus = "resubmitted";
-    }
-
-    await UserDetails.findByIdAndUpdate(candidate.userDetails, { ...data }, { new: true });
-
-    const updateFields = {};
-    if ('status' in candidate) updateFields.status = newStatus;
-    if ('formStatus' in candidate) updateFields.formStatus = newStatus;
-
-    await Candidate.findByIdAndUpdate(candidate._id, updateFields);
-
-    return await Candidate.findById(candidate._id).populate('pointOfContact', 'firstName lastName email team');;
+  if (user) {
+    candidate = user;
+    existingUser = true;
+  } else {
+    candidate = await Candidate.findOne({ personalEmail: email });
   }
+
+  if (!candidate) throw new Error('Candidate not found');
+  if (!candidate.userDetails) throw new Error('UserDetails not found');
+
+  if (candidate.status === "backout") {
+    throw new Error('Candidate has already backed out.');
+  }
+
+  let newStatus;
+  if (
+    candidate.status === "pending" ||
+    candidate.status === "draft" ||
+    candidate.formStatus === "pending" ||
+    candidate.formStatus === "draft" ||
+    candidate.formStatus === "reminder_sent"
+  ) {
+    newStatus = "submitted";
+  } else {
+    newStatus = "resubmitted";
+  }
+
+
+  const updatedUserDetails = await UserDetails.findByIdAndUpdate(
+    candidate.userDetails,
+    { ...data },
+    { new: true }
+  );
+
+  if (existingUser) {
+    await User.findByIdAndUpdate(candidate._id, {
+      formStatus: newStatus,
+      dateOfBirth: updatedUserDetails?.personalInfo?.dateOfBirth || null
+    });
+  } else {
+    await Candidate.findByIdAndUpdate(candidate._id, { status: newStatus });
+  }
+
+  return await Candidate.findById(candidate._id)
+    .populate('pointOfContact', 'firstName lastName email team');
+}
+
 
 
   async editCandidate(id, data) {
