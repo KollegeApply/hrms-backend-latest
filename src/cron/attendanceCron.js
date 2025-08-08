@@ -343,7 +343,7 @@ const weeklyReport = async () => {
                     <tr style="background-color: #f9f9f9;">
                         <td style="${tdStyle}">${user.department?.name || 'N/A'}</td>
                         <td style="${tdStyle}">${user.employeeId || 'N/A'}</td>
-                        <td style="${tdStyle} ${nameCellStyle}">${user.firstName} ${user.lastName}</td>
+                        <td style="${tdStyle}">${user.firstName} ${user.lastName}</td>
                         <td style="${tdStyle}">${lateCheckIns.join(', ') || 'None'}</td>
                         <td style="${tdStyle}">${earlyCheckOuts.join(', ') || 'None'}</td>
                         <td style="${tdStyle}">${noCheckOuts.join(', ') || 'None'}</td>
