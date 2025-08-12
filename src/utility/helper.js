@@ -289,7 +289,7 @@ class Helper {
     `;
   }
 
-  static fullTimeConversion(userName, date, jobTitle, team) {
+  static fullTimeConversion(userName,tlName, date, jobTitle, team) {
     const displayTeam = getTeamEmailConfig(team);
 
       const formattedDate = moment.tz(date, 'Asia/Kolkata').format('DD MMMM YYYY');
@@ -345,6 +345,7 @@ class Helper {
 
   static WfhLeaveApplication({
     userName,
+    tlName,
     requestType,
     leaveType = '',
     fromDate,
@@ -375,7 +376,7 @@ class Helper {
   
         <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
           <p style="color: #555; font-size: 16px; line-height: 1.6;">
-            Hello Team,
+            Hello ${tlName},
           </p>
   
           <p style="color: #555; font-size: 16px; line-height: 1.6;">
@@ -388,18 +389,18 @@ class Helper {
               ${requestType === 'Leave' ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${leaveType}</li>` : ''}
               <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Date:</strong> ${leaveMessage}</li>
               <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>
-              <li style="margin: 30px 0;">
-          <a href="${dashboardUrl}/leave" 
-             style="display: inline-block; background-color: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-size: 16px; font-weight: bold; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); text-align: center; transition: background-color 0.3s ease;">
-            Take Action
-          </a>
-            </li>
             </ul>
           </div>
   
           <p style="color: #555; font-size: 16px; line-height: 1.6;">
             Kindly review and take necessary actions.
           </p>
+
+          <div style="text-align: center; margin-top: 30px;">
+          <a href="${dashboardUrl}/leave" style="background-color:#66f; color:rgb(246, 249, 251); padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-size: 16px; font-weight: bold;">
+            Review Leave Request
+          </a>
+        </div>
   
           <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>${displayTeam?.TEAM_NAME} Support Team</strong></p>
         </div>
@@ -1334,6 +1335,270 @@ static teamWeeklyReportEmail(teamLeadName, startDate, endDate, tableRows, team) 
     `;
 }
 
+  // Enhanced notification templates for granular leave approval workflow
+  
+  /**
+   * Email template for Team Lead approval notification
+   */
+  static leaveTLApprovalNotification(userName, date, leaveType, reason, team) {
+    const displayTeam = getTeamEmailConfig(team);
+    
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1>Leave Request - Team Lead Approved</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Hi <strong>${userName}</strong>,
+        </p>
+
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Good news! Your Team Lead has approved your leave request. It is now pending final approval from HR.
+        </p>
+
+        <div style="background-color: #e7f3ff; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #007bff;">
+          <h2 style="color: #333; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Leave Details</h2>
+          <ul style="list-style: none; padding: 0; margin: 0;">
+            <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${leaveType}</li>
+            <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Date(s):</strong> ${date}</li>
+            <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>
+            <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Status:</strong> <span style="color: #007bff; font-weight: bold;">TL Approved - Pending HR Approval</span></li>
+          </ul>
+        </div>
+
+        <div style="background-color: #fff3cd; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #ffc107;">
+          <p style="color: #856404; font-size: 14px; margin: 0;">
+            <strong>Next Step:</strong> HR will review and provide final approval for your leave request. You will be notified once a decision is made.
+          </p>
+        </div>
+
+        <div style="text-align: center; margin-top: 30px;">
+          <a href="${process.env.HRMS_FRONTEND_URL}/leave" style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-size: 16px;">
+            View Leave Status
+          </a>
+        </div>
+
+        <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Team ${displayTeam?.TEAM_NAME}</strong></p>
+      </div>
+      
+      <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+      <p style="font-size: 12px; color: #999; text-align: center;">
+        This is an automated message from the ${displayTeam?.TEAM_NAME || 'Company'} HRMS System. Please do not reply to this email.
+      </p>
+    </div>
+    `;
+  }
+
+  /**
+   * Email template for Team Lead rejection notification
+   */
+  static leaveTLRejectionNotification(userName, date, leaveType, reason, team) {
+    const displayTeam = getTeamEmailConfig(team);
+    
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1>Leave Request Rejected by Team Lead</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Hi <strong>${userName}</strong>,
+        </p>
+
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          We regret to inform you that your Team Lead has not approved your leave request.
+        </p>
+
+        <div style="background-color: #f8d7da; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #dc3545;">
+          <h2 style="color: #721c24; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Leave Details</h2>
+          <ul style="list-style: none; padding: 0; margin: 0;">
+            <li style="color: #721c24; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${leaveType}</li>
+            <li style="color: #721c24; margin-bottom: 10px; font-size: 15px;"><strong>Date(s):</strong> ${date}</li>
+            <li style="color: #721c24; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>
+            <li style="color: #721c24; margin-bottom: 10px; font-size: 15px;"><strong>Status:</strong> <span style="color: #dc3545; font-weight: bold;">Rejected by Team Lead</span></li>
+          </ul>
+        </div>
+
+        <p style="color: #555; font-size: 14px; line-height: 1.6;">
+          If you believe this decision needs further discussion, please reach out to your Team Lead or HR for clarification.
+        </p>
+
+        <div style="text-align: center; margin-top: 30px;">
+          <a href="${process.env.HRMS_FRONTEND_URL}/leave" style="background-color: #6c757d; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-size: 16px;">
+            View Leave History
+          </a>
+        </div>
+
+
+        <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Team ${displayTeam?.TEAM_NAME}</strong></p>
+      </div>
+      
+      <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+      <p style="font-size: 12px; color: #999; text-align: center;">
+        This is an automated message from the ${displayTeam?.TEAM_NAME || 'Company'} HRMS System. Please do not reply to this email.
+      </p>
+    </div>
+    `;
+  }
+
+  /**
+   * Email template for HR final approval notification
+   */
+  static leaveHRApprovalNotification(userName, date, leaveType, reason, team) {
+    const displayTeam = getTeamEmailConfig(team);
+    
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1>Leave Request Approved</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Hi <strong>${userName}</strong>,
+        </p>
+
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Excellent news! HR has provided final approval for your leave request. Your leave is now confirmed and active.
+        </p>
+
+        <div style="background-color: #d4edda; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #28a745;">
+          <h2 style="color: #155724; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Approved Leave Details</h2>
+          <ul style="list-style: none; padding: 0; margin: 0;">
+            <li style="color: #155724; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${leaveType}</li>
+            <li style="color: #155724; margin-bottom: 10px; font-size: 15px;"><strong>Date(s):</strong> ${date}</li>
+            <li style="color: #155724; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>
+            <li style="color: #155724; margin-bottom: 10px; font-size: 15px;"><strong>Status:</strong> <span style="color: #28a745; font-weight: bold;">Fully Approved & Active</span></li>
+          </ul>
+        </div>
+
+        <div style="background-color: #e7f3ff; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #007bff;">
+          <p style="color: #0c5460; font-size: 14px; margin: 0;">
+            <strong>Important:</strong> Your attendance has been marked accordingly and leave balance has been updated. Please ensure proper handover of responsibilities.
+          </p>
+        </div>
+
+        <div style="text-align: center; margin-top: 30px;">
+          <a href="${process.env.HRMS_FRONTEND_URL}/leave" style="background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-size: 16px;">
+            View Leave Details
+          </a>
+        </div>
+
+          <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Team ${displayTeam?.TEAM_NAME}</strong></p>
+      </div>
+      
+      <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+      <p style="font-size: 12px; color: #999; text-align: center;">
+        This is an automated message from the ${displayTeam?.TEAM_NAME || 'Company'} HRMS System. Please do not reply to this email.
+      </p>
+    </div>
+    `;
+  }
+
+  /**
+   * Email template for HR rejection notification
+   */
+  static leaveHRRejectionNotification(userName, date, leaveType, reason, team) {
+    const displayTeam = getTeamEmailConfig(team);
+    
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1>Leave Request Rejected by HR</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Hi <strong>${userName}</strong>,
+        </p>
+
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          We regret to inform you that HR has not approved your leave request, despite Team Lead approval.
+        </p>
+
+        <div style="background-color: #f8d7da; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #dc3545;">
+          <h2 style="color: #721c24; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Leave Details</h2>
+          <ul style="list-style: none; padding: 0; margin: 0;">
+            <li style="color: #721c24; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${leaveType}</li>
+            <li style="color: #721c24; margin-bottom: 10px; font-size: 15px;"><strong>Date(s):</strong> ${date}</li>
+            <li style="color: #721c24; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>
+            <li style="color: #721c24; margin-bottom: 10px; font-size: 15px;"><strong>Status:</strong> <span style="color: #dc3545; font-weight: bold;">Rejected by HR</span></li>
+          </ul>
+        </div>
+
+        <p style="color: #555; font-size: 14px; line-height: 1.6;">
+          For specific reasons or to discuss this decision, please contact HR directly. They will be able to provide more detailed feedback.
+        </p>
+
+        <div style="text-align: center; margin-top: 30px;">
+          <a href="${process.env.HRMS_FRONTEND_URL}/leave" style="background-color: #6c757d; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-size: 16px;">
+            View Leave History
+          </a>
+        </div>
+
+
+        <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Team ${displayTeam?.TEAM_NAME}</strong></p>
+      </div>
+      
+      <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+      <p style="font-size: 12px; color: #999; text-align: center;">
+        This is an automated message from the ${displayTeam?.TEAM_NAME || 'Company'} HRMS System. Please do not reply to this email.
+      </p>
+    </div>
+    `;
+  }
+
+  /**
+   * Email template for HR notification when leave needs their approval
+   */
+  static leaveHRPendingNotification(employeeName, date, leaveType, reason, team, dashboardUrl) {
+    const displayTeam = getTeamEmailConfig(team);
+    
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1>Leave Request Pending Your Approval</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Dear HR Team,
+        </p>
+
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          A leave request from <strong>${employeeName}</strong> has been approved by their Team Lead and is now pending your final approval.
+        </p>
+
+        <div style="background-color: #fff3cd; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #ffc107;">
+          <h2 style="color: #856404; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Leave Request Details</h2>
+          <ul style="list-style: none; padding: 0; margin: 0;">
+            <li style="color: #856404; margin-bottom: 10px; font-size: 15px;"><strong>Employee:</strong> ${employeeName}</li>
+            <li style="color: #856404; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${leaveType}</li>
+            <li style="color: #856404; margin-bottom: 10px; font-size: 15px;"><strong>Date(s):</strong> ${date}</li>
+            <li style="color: #856404; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>
+            <li style="color: #856404; margin-bottom: 10px; font-size: 15px;"><strong>Current Status:</strong> <span style="color: #007bff; font-weight: bold;">TL Approved - Awaiting HR Approval</span></li>
+          </ul>
+        </div>
+
+        <p style="color: #555; font-size: 14px; line-height: 1.6;">
+          Please review the leave request in the HRMS dashboard and provide your final decision.
+        </p>
+
+        <div style="text-align: center; margin-top: 30px;">
+          <a href="${dashboardUrl}/leave" style="background-color: #ffffff; color: #212529; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-size: 16px; font-weight: bold;">
+            Review Leave Request
+          </a>
+        </div>
+
+
+        <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Team ${displayTeam?.TEAM_NAME}</strong></p>
+      </div>
+      
+      <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+      <p style="font-size: 12px; color: #999; text-align: center;">
+        This is an automated message from the ${displayTeam?.TEAM_NAME || 'Company'} HRMS System. Please do not reply to this email.
+      </p>
+    </div>
+    `;
+  }
 }
 
 module.exports = Helper;

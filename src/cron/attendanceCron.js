@@ -39,6 +39,11 @@ function formatDateDMY(date) {
     return moment(date).format("DD-MM-YYYY");
 }
 
+function formatDateWithDay(date) {
+    return moment(date).format("ddd, DD-MM-YYYY");
+}
+
+
 function formatReadableDate(date) {
     return moment(date).tz('Asia/Kolkata').format('DD MMMM YYYY');
 }
@@ -381,7 +386,7 @@ const weeklyReport = async () => {
                 );
                 await Helper.sendEmail({
                     receiverEmails: recipients,
-                    subject: `Your Team's Weekly Attendance Report (${formatDateDMY(startDate)} - ${formatDateDMY(endDate)})`,
+                    subject: `Your Team's Weekly Attendance Report (${formatDateWithDay(startDate)} - ${formatDateWithDay(endDate)})`,
                     message: mailMessage,
                     fromHR: false,
                     team: teamName,

@@ -36,7 +36,7 @@ const updateLeaveSchema = Joi.object({
     .messages({ 'any.required': 'leaveId is required.' }),
 
   status: Joi.string()
-    .valid('approved', 'pending', 'rejected', 'revoked')
+    .valid('tl-pending', 'hr-pending', 'tl-rejected', 'hr-rejected', 'approved', 'auto-rejected', 'revoked')
     .required()
     .messages({
       'string.base': 'leave status should be a string.',

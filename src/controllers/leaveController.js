@@ -59,103 +59,208 @@ const getLeaveById = catchAsync(async (req, res) => {
   });
 });
 
-// Update leave
+
 const updateLeave = catchAsync(async (req, res) => {
   const leaveId = req?.params?.id;
   const status = req?.body?.status;
   const edittorId = req?.user?.id;
   const user = req?.user;
   const team = user?.team;
+
+  const currentLeave = await LeaveApplication.findById(leaveId).populate('userId');
+  if (!currentLeave) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Leave not found.');
+  }
+
+  let targetStatus = status;
+
+
+  if (status === 'approved') {
+    if (['teamlead', 'subteamlead'].includes(user.role)) {
+      if (currentLeave.status === 'tl-pending') {
+        targetStatus = 'hr-pending';
+      } else {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Team leads can only approve TL-pending leaves.');
+      }
+    } else if (['admin', 'hr', 'subadmin'].includes(user.role)) {
+      if (currentLeave.status === 'hr-pending') {
+        targetStatus = 'approved';
+      } else {
+        throw new ApiError(httpStatus.CONFLICT, 'HR can only approve HR-pending leaves.');
+      }
+    } else {
+      throw new ApiError(httpStatus.FORBIDDEN, 'You do not have permission to approve leaves.');
+    }
+
+  } else if (status === 'rejected') {
+    if (['teamlead', 'subteamlead'].includes(user.role)) {
+      if (currentLeave.status === 'tl-pending') {
+        targetStatus = 'tl-rejected';
+      } else {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Team leads can only reject TL-pending leaves.');
+      }
+    } else if (['admin', 'hr', 'subadmin'].includes(user.role)) {
+      if (currentLeave.status === 'hr-pending') {
+        targetStatus = 'hr-rejected';
+      } else {
+        throw new ApiError(httpStatus.CONFLICT, 'HR can only reject HR-pending leaves.');
+      }
+    } else {
+      throw new ApiError(httpStatus.FORBIDDEN, 'You do not have permission to reject leaves.');
+    }
+
+  } else if (status === 'auto-rejected') {
+    targetStatus = 'auto-rejected';
+
+  } else if (status === 'revoked') {
+    if (['tl-pending', 'hr-pending'].includes(currentLeave.status)) {
+      targetStatus = 'revoked';
+    } else {
+      throw new ApiError(httpStatus.CONFLICT, 'You can only revoke pending leaves.');
+    }
+  }
+
   const validatedData = await leaveValidator?.updateLeaveSchema?.validateAsync({
     leaveId,
-    status,
+    status: targetStatus,
     edittorId,
     userId: user?.id,
   });
   const updatedData = await leaveService?.updateLeave(validatedData);
-
   if (!updatedData) {
-    throw new ApiError(
-      httpStatus.NOT_FOUND,
-      'Leave not found or update failed.'
-    );
+    throw new ApiError(httpStatus.NOT_FOUND, 'Leave not found or update failed.');
   }
 
-  const leaveType = await leaveTypeModel
-    .findById(updatedData?.leaveTypeId)
-    .select('name');
+  const leaveType = await leaveTypeModel.findById(updatedData?.leaveTypeId).select('name');
 
-  // Send email notification if status changed
-  if (updatedData.status && updatedData.status !== 'pending') {
-    const mailReciever = await User.findById(updatedData.userId).populate('teamLeadId', 'email')
-      .populate('subTeamLeadId', 'email');;
+  if (updatedData.status) {
+    const mailReciever = await User.findById(updatedData.userId)
+      .populate('teamLeadId', 'email')
+      .populate('subTeamLeadId', 'email');
+
     if (mailReciever?.email) {
-      let formattedLeaveDates = '';
       const leaveDates = updatedData.dates;
-
-      if (
-        !leaveDates ||
-        (Array.isArray(leaveDates) && leaveDates.length === 0)
-      ) {
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          'Invalid or missing leave date'
-        );
+      if (!leaveDates || (Array.isArray(leaveDates) && leaveDates.length === 0)) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid or missing leave date');
       }
 
-     if (Array.isArray(leaveDates)) {
+      let formattedLeaveDates = '';
+      if (Array.isArray(leaveDates)) {
         const fromMoment = moment(leaveDates[0]).tz('Asia/Kolkata');
         const toMoment = moment(leaveDates[leaveDates.length - 1]).tz('Asia/Kolkata');
-        
-        if (fromMoment.isSame(toMoment, 'day')) {
-          formattedLeaveDates = fromMoment.format('DD MMMM YYYY');
-        } else {
-          formattedLeaveDates = `${fromMoment.format('DD MMMM YYYY')} to ${toMoment.format('DD MMMM YYYY')}`;
-        }
+        formattedLeaveDates = fromMoment.isSame(toMoment, 'day')
+          ? fromMoment.format('DD MMMM YYYY')
+          : `${fromMoment.format('DD MMMM YYYY')} to ${toMoment.format('DD MMMM YYYY')}`;
       } else {
         formattedLeaveDates = moment(leaveDates).tz('Asia/Kolkata').format('DD MMMM YYYY');
       }
 
-    const configEmails = getTeamEmailConfig(team);  
+      const configEmails = getTeamEmailConfig(team);
+      let emailSubject, emailMessage, receiverEmails = [], ccEmails = [];
 
-    const ccEmails = [configEmails?.HR_EMAIL,...configEmails?.ADMIN_EMAILS];
-    if (mailReciever?.teamLeadId?.email) {
-      ccEmails.push(mailReciever.teamLeadId.email);
-    }
-    if (mailReciever?.subTeamLeadId?.email) {
-      ccEmails.push(mailReciever.subTeamLeadId.email);
-    }
+      switch (updatedData.status) {
+        case 'hr-pending':
+          emailSubject = 'Leave Request Pending Your Approval';
+          emailMessage = Helper.leaveHRPendingNotification(
+            mailReciever?.firstName,
+            formattedLeaveDates,
+            leaveType?.name,
+            updatedData?.leaveReason,
+            team,
+            process.env.HRMS_FRONTEND_URL
+          );
+          receiverEmails = [configEmails.HR_EMAIL];
+          ccEmails = [mailReciever?.email];
+          if (mailReciever?.teamLeadId?.email) ccEmails.push(mailReciever.teamLeadId.email);
+          if (mailReciever?.subTeamLeadId?.email) ccEmails.push(mailReciever.subTeamLeadId.email);
+          break;
 
-      // Send rejection email
-      Helper.sendEmail({
-        receiverEmails: [mailReciever?.email],
-        subject: `Your Leave Request Has Been ${updatedData.status === 'approved' ? 'Approved' : 'Declined'}`,
-        message:
-          updatedData.status === 'approved'
-            ? Helper.leaveWFHApproval(
-                mailReciever?.firstName,
-                'Leave',
-                formattedLeaveDates,
-                leaveType?.name,
-                updatedData?.leaveReason,
-                team,
-              )
-            : Helper.leaveWFHReject(
-                mailReciever?.firstName,
-                'Leave',
-                formattedLeaveDates,
-                leaveType?.name,
-                team,
-                // updatedData?.leaveReason
-              ),
-        cc: ccEmails,
-        team,
-      }).catch((err) =>
-        logger.error(
-          `Failed to send update on leave request email to ${mailReciever?.email}:`,
-          err
-        )
-      );
+        case 'tl-rejected':
+          emailSubject = 'Your Leave Request Has Been Rejected by Team Lead';
+          emailMessage = Helper.leaveTLRejectionNotification(
+            mailReciever?.firstName,
+            formattedLeaveDates,
+            leaveType?.name,
+            updatedData?.leaveReason,
+            team
+          );
+          receiverEmails = [mailReciever?.email];
+          ccEmails = [configEmails.HR_EMAIL];
+          if (mailReciever?.subTeamLeadId?.email) ccEmails.push(mailReciever.subTeamLeadId.email);
+          break;
+
+        case 'hr-rejected':
+          emailSubject = 'Your Leave Request Has Been Rejected by HR';
+          emailMessage = Helper.leaveHRRejectionNotification(
+            mailReciever?.firstName,
+            formattedLeaveDates,
+            leaveType?.name,
+            updatedData?.leaveReason,
+            team
+          );
+          receiverEmails = [mailReciever?.email];
+          if (mailReciever?.teamLeadId?.email) ccEmails.push(mailReciever.teamLeadId.email);
+          if (mailReciever?.subTeamLeadId?.email) ccEmails.push(mailReciever.subTeamLeadId.email);
+          break;
+
+        case 'approved':
+          emailSubject = 'Your Leave Request Has Been Approved';
+          emailMessage = Helper.leaveHRApprovalNotification(
+            mailReciever?.firstName,
+            formattedLeaveDates,
+            leaveType?.name,
+            updatedData?.leaveReason,
+            team
+          );
+          receiverEmails = [mailReciever?.email];
+          ccEmails = [...configEmails.ADMIN_EMAILS];
+          if (mailReciever?.teamLeadId?.email) ccEmails.push(mailReciever.teamLeadId.email);
+          if (mailReciever?.subTeamLeadId?.email) ccEmails.push(mailReciever.subTeamLeadId.email);
+          break;
+
+        case 'auto-rejected':
+          emailSubject = 'Your Leave Request Has Been Automatically Rejected';
+          emailMessage = Helper.leaveAutoRejectionNotification(
+            mailReciever?.firstName,
+            formattedLeaveDates,
+            leaveType?.name,
+            updatedData?.leaveReason,
+            team
+          );
+          receiverEmails = [mailReciever?.email];
+          ccEmails = [configEmails.HR_EMAIL];
+          if (mailReciever?.teamLeadId?.email) ccEmails.push(mailReciever.teamLeadId.email);
+          if (mailReciever?.subTeamLeadId?.email) ccEmails.push(mailReciever.subTeamLeadId.email);
+          ccEmails.push(...configEmails.ADMIN_EMAILS);
+          break;
+
+        case 'revoked':
+          emailSubject = 'Leave Request Revoked by Employee';
+          emailMessage = Helper.leaveRevokedNotification(
+            mailReciever?.firstName,
+            formattedLeaveDates,
+            leaveType?.name,
+            updatedData?.leaveReason,
+            team
+          );
+          receiverEmails = [configEmails.HR_EMAIL];
+          if (currentLeave.status === 'tl-pending' && mailReciever?.teamLeadId?.email) {
+            receiverEmails = [mailReciever.teamLeadId.email];
+          }
+          ccEmails = [...configEmails.ADMIN_EMAILS];
+          if (mailReciever?.subTeamLeadId?.email) ccEmails.push(mailReciever.subTeamLeadId.email);
+          break;
+      }
+
+      if (receiverEmails.length) {
+        Helper.sendEmail({
+          receiverEmails,
+          subject: emailSubject,
+          message: emailMessage,
+          cc: ccEmails,
+          team,
+        }).catch(err => logger.error(`Failed to send leave notification:`, err));
+      }
     }
   }
 
@@ -165,6 +270,7 @@ const updateLeave = catchAsync(async (req, res) => {
     data: updatedData,
   });
 });
+
 
 // delete leave
 const deleteLeave = catchAsync(async (req, res) => {
@@ -189,7 +295,6 @@ const deleteLeave = catchAsync(async (req, res) => {
   if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
     logger.info(`Sending revoke email to ${user?.teamLeadId?.email}`);
 
-    // Format leave date(s)
     let formattedLeaveDates = '';
     const leaveDates = leave?.dates;
     const leaveTypeData = await leaveTypeModel
@@ -264,6 +369,14 @@ const applyForLeave = catchAsync(async (req, res) => {
     const leaveData = req.body;
     const team = req.user.team;
 
+    const user = await User.findById(userId)
+      .populate('teamLeadId', 'firstName email firstName')
+      .populate('subTeamLeadId', 'firstName email firstName');
+
+    const hasTL = user?.teamLeadId || user?.subTeamLeadId;
+
+    leaveData.status = hasTL ? 'tl-pending' : 'hr-pending';
+
     const result = await leaveService.applyForLeave(userId, leaveData);
 
     if (!result.status) {
@@ -274,48 +387,75 @@ const applyForLeave = catchAsync(async (req, res) => {
       });
     }
 
-    const user = await User?.findById(userId)
-      .populate('teamLeadId', 'email')
-      .populate('subTeamLeadId', 'email');
-
     const leaveType = await leaveTypeModel
       .findById(result?.data?.leaveTypeId)
       .select('name');
+
     const from = result?.data?.dates[0];
     const to = result?.data?.dates[result?.data?.dates?.length - 1];
     const leaveReason = result?.data?.leaveReason;
 
     const configEmails = getTeamEmailConfig(team);
 
-    const ccEmails = [...configEmails.ADMIN_EMAILS];
-    if (user?.teamLeadId?.email) {
-      ccEmails.push(user.teamLeadId.email);
-    }
-    if (user?.subTeamLeadId?.email) {
-      ccEmails.push(user.subTeamLeadId.email);
-    }
-
     const sendMail = req?.body?.sendMail === true;
     if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
-      logger.info(`Sending leave email to ${user?.teamLeadId}`);
-      Helper.sendEmail({
-        receiverEmails: [configEmails.HR_EMAIL],
-        subject: 'Leave Applied',
-        message: Helper.WfhLeaveApplication({
-          userName: user?.firstName,
-          requestType: 'Leave',
-          leaveType: leaveType?.name || 'Leave',
-          fromDate: from,
-          toDate: to,
-          reason: leaveReason,
-          dashboardUrl:process?.env?.HRMS_FRONTEND_URL,
+      logger.info(`Sending leave application email`);
+
+      if (hasTL) {
+        const primaryRecipient = user?.teamLeadId?.email || user?.subTeamLeadId?.email;
+
+        const ccList = [configEmails.HR_EMAIL, ...configEmails.ADMIN_EMAILS];
+        if (user?.subTeamLeadId?.email && user?.subTeamLeadId?.email !== primaryRecipient) {
+          ccList.push(user.subTeamLeadId.email);
+        }
+
+        if (primaryRecipient) {
+          Helper.sendEmail({
+            receiverEmails: [primaryRecipient],
+            subject: 'Leave Application - Action Required',
+            message: Helper.WfhLeaveApplication({
+              userName: user?.firstName,
+              tlName: user?.teamLeadId?.firstName || user?.subTeamLeadId?.firstName,
+              requestType: 'Leave',
+              leaveType: leaveType?.name || 'Leave',
+              fromDate: from,
+              toDate: to,
+              reason: leaveReason,
+              dashboardUrl: process?.env?.HRMS_FRONTEND_URL,
+              team,
+            }),
+            cc: ccList,
+            team,
+          }).catch((err) =>
+            logger.error(`Failed to send leave application email to TL:`, err)
+          );
+        }
+      } else {
+        const ccList = [...configEmails.ADMIN_EMAILS];
+        if (user?.subTeamLeadId?.email) {
+          ccList.push(user.subTeamLeadId.email);
+        }
+
+        Helper.sendEmail({
+          receiverEmails: [configEmails.HR_EMAIL],
+          subject: 'Leave Application - Action Required',
+          message: Helper.WfhLeaveApplication({
+            userName: user?.firstName,
+            tlName: user?.teamLeadId?.firstName || user?.subTeamLeadId?.firstName,
+            requestType: 'Leave',
+            leaveType: leaveType?.name || 'Leave',
+            fromDate: from,
+            toDate: to,
+            reason: leaveReason,
+            dashboardUrl: process?.env?.HRMS_FRONTEND_URL,
+            team,
+          }),
+          cc: ccList,
           team,
-        }),
-        cc: ccEmails,
-        team,
-      }).catch((err) =>
-        logger.error(`Failed to send leave email to ${user?.teamLeadId}:`, err)
-      );
+        }).catch((err) =>
+          logger.error(`Failed to send leave application email to HR:`, err)
+        );
+      }
     }
 
     return res.status(201).json({
@@ -332,11 +472,11 @@ const applyForLeave = catchAsync(async (req, res) => {
   }
 });
 
+
 const getLeaveApplications = catchAsync(async (req, res) => {
   const { employeeId } = req.query;
   let query = { isDeleted: false };
   if (employeeId) query.employeeId = employeeId;
-  // Optionally, add role-based filtering for admin/HR here
   const applications = await LeaveApplication.find(query).sort({
     appliedOn: -1,
   });

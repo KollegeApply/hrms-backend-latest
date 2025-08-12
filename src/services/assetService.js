@@ -322,18 +322,18 @@ async fetchAssignedAssets(page, limit, search, team) {
     }
   }
 
-async getPCDepartmentSummary() {
+async getPCDepartmentSummary(team) {
     try {
+      const matchStage = {
+        assetType: 'laptop',
+        laptopType: { $exists: true, $ne: null },
+        status: { $nin: ['returned', 'cancelled', 'not_acknowledged'] },
+      };
+
       const summary = await Assets.aggregate([
-        // Step 1: Only consider assets that are laptops, are assigned, AND have a laptopType field.
         {
-          $match: {
-            assetType: 'laptop',
-            laptopType: { $exists: true, $ne: null }, // <-- This line ensures laptopType is present
-            status: { $nin: ['returned', 'cancelled', 'not_acknowledged'] },
-          },
+          $match: matchStage,
         },
-        // Step 2: Join with the 'users' collection to get department ID
         {
           $lookup: {
             from: 'users',
@@ -342,11 +342,14 @@ async getPCDepartmentSummary() {
             as: 'assigneeDetails',
           },
         },
-        // Step 3: Unwind the assigneeDetails array
         {
           $unwind: '$assigneeDetails',
         },
-        // Step 4: Join with the 'departments' collection to get department name
+        ...(team ? [{
+          $match: {
+            'assigneeDetails.team': team
+          }
+        }] : []),
         {
           $lookup: {
             from: 'departments',
@@ -355,11 +358,9 @@ async getPCDepartmentSummary() {
             as: 'departmentDetails',
           },
         },
-        // Step 5: Unwind departmentDetails array
         {
           $unwind: '$departmentDetails',
         },
-        // Step 6: Group by laptopType and department name to get counts
         {
           $group: {
             _id: {
@@ -369,7 +370,6 @@ async getPCDepartmentSummary() {
             count: { $sum: 1 },
           },
         },
-        // Step 7: Group by laptopType to structure the data for pivoting
         {
           $group: {
             _id: '$_id.laptopType',
@@ -382,7 +382,6 @@ async getPCDepartmentSummary() {
             },
           },
         },
-        // Step 8: Project to format the final output
         {
           $project: {
             _id: 0,
@@ -391,7 +390,6 @@ async getPCDepartmentSummary() {
             departments: 1,
           },
         },
-        // Step 9: Sort for consistent output
         {
           $sort: { pcType: 1 },
         },
@@ -404,8 +402,5 @@ async getPCDepartmentSummary() {
     }
   }
 }
-
-
-
 
 module.exports = new AssetsService();

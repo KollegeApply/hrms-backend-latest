@@ -85,18 +85,72 @@ class leaveService {
     //   throw new ApiError(409, 'Cannot modify approved leaves');
     // }
 
-    // Allow only 'pending', 'approved' or 'auto-rejected' to be updated
-    if (!['pending', 'auto-rejected', 'approved'].includes(oldLeave.status)) {
+    // Allow only certain statuses to be updated based on current state
+    const allowedStatuses = ['tl-pending', 'hr-pending', 'tl-rejected', 'hr-rejected', 'approved', 'auto-rejected', 'revoked'];
+    if (!allowedStatuses.includes(oldLeave.status)) {
       throw new ApiError(
         httpStatus.CONFLICT,
         'Leave status cannot be modified in its current state.'
       );
     }
 
-    if (leaveData.status === 'approved') {
+    if (leaveData.status === 'tl-rejected') {
+      // Team Lead rejection
+      if (oldLeave.status !== 'tl-pending') {
+        throw new ApiError(
+          httpStatus.CONFLICT,
+          'Team Lead can only reject leaves that are pending TL approval.'
+        );
+      }
       oldLeave.status = leaveData.status;
-      oldLeave.approvedBy = leaveData.edittorId;
+      oldLeave.tlRejectedBy = leaveData.edittorId;
+      oldLeave.rejectedBy = leaveData.edittorId; // Keep for backward compatibility
+    } else if (leaveData.status === 'hr-pending') {
+      // TL approved - move to HR pending
+      if (oldLeave.status !== 'tl-pending') {
+        throw new ApiError(
+          httpStatus.CONFLICT,
+          'Leave can only be moved to HR pending after TL approval.'
+        );
+      }
+      oldLeave.status = leaveData.status;
+      oldLeave.tlApprovedBy = leaveData.edittorId;
+      oldLeave.approvedBy = leaveData.edittorId; // Keep for backward compatibility
+    } else if (leaveData.status === 'hr-rejected') {
+      // HR rejection
+      if (oldLeave.status !== 'hr-pending') {
+        throw new ApiError(
+          httpStatus.CONFLICT,
+          'HR can only reject leaves that are pending HR approval.'
+        );
+      }
+      oldLeave.status = leaveData.status;
+      oldLeave.hrRejectedBy = leaveData.edittorId;
+      oldLeave.rejectedBy = leaveData.edittorId; // Keep for backward compatibility
+    } else if (leaveData.status === 'approved') {
+      // HR approval - final step
+      if (oldLeave.status !== 'hr-pending') {
+        throw new ApiError(
+          httpStatus.CONFLICT,
+          'Leave can only be approved by HR when it is pending HR approval.'
+        );
+      }
+      oldLeave.status = leaveData.status;
+      oldLeave.hrApprovedBy = leaveData.edittorId;
+      oldLeave.approvedBy = leaveData.edittorId; // Keep for backward compatibility
+    } else if (leaveData.status === 'hr-rejected') {
+      // HR rejection (can reject from tl-approved state)
+      if (oldLeave.status !== 'tl-approved') {
+        throw new ApiError(
+          httpStatus.CONFLICT,
+          'HR can only reject leaves that are TL approved.'
+        );
+      }
+      oldLeave.status = leaveData.status;
+      oldLeave.hrRejectedBy = leaveData.edittorId;
+      oldLeave.rejectedBy = leaveData.edittorId; // Keep for backward compatibility
 
+      // Only process attendance and balance for final HR approval
       try {
         const leaveRecords = Array.isArray(leaveData.leaves)
           ? leaveData.leaves
@@ -122,7 +176,7 @@ class leaveService {
               );
             }
 
-            // Proceed with attendance creation
+            // Proceed with attendance creation only on final HR approval
             await attendanceService.bulkCreateOrUpdateLeaveAttendance(
               leave.userId,
               leave._id,
@@ -140,8 +194,12 @@ class leaveService {
         console.error('Error updating attendance or leave balance total:', err);
         throw err; // rethrow to prevent save on failure
       }
+    } else if (leaveData.status === 'rejected') {
+      // Generic rejection (backward compatibility)
+      oldLeave.status = leaveData.status;
+      oldLeave.rejectedBy = leaveData.edittorId;
     } else if (
-      oldLeave.status === 'approved' &&
+      oldLeave.status === 'hr-approved' &&
       leaveData.status === 'rejected'
     ) {
       oldLeave.status = leaveData.status;
@@ -166,9 +224,6 @@ class leaveService {
 
       // 3. Set rejectedBy
       oldLeave.rejectedBy = leaveData.edittorId;
-    } else if (leaveData.status === 'rejected') {
-      oldLeave.status = leaveData.status;
-      oldLeave.rejectedBy = leaveData.edittorId;
     }
 
     return await oldLeave.save();
@@ -177,7 +232,6 @@ class leaveService {
   async getLeaveTl({ id, team }) {
     const leadUsers = await User.find(
       {
-        team: team, 
         $or: [{ teamLeadId: id }, { subTeamLeadId: id }],
       },
       'id'
@@ -230,7 +284,7 @@ class leaveService {
       }
 
       // Check if leave can be deleted (only pending leaves can be deleted)
-      if (leaveApplication.status !== 'pending') {
+      if (leaveApplication.status !== 'tl-pending' && leaveApplication.status !== 'hr-pending' && leaveApplication.status !== 'pending') {
         throw new ApiError(
           httpStatus.CONFLICT,
           'Only pending leave applications can be deleted'
@@ -315,7 +369,7 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
       const pendingLeaves = await LeaveApplication.find({
         userId,
         leaveTypeId: leaveType._id,
-        status: 'pending',
+        status: { $in: ['pending', 'tl-pending', 'hr-pending'] },
       });
 
       let totalPendingDays = 0;
@@ -335,7 +389,7 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
       const [existingLeaves, existingAttendance] = await Promise.all([
         LeaveApplication.find({
           userId,
-          status: { $in: ['approved', 'pending'] },
+          status: { $in: ['approved', 'pending', 'tl-approved', 'hr-approved'] },
           dates: { $elemMatch: { $gte: startDate, $lte: endDate } },
           isDeleted:false,
         }),
@@ -389,7 +443,7 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
           });
 
           if (holiday) {
-            // addReason(`Holiday (${holiday.name})`, dateStr);
+            addReason(`Holiday (${holiday.name})`, dateStr);
           } else {
             validDates.push(pointer.toDate());
           }
@@ -538,7 +592,7 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
       leaveTypeId: await LeaveType.findOne({ code: 'BEREAVEMENT' }).select(
         '_id'
       ),
-      status: ['approved', 'pending'],
+      status: { $in: ['approved', 'pending', 'tl-approved', 'hr-approved'] },
       dates: {
         $gte: startOfYear,
         $lte: endOfYear,
@@ -555,7 +609,7 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
     const probationLeaves = await LeaveApplication.find({
       userId,
       leaveTypeId: await LeaveType.findOne({ code: 'PROBATION' }).select('_id'),
-      status: { $in: ['approved', 'pending'] },
+      status: { $in: ['approved', 'pending', 'tl-approved', 'hr-approved'] },
     });
 
     return probationLeaves.reduce((total, leave) => total + leave.totalDays, 0);
@@ -608,7 +662,7 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
           $match: {
             userId: user._id,
             leaveTypeId: leaveType,
-            status: { $in: ['approved', 'pending'] },
+            status: { $in: ['approved', 'pending', 'tl-approved', 'hr-approved'] },
             isDeleted: false,
             dates: {
               $gte: new Date(year, 0, 1),
@@ -649,7 +703,7 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
           $match: {
             userId: user._id,
             leaveTypeId: leaveType,
-            status: { $in: ['approved', 'pending'] },
+            status: { $in: ['approved', 'pending', 'tl-approved', 'hr-approved'] },
             isDeleted: false,
           },
         },
@@ -696,7 +750,7 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
         $match: {
           userId: user._id,
           leaveTypeId: leaveType,
-          status: { $in: ['approved', 'pending'] },
+          status: { $in: ['approved', 'pending', 'tl-approved', 'hr-approved'] },
           isDeleted: false,
           dates: {
             $gte: new Date(year, 0, 1),
@@ -827,6 +881,15 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
         };
       }
 
+      // Check if employee has a Team Lead
+      const employee = await User.findById(userId).populate('teamLeadId subTeamLeadId');
+      let initialStatus = 'tl-pending';
+      
+      // If employee has no TL, set status to hr-pending
+      if (!employee.teamLeadId && !employee.subTeamLeadId) {
+        initialStatus = 'hr-pending';
+      }
+
       // Create leave application
       const leaveApplication = new LeaveApplication({
         userId,
@@ -835,7 +898,7 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
         dates: validationResult.dates,
         totalDays: validationResult.dates.length,
         isUnpaid: leaveTypeDoc.code === 'LOP',
-        status: 'pending',
+        status: initialStatus,
         appliedAt: new Date(),
       });
 
@@ -857,12 +920,12 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
 
   async checkLeaveActionPermission(currentUser, leave) {
     // Admin/HR can take action on any leave
-    if (currentUser.role === 'admin' || currentUser.role === 'hr') {
+    if (currentUser.role === 'admin' || currentUser.role === 'subadmin'  || currentUser.role === 'hr') {
       return true;
     }
 
     // Team leads can take action on their team members' leaves
-    if (currentUser.role === 'teamlead' || currentUser.role === 'subteamlead') {
+    if (currentUser.role === 'teamlead') {
       const teamMember = await User.findById(leave.userId);
       return (
         teamMember &&
