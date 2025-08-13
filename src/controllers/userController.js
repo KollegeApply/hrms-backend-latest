@@ -7,7 +7,7 @@ const Helper = require('../utility/helper');
 const ApiError = require('../utility/ApiError'); // Ensure this utility exists
 const catchAsync = require('../utility/catchAsync'); // Ensure this utility exists
 const logger = require('../config/logger');
-const { CSV_TYPES, RANK } = require('../utility/constants');
+const { CSV_TYPES, RANK, TEAM_SD, TEAM_KAP, getTeamEmailConfig } = require('../utility/constants');
 const User = require('../models/userModel');
 
 /**
@@ -18,7 +18,7 @@ const User = require('../models/userModel');
 const generateToken = (user) => {
   const payload = { id: user?.id, role: user?.role };
   // Use a reasonable expiration time (e.g., '1d', '7d', '1h')
-  return jwt.sign(payload, process?.env?.SECRET_KEY, { expiresIn: '1d' });
+  return jwt.sign(payload, process?.env?.SECRET_KEY, { expiresIn: '7d' });
 };
 
 // Wrap controller methods with catchAsync for cleaner error handling
@@ -27,6 +27,9 @@ const createUser = catchAsync(async (req, res) => {
   if (req?.body?.role === 'subadmin') {
     req.body.teamLeadId = '6808c6d86d2d1bdfd589c57a';
   }
+
+  req.body.team = req.user.team;
+
   const validatedData = await userValidator?.createUserSchema?.validateAsync(
     req?.body
   );
@@ -38,17 +41,21 @@ const createUser = catchAsync(async (req, res) => {
     // sending mail
     const sendMail = req?.body?.sendMail === true;
     if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
+       const teamCode = req?.user?.team || 'SD';
+       const emailConfig = getTeamEmailConfig(teamCode);
       logger.info(`Sending welcome email to ${user.email}`);
       Helper.sendEmail({
         receiverEmails: [user?.email],
-        subject: `Welcome to ${process?.env?.TEAM} – Let’s Get You Started!`,
+        subject: `Welcome to ${emailConfig?.TEAM_NAME} – Let’s Get You Started!`,
         message: Helper.getWelcomeEmail(
           user?.firstName,
           user?.email,
           validatedData?.password,
-          process?.env?.HRMS_FRONTEND_URL
+          process?.env?.HRMS_FRONTEND_URL,
+          emailConfig?.TEAM_NAME,
         ),
         fromHr: true,
+        team:teamCode,
       }).catch((err) =>
         logger.error(`Failed to send welcome email to ${user?.email}:`, err)
       );
@@ -135,7 +142,6 @@ const updateUser = catchAsync(async (req, res) => {
   const currentUserId = req?.user?.id;
   const clickedUserId = userId;
 
-  if (currentUserId !== clickedUserId) {
     const updatedUser = await userService?.updateUser(userId, validatedData, {
       _id: req.user.id,
       name: req.user.name,
@@ -165,9 +171,11 @@ const updateUser = catchAsync(async (req, res) => {
           message: Helper.fullTimeConversion(
             updatedUser?.firstName,
             tomorrow.toISOString(),
-            updatedUser?.jobTitle
+            updatedUser?.jobTitle,
+            updatedUser?.team,
           ),
           fromHr: true,
+          team: updatedUser?.team,
         }).catch((err) =>
           logger.error(
             `Failed to send conversion from probation to full-time email ${updatedUser?.email}:`,
@@ -182,12 +190,6 @@ const updateUser = catchAsync(async (req, res) => {
       message: 'User updated successfully.',
       data: updatedUser, // User object already cleaned by toJSON
     });
-  } else {
-    res.status(httpStatus.FORBIDDEN).json({
-      status: false,
-      message: 'You cannot update this user',
-    });
-  }
 });
 
 const deleteUser = catchAsync(async (req, res) => {
@@ -200,11 +202,12 @@ const deleteUser = catchAsync(async (req, res) => {
   const user = await User.findById(userId);
   const currentUserRank = RANK[req?.user?.role];
   const targetedUserRank = RANK[user?.role];
+  const team = req?.user?.team;
 
   // check for hierarchy
   if (currentUserRank < targetedUserRank) {
     // 2. Call service to delete user (soft delete)
-    const success = await userService.deleteUser(userId);
+    const success = await userService.deleteUser(userId,team);
 
     // 3. Handle not found
     if (!success) {
@@ -372,11 +375,12 @@ const getUserHistory = async (req, res) => {
 const getUserByTlId = async (req, res) => {
   try {
    const userId = req?.query?.userId;
-const userRole = req?.query?.userRole;
+   const userRole = req?.query?.userRole;
+   const userTeam = req?.user?.team;
 
     const validateData =
       await userValidator?.getUserByTlIdSchema?.validateAsync({ userId, userRole });
-    const result = await userService.getUserByTlId(validateData?.userId, userRole);
+    const result = await userService.getUserByTlId(validateData?.userId, userRole, userTeam);
     return res.status(result.statusCode).json(result);
   } catch (error) {
     console.error('Error in getUserByTlId controller:', error);

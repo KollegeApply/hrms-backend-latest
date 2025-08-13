@@ -5,11 +5,12 @@ const feedbackService = require('../services/feedbackService');
 const feedbackValidator = require('../validators/feedbackValidator');
 const User = require('../models/userModel');
 const Helper = require('../utility/helper');
-const { IT_EMAIL, HR_EMAIL } = require('../utility/constants');
+const { IT_EMAIL, HR_EMAIL, getTeamEmailConfig } = require('../utility/constants');
 const feedbackModel = require('../models/feedbackModel');
 
 const createFeedback = catchAsync(async (req, res) => {
   const data = req?.body?.data;
+  const team = req.user.team;
   const validateData = await feedbackValidator.createFeedbackValidator.validateAsync(data);
   const feedback = await feedbackService.createFeedback(validateData, req.user);
 
@@ -34,10 +35,13 @@ const createFeedback = catchAsync(async (req, res) => {
         givenToUser,
         dashboardUrl: process.env.HRMS_FRONTEND_URL,
         feedbackId: feedback._id,
+        team,
       });
 
+      const configEmails = getTeamEmailConfig(team);
+
       const receiverEmails = [givenToUser.email];
-      const ccEmails = [HR_EMAIL];
+      const ccEmails = [configEmails?.HR_EMAIL];
 
       Helper.sendEmail({
         receiverEmails,
@@ -46,6 +50,7 @@ const createFeedback = catchAsync(async (req, res) => {
         message: emailMessage,
         fromHR: false,
         fromIT: false,
+        team,
       });
     } catch (error) {
       console.error('Error sending create feedback email:', error);
@@ -56,9 +61,9 @@ const createFeedback = catchAsync(async (req, res) => {
 )
 
 const getAllFeedbacks = catchAsync(async (req, res) => {
-  const { id: userId, role: userRole } = req.user;
+  const { id: userId, role: userRole, team:userTeam } = req.user;
 
-  const feedbacks = await feedbackService.getAllFeedbacks(userId, userRole);
+  const feedbacks = await feedbackService.getAllFeedbacks(userId, userRole, userTeam);
 
   res.status(200).json({
     success: true,
@@ -81,7 +86,7 @@ const getFeedbackById = catchAsync(async (req, res) => {
 
 const raiseConcern = catchAsync(async (req, res) => {
   const userId = req.user.id;
-  const role = req.user.role;
+  const {role, team} = req.user
   const feedbackId = req.params.id;
   const { reason } = req.body;
 
@@ -103,10 +108,13 @@ const raiseConcern = catchAsync(async (req, res) => {
         raisedByUser: givenToUser,
         dashboardUrl: process.env.HRMS_FRONTEND_URL,
         feedbackId: feedback._id,
+        team,
       });
 
+      const configEmails = getTeamEmailConfig(team);
+
       const receiverEmails = [givenByUser.email];
-      const ccEmails = [HR_EMAIL];
+      const ccEmails = [configEmails.HR_EMAIL];
 
       Helper.sendEmail({
         receiverEmails,
@@ -115,6 +123,7 @@ const raiseConcern = catchAsync(async (req, res) => {
         message: emailMessage,
         fromHR: false,
         fromIT: false,
+        team,
       });
     } catch (error) {
       console.error('Error sending concern email:', error);
@@ -128,6 +137,7 @@ const raiseConcern = catchAsync(async (req, res) => {
 const requestEdit = catchAsync(async (req, res) => {
   const feedbackId = req.params.id;
   const userId = req.user.id;
+  const team = req.user.team;
 
   const feedback = await feedbackService.requestEdit(feedbackId, userId);
 
@@ -152,9 +162,11 @@ const requestEdit = catchAsync(async (req, res) => {
         givenToUser,
         dashboardUrl: process.env.HRMS_FRONTEND_URL,
         feedbackId: feedback._id,
+        team,
       });
 
-      const receiverEmails = [HR_EMAIL];
+      const configEmails = getTeamEmailConfig(team);
+      const receiverEmails = [configEmails?.HR_EMAIL];
 
       Helper.sendEmail({
         receiverEmails,
@@ -162,6 +174,7 @@ const requestEdit = catchAsync(async (req, res) => {
         message: emailMessage,
         fromHR: false,
         fromIT: false,
+        team,
       });
 
     } catch (error) {
@@ -175,6 +188,7 @@ const requestEdit = catchAsync(async (req, res) => {
 const updateEditRequestStatus = catchAsync(async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
+  const team = req.user.team;
 
   const updatedFeedback = await feedbackService.updateEditRequestStatus(id, status);
 
@@ -202,6 +216,7 @@ const updateEditRequestStatus = catchAsync(async (req, res) => {
         status,
         dashboardUrl: process.env.HRMS_FRONTEND_URL,
         feedbackId: updatedFeedback._id,
+        team,
       });
 
       const receiverEmails = [givenByUser.email];
@@ -212,6 +227,7 @@ const updateEditRequestStatus = catchAsync(async (req, res) => {
         message: emailMessage,
         fromHR: true,
         fromIT: false,
+        team,
       });
 
     } catch (error) {
@@ -228,6 +244,7 @@ const updateEditRequestStatus = catchAsync(async (req, res) => {
 const updateFeedback = catchAsync(async (req, res) => {
   const { id } = req.params;
   const { rating, feedback } = req.body;
+  const team = req.user.team;
 
   const validateData = await feedbackValidator.updateFeedbackValidator.validateAsync({ rating, feedback });
 
@@ -256,11 +273,12 @@ const updateFeedback = catchAsync(async (req, res) => {
         givenToUser,
         dashboardUrl: process.env.HRMS_FRONTEND_URL,
         feedbackId: updatedFeedback._id,
+        team,
       });
 
-
+      const configEmails = getTeamEmailConfig(team);
       const receiverEmails = [givenToUser.email];
-      const ccEmails = [HR_EMAIL];
+      const ccEmails = [configEmails?.HR_EMAIL];
       Helper.sendEmail({
         receiverEmails,
         cc: ccEmails,
@@ -268,6 +286,7 @@ const updateFeedback = catchAsync(async (req, res) => {
         message: emailMessage,
         fromHR: false,
         fromIT: false,
+        team,
       });
 
     } catch (error) {

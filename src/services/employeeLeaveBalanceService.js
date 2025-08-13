@@ -54,7 +54,7 @@ class EmployeeLeaveBalanceService {
       // 6. Generate simplified response
       const hireDate = new Date(user.hireDate);
       const hireYear = hireDate.getFullYear();
-      const hireMonth = hireDate.getMonth(); // 0-indexed
+      const hireMonth = hireDate.getMonth();
 
       const response = await Promise.all(
         filteredMappings
@@ -89,7 +89,7 @@ class EmployeeLeaveBalanceService {
             const pendingLeaves = await leaveApplicationModel.find({
               userId: employeeId,
               leaveTypeId: leaveType._id,
-              status: 'pending',
+              status: { $in: ['pending', 'tl-pending', 'hr-pending'] },
               isDeleted: false,
             });
             const pendingDays = pendingLeaves.reduce((acc, leave) => {

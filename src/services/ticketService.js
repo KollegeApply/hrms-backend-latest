@@ -44,30 +44,29 @@ class TicketService {
     return ticketId;
   }
 
-  async getAllTickets(currentUser, query = {}) {
-    const { status, search } = query;
+async getAllTickets(currentUser, query = {}, team) {
+  const { status, search } = query;
+  const allowedRoles = ['admin', 'hr', 'subadmin'];
 
-    const allowedRoles = ['admin', 'hr', 'subadmin'];
+  const matchStage = {};
 
-    const matchStage = {};
-
-    if (!allowedRoles.includes(currentUser.role)) {
-      if (currentUser.role === "IT") {
-        matchStage['$or'] = [
-          { ticketType: "Admin & IT" },
-          { createdBy: new mongoose.Types.ObjectId(currentUser.id) }
-        ];
-      } else {
-        matchStage['createdBy'] = new mongoose.Types.ObjectId(currentUser.id);
-      }
+  if (!allowedRoles.includes(currentUser.role)) {
+    if (currentUser.role === "IT") {
+      matchStage['$or'] = [
+        { ticketType: "Admin & IT" },
+        { createdBy: new mongoose.Types.ObjectId(currentUser.id) }
+      ];
+    } else {
+      matchStage['createdBy'] = new mongoose.Types.ObjectId(currentUser.id);
     }
+  }
 
-    if (status) {
-      matchStage.status = status;
-    }
+  if (status) {
+    matchStage.status = status;
+  }
 
-    const searchStage = search
-      ? {
+  const searchStage = search
+    ? {
         $or: [
           { ticketId: { $regex: search, $options: 'i' } },
           { ticketType: { $regex: search, $options: 'i' } },
@@ -77,38 +76,41 @@ class TicketService {
           { 'createdByData.employeeId': { $regex: search, $options: 'i' } }
         ]
       }
-      : {};
+    : {};
 
-    const tickets = await Ticket.aggregate([
-      { $match: matchStage },
+  const tickets = await Ticket.aggregate([
+    { $match: matchStage },
 
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'createdBy',
-          foreignField: '_id',
-          as: 'createdByData'
-        }
-      },
-      { $unwind: '$createdByData' },
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'createdBy',
+        foreignField: '_id',
+        as: 'createdByData'
+      }
+    },
+    { $unwind: '$createdByData' },
 
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'resolvedBy',
-          foreignField: '_id',
-          as: 'resolvedByData'
-        }
-      },
-      { $unwind: { path: '$resolvedByData', preserveNullAndEmptyArrays: true } },
+    { $match: { 'createdByData.team': team } },
 
-      ...(search ? [{ $match: searchStage }] : []),
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'resolvedBy',
+        foreignField: '_id',
+        as: 'resolvedByData'
+      }
+    },
+    { $unwind: { path: '$resolvedByData', preserveNullAndEmptyArrays: true } },
 
-      { $sort: { createdAt: -1 } }
-    ]);
+    ...(search ? [{ $match: searchStage }] : []),
 
-    return tickets;
-  }
+    { $sort: { createdAt: -1 } }
+  ]);
+
+  return tickets;
+}
+
 
 
 

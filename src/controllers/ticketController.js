@@ -4,11 +4,12 @@ const TicketService = require('../services/ticketService');
 const ticketValidator = require('../validators/ticketValidator');
 const logger = require('../config/logger');
 const User = require('../models/userModel');
-const { HR_EMAIL, IT_EMAIL } = require('../utility/constants');
+const { HR_EMAIL, IT_EMAIL, getTeamEmailConfig } = require('../utility/constants');
 const Helper = require('../utility/helper');
 
 const createTicket = catchAsync(async (req, res) => {
   const createdBy = req?.user?.id;
+  const team = req?.user?.team;
   const { ticketData } = req.body;
   const validatedData = await ticketValidator.createTicketSchema.validateAsync({ ...ticketData, createdBy });
   const newTicket = await TicketService.createTicket(validatedData);
@@ -17,10 +18,11 @@ const createTicket = catchAsync(async (req, res) => {
 
   if (sendMail && process.env.HRMS_FRONTEND_URL) {
     const createdByUser = await User.findById(createdBy);
-    const teamEmails = [HR_EMAIL];
+    const configEmails = getTeamEmailConfig(team);
+    const teamEmails = [configEmails?.HR_EMAIL];
 
     if (newTicket.ticketType === "Admin & IT") {
-      teamEmails.push(IT_EMAIL);
+      teamEmails.push(configEmails?.IT_EMAIL);
     }
 
     const emailSubject = `New Ticket Raised - ${newTicket.subject}`;
@@ -29,7 +31,8 @@ const createTicket = catchAsync(async (req, res) => {
       newTicket.ticketType,
       createdByUser.firstName,
       process.env.HRMS_FRONTEND_URL,
-      newTicket._id
+      newTicket.ticketId,
+      team,
     );
 
     Helper.sendEmail({
@@ -38,6 +41,7 @@ const createTicket = catchAsync(async (req, res) => {
       message: emailMessage,
       fromHR: false,
       fromIT: false,
+      team,
     }).catch((err) => {
       logger.error(`Failed to send ticket creation email:`, err);
     });
@@ -54,7 +58,8 @@ const createTicket = catchAsync(async (req, res) => {
 const getAllTickets = catchAsync(async (req, res) => {
   const user  = req.user;
   const query = req.query;
-  const result = await TicketService.getAllTickets(user,query);
+  const team = req.user.team;
+  const result = await TicketService.getAllTickets(user,query,team);
 
   res.status(httpStatus.OK).json({
     status: true,
@@ -77,6 +82,7 @@ const getTicketById = catchAsync(async (req, res) => {
 const updateTicket = catchAsync(async (req, res) => {
   const { id } = req.params;
   const {updateData} = req?.body;
+  const team = req.user.team;
   const validatedData = await ticketValidator.updateTicketSchema.validateAsync(updateData);
   const updatedTicket = await TicketService.updateTicket(id, validatedData, req.user);
 
@@ -88,6 +94,7 @@ const updateTicket = catchAsync(async (req, res) => {
     ["rejected", "resolved"].includes(validatedData.status)
   ) {
     const employee = await User.findById(updatedTicket?.createdBy);
+    const configEmails = getTeamEmailConfig(team);
 
     if (employee?.email) {
       const emailSubject = `Your Ticket has been ${validatedData.status}`;
@@ -96,10 +103,11 @@ const updateTicket = catchAsync(async (req, res) => {
         updatedTicket.subject,
         validatedData.status,
         process.env.HRMS_FRONTEND_URL,
-        updatedTicket._id
+        updatedTicket.ticketId,
+        team,
       );
 
-      let ccEmails = [HR_EMAIL];
+      let ccEmails = [configEmails?.HR_EMAIL];
       let fromIT;
 
       if(updatedTicket?.ticketType === "Admin & IT"){
@@ -113,7 +121,8 @@ const updateTicket = catchAsync(async (req, res) => {
         message: emailMessage,
         fromHR: !fromIT,
         fromIT: fromIT,
-        cc: ccEmails
+        cc: ccEmails,
+        team,
       }).catch((err) => {
         logger.error(`Failed to send ticket update email:`, err);
       });

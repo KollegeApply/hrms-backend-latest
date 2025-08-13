@@ -1,3 +1,6 @@
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env.development') });
+
 const USER_ROLES = {
   ADMIN: 'admin',
   SUBADMIN: 'subadmin',
@@ -35,6 +38,26 @@ const ASSETS_STATUS = {
   CANCELLED: 'cancelled',
 };
 
+
+const CANDIDATE_STATUS = {
+  PENDING: 'pending',
+  DRAFT: 'draft',
+  SUBMITTED: 'submitted',
+  RESENT: 'resended',
+  REDRAFT: 'redraft',
+  RESUBMITTED: 'resubmitted',
+  UNDER_REVIEW: 'underReview',
+  APPROVED: 'approved',
+  COMPLETED: 'completed',
+  BACKOUT: 'backout'
+};
+
+const LAPTOP_TYPES = {
+  MACOS: 'macos',
+  WINDOWS: 'windows',
+}
+
+
 const MAIL_HOST = 'smtp.gmail.com';
 const MAIL_PORT = 465;
 const MAIL_SECURE = true;
@@ -55,6 +78,60 @@ const HR_MAIL_PASS = process.env.HR_SMTP_PASS;
 const IT_EMAIL = process.env.IT_EMAIL;
 const IT_MAIL_USER = process.env.IT_SMTP_USER;
 const IT_MAIL_PASS = process.env.IT_SMTP_PASS;
+
+const ADMIN_EMAILS = process.env.ADMIN_EMAILS?.split(',').map(e => e.trim()).filter(Boolean) || [];
+
+
+const TEAM_SD = process.env.TEAM_SD;
+const TEAM_KAP = process.env.TEAM_KAP;
+
+function getTeamEmailConfig(team) {
+  const normalizedTeam = team?.toUpperCase();
+  const config = {
+    TEAM_NAME: process.env[`TEAM_${normalizedTeam}`],
+
+    MAIL_FROM_HR: process.env[`SMTP_FROM_EMAIL_HR_${normalizedTeam}`],
+    MAIL_FROM_SUPPORT: process.env[`SMTP_FROM_EMAIL_SUPPORT_${normalizedTeam}`],
+    MAIL_FROM_IT: process.env[`SMTP_FROM_EMAIL_IT_${normalizedTeam}`],
+
+    MAIL_USER: process.env[`SMTP_USER_${normalizedTeam}`],
+    MAIL_PASS: process.env[`SMTP_PASS_${normalizedTeam}`],
+
+    HR_EMAIL: process.env[`HR_EMAIL_${normalizedTeam}`],
+    HR_MAIL_USER: process.env[`HR_SMTP_USER_${normalizedTeam}`],
+    HR_MAIL_PASS: process.env[`HR_SMTP_PASS_${normalizedTeam}`],
+
+    IT_EMAIL: process.env[`IT_EMAIL_${normalizedTeam}`],
+    IT_MAIL_USER: process.env[`IT_SMTP_USER_${normalizedTeam}`],
+    IT_MAIL_PASS: process.env[`IT_SMTP_PASS_${normalizedTeam}`],
+
+    ADMIN_EMAILS: (process.env[`ADMIN_EMAILS_${normalizedTeam}`] || '')
+      .split(',')
+      .map(e => e.trim())
+      .filter(Boolean),
+  };
+
+  const requiredKeys = [
+    'HR_EMAIL',
+    'IT_EMAIL',
+    'MAIL_USER',
+    'MAIL_PASS',
+    'HR_MAIL_USER',
+    'HR_MAIL_PASS',
+    'IT_MAIL_USER',
+    'IT_MAIL_PASS',
+  ];
+
+  const missing = requiredKeys.filter((key) => !config[key]);
+  if (missing.length) {
+    throw new Error(
+      `Missing required email config values for team ${team}: ${missing.join(', ')}`
+    );
+  }
+
+  return config;
+}
+
 
 const OTP_EXPIRY_MINUTES = 10;
 
@@ -103,6 +180,9 @@ module.exports = {
   VALID_USER_ROLES: Object.values(USER_ROLES),
   VALID_EMPLOYEE_STATUS: Object.values(EMPLOYEE_STATUS),
   VALID_ASSETS_STATUS: Object.values(ASSETS_STATUS),
+  VALID_LAPTOP_TYPES: Object.values(LAPTOP_TYPES),
+  CANDIDATE_STATUS,
+  VALID_CANDIDATE_STATUS: Object.values(CANDIDATE_STATUS),
   MAIL_HOST,
   MAIL_PORT,
   MAIL_SECURE,
@@ -119,10 +199,14 @@ module.exports = {
   OTP_EXPIRY_MINUTES,
   HR_EMAIL,
   IT_EMAIL,
+  ADMIN_EMAILS,
+  TEAM_SD,
+  TEAM_KAP,
   USER_CSV_FILE_HEADERS,
   CSV_TYPES,
   RANK,
   LEAVETYPES,
   SYSTEM_LAUNCH_YEAR,
   SYSTEM_START_MONTH,
+  getTeamEmailConfig,
 };

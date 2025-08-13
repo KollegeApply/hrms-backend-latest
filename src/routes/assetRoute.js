@@ -21,6 +21,18 @@ router.post(
   assetController.assignAsset
 );
 
+router.get(
+  '/asset-summary',
+  authenticateUser,
+  authorizeRole([
+    USER_ROLES?.IT,
+    USER_ROLES?.HR,
+    USER_ROLES?.SUBADMIN,
+    USER_ROLES?.ADMIN,
+  ]),
+  assetController.getPCDepartmentSummary,
+);
+
 // Route to fetch all assigned assets
 router.get(
   '/assigned',

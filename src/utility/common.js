@@ -2,6 +2,9 @@
 const mongoose = require('mongoose');
 const { bulkCreateUserRowSchema } = require('../validators/userValidator');
 const { format } = require('date-fns-tz');
+const jwt = require('jsonwebtoken');
+const candidateModel = require('../models/candidateModel');
+const User = require('../models/userModel');
 /**
  * Paginates Mongoose query results.
  * @param {mongoose.Model} model - The Mongoose model to query.
@@ -22,7 +25,6 @@ async function paginate(
   select,
   populate
 ) {
-  // Ensure page and pageSize are positive integers
   page = Math.max(1, parseInt(page, 10) || 1);
   pageSize = Math.max(1, parseInt(pageSize, 10) || 10);
 
@@ -173,10 +175,108 @@ function formatDateToKolkata(dateStr) {
   return format(date, 'dd MMMM yyyy', { timeZone });
 }
 
+function generateCIFToken(email) {
+  const token = jwt.sign({
+    exp: Math.floor(Date.now() / 1000) + (60 * 60 * 24 * 7),
+    email: email,
+  }, process.env.CIF_TOKEN_SECRET);
+  return token;
+}
+
+async function validateCIFToken(token) {
+  try {
+    if (!token) throw new Error('Token is missing.');
+
+    const payload = jwt.verify(token, process.env.CIF_TOKEN_SECRET);
+    const email = payload.email;
+
+    const candidate = await candidateModel.findOne({ personalEmail: email });
+
+    const user = candidate ? null : await User.findOne({ email });
+
+    if (!candidate && !user) {
+      throw new Error('No matching user found.');
+    }
+    
+    return { isValid: true, email };
+  } catch (err) {
+    console.error('Token validation failed:', err.message || err);
+    return { isValid: false, message: 'Invalid or expired link.' };
+  }
+}
+
+function cleanEmptyFields(obj) {
+  if (Array.isArray(obj)) {
+    return obj
+      .map(cleanEmptyFields)
+      .filter(item =>
+        item !== undefined &&
+        item !== null &&
+        !(typeof item === 'string' && item.trim() === '') &&
+        !(typeof item === 'object' && Object.keys(item).length === 0)
+      );
+  }
+
+  if (typeof obj === 'object' && obj !== null) {
+    return Object.entries(obj).reduce((acc, [key, value]) => {
+      const cleanedValue = cleanEmptyFields(value);
+      if (
+        cleanedValue !== undefined &&
+        cleanedValue !== null &&
+        !(typeof cleanedValue === 'string' && cleanedValue.trim() === '') &&
+        !(typeof cleanedValue === 'object' && Object.keys(cleanedValue).length === 0)
+      ) {
+        acc[key] = cleanedValue;
+      }
+      return acc;
+    }, {});
+  }
+
+  return obj;
+}
+
+const transformDocumentPaths = (documents) => {
+  const baseUrl = process.env.IMAGE_BASE_URL;
+
+  if (!documents || typeof documents !== 'object' || !baseUrl) {
+    return documents || {};
+  }
+
+  const documentsWithUrls = {};
+
+  for (const [key, relativePath] of Object.entries(documents)) {
+      console.log('transformDocumentPaths:', key, relativePath);
+    if (
+      typeof relativePath === 'string' &&
+      (
+        relativePath.startsWith('http://') ||
+        relativePath.startsWith('https://') ||
+        relativePath.startsWith(baseUrl)
+      )
+    ) {
+      // Already a full URL or starts with baseUrl, use as is
+      documentsWithUrls[key] = relativePath;
+    } else {
+      // Only prepend baseUrl if it's a relative path
+      documentsWithUrls[key] = `${baseUrl}/${relativePath}`;
+    }
+  }
+
+  return documentsWithUrls;
+};
+
+
+
+
+
 module.exports = {
   paginate,
   validateHeaders,
   validateUsersCsvFile,
   autoGenerateEmpId,
   formatDateToKolkata,
+  generateCIFToken,
+  validateCIFToken,
+  cleanEmptyFields,
+  transformDocumentPaths,
 };

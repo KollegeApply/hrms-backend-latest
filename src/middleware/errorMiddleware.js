@@ -40,7 +40,28 @@ const errorHandler = (err, req, res, next) => {
   res.status(statusCode).send(response);
 };
 
+
+const handleUploadError = (err, req, res, next) => {
+  if (err instanceof ApiError) {
+    return res.status(err.statusCode).json({
+      status: false,
+      message: err.message
+    });
+  }
+
+  // Handle unexpected form endings
+  if (err.message === 'Unexpected end of form') {
+    return res.status(400).json({
+      status: false,
+      message: 'File upload was interrupted. Please try again.'
+    });
+  }
+
+  next(err);
+};
+
 module.exports = {
   errorConverter,
   errorHandler,
+  handleUploadError,
 };
