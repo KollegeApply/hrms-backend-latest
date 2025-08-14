@@ -58,12 +58,22 @@ const candidateDraftSchema = Joi.object({
     }),
 
     // Optional children fields
+    hasChildren: Joi.string().valid("yes", "no").optional().allow(''),
     child1Name: Joi.string().optional().allow(''),
     child1Dob: Joi.string().isoDate().optional().allow(''),
     child1Gender: Joi.string().valid("male", "female", "other").optional().allow(''),
     child2Name: Joi.string().optional().allow(''),
     child2Dob: Joi.string().isoDate().optional().allow(''),
     child2Gender: Joi.string().valid("male", "female", "other").optional().allow(''),
+    child3Name: Joi.string().optional().allow(''),
+    child3Dob: Joi.string().isoDate().optional().allow(''),
+    child3Gender: Joi.string().valid("male", "female", "other").optional().allow(''),
+    child4Name: Joi.string().optional().allow(''),
+    child4Dob: Joi.string().isoDate().optional().allow(''),
+    child4Gender: Joi.string().valid("male", "female", "other").optional().allow(''),
+    child5Name: Joi.string().optional().allow(''),
+    child5Dob: Joi.string().isoDate().optional().allow(''),
+    child5Gender: Joi.string().valid("male", "female", "other").optional().allow(''),
 
     nationality: Joi.string().min(1).optional(),
     aadharCard: Joi.string().pattern(AADHAR_REGEX).optional(),
@@ -210,6 +220,40 @@ const finalSubmitSchema = candidateDraftSchema.concat(
         otherwise: Joi.forbidden(),
       }),
 
+      // Child validation for married candidates
+      hasChildren: Joi.when("maritalStatus", {
+        is: "married",
+        then: Joi.string().valid("yes", "no").required(),
+        otherwise: Joi.optional().allow('', null),
+      }),
+      child1Name: Joi.when("hasChildren", {
+        is: "yes",
+        then: Joi.string().min(1).required(),
+        otherwise: Joi.optional().allow('', null),
+      }),
+      child1Dob: Joi.when("hasChildren", {
+        is: "yes",
+        then: Joi.string().isoDate().required(),
+        otherwise: Joi.optional().allow('', null),
+      }),
+      child1Gender: Joi.when("hasChildren", {
+        is: "yes",
+        then: Joi.string().valid("male", "female", "other").required(),
+        otherwise: Joi.optional().allow('', null),
+      }),
+      child2Name: Joi.string().optional().allow(''),
+      child2Dob: Joi.string().isoDate().optional().allow(''),
+      child2Gender: Joi.string().valid("male", "female", "other").optional().allow(''),
+      child3Name: Joi.string().optional().allow(''),
+      child3Dob: Joi.string().isoDate().optional().allow(''),
+      child3Gender: Joi.string().valid("male", "female", "other").optional().allow(''),
+      child4Name: Joi.string().optional().allow(''),
+      child4Dob: Joi.string().isoDate().optional().allow(''),
+      child4Gender: Joi.string().valid("male", "female", "other").optional().allow(''),
+      child5Name: Joi.string().optional().allow(''),
+      child5Dob: Joi.string().isoDate().optional().allow(''),
+      child5Gender: Joi.string().valid("male", "female", "other").optional().allow(''),
+
       nationality: Joi.string().min(1).required(),
       aadharCard: Joi.string()
         .pattern(AADHAR_REGEX)
@@ -348,7 +392,7 @@ const finalSubmitSchema = candidateDraftSchema.concat(
       medicalHistoryDetails: Joi.when(Joi.ref("hasMedicalHistory"), {
         is: "yes",
         then: Joi.string().min(1).optional(),
-        otherwise: Joi.forbidden(),
+        otherwise: Joi.optional().allow('', null),
       }).optional(),
     }).optional(),
 
