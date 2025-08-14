@@ -39,7 +39,7 @@ const attendanceSchema = new Schema(
     //   type: String,
     // },
     // wfhReason: {
-    //   type: String,
+    //   type: String,  
     // },
     checkInMode: {
       type: String,
@@ -59,7 +59,7 @@ const attendanceSchema = new Schema(
   }
 );
 
-// Index for faster querying of attendance by user and date
+
 attendanceSchema.index({ user: 1, date: 1 });
 
 const Attendance = mongoose.model('Attendance', attendanceSchema);
