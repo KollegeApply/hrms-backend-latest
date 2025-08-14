@@ -52,7 +52,7 @@ const dailyAttendanceCheck = async () => {
     const todayStartIST = getKolkataStartOfDay();
     const todayEndIST = moment(todayStartIST).add(1, 'day').toDate();
 
-    const cutoffTime = moment(todayStartIST).add(10, 'hours').add(30, 'minutes').toDate();
+    const cutoffTime = moment(todayStartIST).add(10, 'hours').add(15, 'minutes').toDate();
 
     const minWorkDurationMs = 9 * 60 * 60 * 1000;
 
@@ -194,7 +194,7 @@ const weeklyReport = async () => {
     const endDate = endMoment.toDate();
 
     const LATE_CHECKIN_CUTOFF_HOUR = 10;
-    const LATE_CHECKIN_CUTOFF_MINUTE = 30;
+    const LATE_CHECKIN_CUTOFF_MINUTE = 15;
     const MIN_WORK_DURATION_MS = 9 * 60 * 60 * 1000;
     const HOURS_PER_DAY = 9;
 
