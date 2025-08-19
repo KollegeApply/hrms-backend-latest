@@ -16,7 +16,7 @@ const documentFields = [
   { name: 'documents.twelfthMarkSheet', maxCount: 1 },
   { name: 'documents.graduationProof', maxCount: 1 },
   { name: 'documents.updatedResume', maxCount: 1 },
-  { name: 'documents.cancelledCheque', maxCount: 1 },
+  { name: 'documents.cancelledChequeOrPassbook', maxCount: 1 },
   { name: 'documents.form11', maxCount: 1 },
   //Optional fields
   { name: 'documents.postGraduationProof', maxCount: 1 },
