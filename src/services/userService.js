@@ -743,6 +743,7 @@ async getUserById(id) {
         receiverEmails: [user?.email],
         subject: 'HRMS Password Reset OTP',
         message: Helper.getOTPEmail(otp), // Use the OTP email template
+        team: user?.team,
       });
       logger.info(
         `Password reset OTP email sent successfully to: ${user?.email}`
