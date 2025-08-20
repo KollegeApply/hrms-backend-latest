@@ -91,9 +91,6 @@ class Helper {
     auth: { user, pass },
   });
 
-  console.log("Transporter", transporter);
-  console.log("Receiver Emails",MAIL_USER,MAIL_PASS, HR_MAIL_USER,HR_MAIL_PASS, IT_MAIL_USER,IT_MAIL_PASS);
-
   const mailOptions = {
     from,
     to: receiverEmails.join(','),
@@ -102,14 +99,10 @@ class Helper {
     html: message,
   };
 
-  console.log("Mail Options", mailOptions);
-
   try {
     const info = await transporter.sendMail(mailOptions);
-    console.log("Info", info);
     logger.info(`Email sent to ${receiverEmails.join(', ')} | ID: ${info.messageId}`);
   } catch (error) {
-    console.log("Error", error);
     logger.error('Failed to send email:', error?.message || error);
   }
 }
