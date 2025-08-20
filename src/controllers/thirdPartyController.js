@@ -23,7 +23,6 @@ exports.getQuotes = catchAsync(async (req, res) => {
     });
 
     const data = response.data;
-    // console.log('Cached quote:', data);
 
     res.status(200).json({
       success: true,

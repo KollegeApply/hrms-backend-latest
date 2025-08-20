@@ -245,7 +245,6 @@ const transformDocumentPaths = (documents) => {
   const documentsWithUrls = {};
 
   for (const [key, relativePath] of Object.entries(documents)) {
-      console.log('transformDocumentPaths:', key, relativePath);
     if (
       typeof relativePath === 'string' &&
       (

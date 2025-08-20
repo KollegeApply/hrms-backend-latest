@@ -91,6 +91,9 @@ class Helper {
     auth: { user, pass },
   });
 
+  console.log("Transporter", transporter);
+  console.log("Receiver Emails",MAIL_FROM_HR,MAIL_FROM_SUPPORT,MAIL_FROM_IT);
+
   const mailOptions = {
     from,
     to: receiverEmails.join(','),
@@ -98,6 +101,8 @@ class Helper {
     subject,
     html: message,
   };
+
+  console.log("Mail Options", mailOptions);
 
   try {
     const info = await transporter.sendMail(mailOptions);
