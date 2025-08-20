@@ -432,7 +432,7 @@ const finalSubmitSchema = candidateDraftSchema.concat(
       twelfthMarkSheet: Joi.string().required(),
       graduationProof: Joi.string().required(),
       updatedResume: Joi.string().required(),
-      cancelledCheque: Joi.string().required(),
+      cancelledChequeOrPassbook: Joi.string().required(),
       form11: Joi.string().required(),
 
       // --- Optional Documents ---

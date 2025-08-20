@@ -89,7 +89,7 @@ const DocumentsSchema = new Schema({
   twelfthMarkSheet: String,
   graduationProof: String,
   updatedResume: String,
-  cancelledCheque: String,
+  cancelledChequeOrPassbook: String,
   form11: String,
   //optional docs
   postGraduationProof: String,

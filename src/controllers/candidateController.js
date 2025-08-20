@@ -165,11 +165,19 @@ const uploadedPaths = Object.fromEntries(
     }
   }
 
+  // Filter out undefined or empty values from uploadedPaths for optional documents
+  const filteredUploadedPaths = {};
+  Object.entries(uploadedPaths).forEach(([key, value]) => {
+    if (value && value.trim() !== '') {
+      filteredUploadedPaths[key] = value;
+    }
+  });
+
   const dataToValidate = {
     ...parsedBody,
     documents: {
       ...(parsedBody.documents || {}),
-      ...uploadedPaths,
+      ...filteredUploadedPaths,
     },
   };
 
@@ -230,11 +238,18 @@ const reviewUpdateCandidate = catchAsync(async (req, res) => {
     }
   }
 
+  const filteredUploadedPaths = {};
+  Object.entries(uploadedPaths).forEach(([key, value]) => {
+    if (value && value.trim() !== '') {
+      filteredUploadedPaths[key] = value;
+    }
+  });
+
   const dataToValidate = {
     ...parsedBody,
     documents: {
       ...(parsedBody.documents || {}),
-      ...uploadedPaths,
+      ...filteredUploadedPaths,
     },
   };
 
