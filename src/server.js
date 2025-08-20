@@ -30,7 +30,7 @@ app.use(
 
 // Parsing Middleware
 app.use(express.json()); // Parse JSON bodies
-app.use(express.urlencoded({ extended: true})); // Parse URL-encoded bodies
+app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
 
 // File Upload Middleware (if needed, configure storage/limits)
 // app.use(multer().any()); // Accepts any file uploads - BE CAREFUL IN PRODUCTION
