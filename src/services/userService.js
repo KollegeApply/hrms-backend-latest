@@ -745,12 +745,10 @@ async getUserById(id) {
         message: Helper.getOTPEmail(otp), // Use the OTP email template
         team: user?.team,
       });
-      console.log(`Password reset OTP email sent successfully to: ${user?.email}`);
       logger.info(
         `Password reset OTP email sent successfully to: ${user?.email}`
       );
     } catch (error) {
-      console.log(`Password reset OTP email sent successfully to: ${user?.email}`);
       logger.error(
         `Failed to send password reset OTP email to ${user?.email}:`,
         error

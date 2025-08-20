@@ -36,7 +36,6 @@ async function addLOPToProbationPolicy() {
     });
 
     if (existingMapping) {
-      console.log('✅ LOP already mapped to Probation Policy');
     } else {
       await LeavePolicyMapping.create({
         leavePolicyId: probationPolicy._id,

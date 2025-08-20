@@ -20,7 +20,6 @@ const connectDB = async () => {
             useNewUrlParser: true,
             useUnifiedTopology: true
         });
-        console.log('Connected to MongoDB');
     } catch (err) {
         console.error('MongoDB connection error:', err);
         process.exit(1);
@@ -415,7 +414,6 @@ if (require.main === module) {
                 await dailyAttendanceCheck();
             }
 
-            console.log(`Attendance ${mode} check completed.`);
             process.exit(0);
         } catch (err) {
             console.error('Error running attendance check:', err);
