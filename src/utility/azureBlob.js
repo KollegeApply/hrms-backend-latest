@@ -10,6 +10,7 @@ const CONTAINER_NAME = process.env.AZURE_CONTAINER_NAME || 'sd-cms-stg';
 const containerClient = blobServiceClient.getContainerClient(CONTAINER_NAME);
 
 async function uploadToAzure(fileBuffer, originalName, folderName = 'hrms-cif-documents/') {
+  
   const cleanName = originalName.replace(/\s+/g, '_');
   const timestamp = Date.now();
   const fileName = `${folderName}/${timestamp}-${cleanName}`.replace(/\/+/g, '/');
