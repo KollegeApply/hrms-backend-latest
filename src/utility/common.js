@@ -190,9 +190,16 @@ async function validateCIFToken(token) {
     const payload = jwt.verify(token, process.env.CIF_TOKEN_SECRET);
     const email = payload.email;
 
-    const candidate = await candidateModel.findOne({ personalEmail: email });
+    const candidate = await candidateModel.findOne({
+      personalEmail: email,
+      isDeleted: false,
+      status: { $nin: ['backout','underReview','approved','submitted','resubmitted','completed'] }
+    }).sort({ 
+      status: 1, 
+      createdAt: -1 
+    });
 
-    const user = candidate ? null : await User.findOne({ email });
+    const user = candidate ? null : await User.findOne({ email: email, isDeleted: false, formStatus: { $ne: "submitted"} });
 
     if (!candidate && !user) {
       throw new Error('No matching user found.');
