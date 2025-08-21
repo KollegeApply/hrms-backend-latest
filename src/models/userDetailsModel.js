@@ -73,6 +73,12 @@ const EmergencyContactSchema = new Schema({
   phoneNumber: String
 }, { _id: false });
 
+const ChildSchema = new Schema({
+  name: String,
+  dateOfBirth: Date,
+  gender: String
+}, { _id: false });
+
 const BloodRelationSchema = new Schema({
   hasRelation: Boolean,
   details: String
@@ -114,21 +120,7 @@ const PersonalInfoSchema = new Schema({
   spouseName: String,
   spouseDob: Date,
   hasChildren: String,
-  child1Name: String,
-  child1Dob: Date,
-  child1Gender: String,
-  child2Name: String,
-  child2Dob: Date,
-  child2Gender: String,
-  child3Name: String,
-  child3Dob: Date,
-  child3Gender: String,
-  child4Name: String,
-  child4Dob: Date,
-  child4Gender: String,
-  child5Name: String,
-  child5Dob: Date,
-  child5Gender: String,
+  children: [ChildSchema],
   nationality: String,
   aadharCard: String,
   panCard: String,

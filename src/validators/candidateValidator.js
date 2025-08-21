@@ -59,21 +59,13 @@ const candidateDraftSchema = Joi.object({
 
     // Optional children fields
     hasChildren: Joi.string().valid("yes", "no").optional().allow(''),
-    child1Name: Joi.string().optional().allow(''),
-    child1Dob: Joi.string().isoDate().optional().allow(''),
-    child1Gender: Joi.string().valid("male", "female", "other").optional().allow(''),
-    child2Name: Joi.string().optional().allow(''),
-    child2Dob: Joi.string().isoDate().optional().allow(''),
-    child2Gender: Joi.string().valid("male", "female", "other").optional().allow(''),
-    child3Name: Joi.string().optional().allow(''),
-    child3Dob: Joi.string().isoDate().optional().allow(''),
-    child3Gender: Joi.string().valid("male", "female", "other").optional().allow(''),
-    child4Name: Joi.string().optional().allow(''),
-    child4Dob: Joi.string().isoDate().optional().allow(''),
-    child4Gender: Joi.string().valid("male", "female", "other").optional().allow(''),
-    child5Name: Joi.string().optional().allow(''),
-    child5Dob: Joi.string().isoDate().optional().allow(''),
-    child5Gender: Joi.string().valid("male", "female", "other").optional().allow(''),
+    children: Joi.array().items(
+      Joi.object({
+        name: Joi.string().min(1).required(),
+        dateOfBirth: Joi.string().isoDate().required(),
+        gender: Joi.string().valid("male", "female", "other").required()
+      })
+    ).optional().allow(null, ''),
 
     nationality: Joi.string().min(1).optional(),
     aadharCard: Joi.string().pattern(AADHAR_REGEX).optional(),
@@ -226,33 +218,17 @@ const finalSubmitSchema = candidateDraftSchema.concat(
         then: Joi.string().valid("yes", "no").required(),
         otherwise: Joi.optional().allow('', null),
       }),
-      child1Name: Joi.when("hasChildren", {
+      children: Joi.when("hasChildren", {
         is: "yes",
-        then: Joi.string().min(1).required(),
-        otherwise: Joi.optional().allow('', null),
+        then: Joi.array().items(
+          Joi.object({
+            name: Joi.string().min(1).required(),
+            dateOfBirth: Joi.string().isoDate().required(),
+            gender: Joi.string().valid("male", "female", "other").required()
+          })
+        ).min(1).required(),
+        otherwise: Joi.optional().allow(null, ''),
       }),
-      child1Dob: Joi.when("hasChildren", {
-        is: "yes",
-        then: Joi.string().isoDate().required(),
-        otherwise: Joi.optional().allow('', null),
-      }),
-      child1Gender: Joi.when("hasChildren", {
-        is: "yes",
-        then: Joi.string().valid("male", "female", "other").required(),
-        otherwise: Joi.optional().allow('', null),
-      }),
-      child2Name: Joi.string().optional().allow(''),
-      child2Dob: Joi.string().isoDate().optional().allow(''),
-      child2Gender: Joi.string().valid("male", "female", "other").optional().allow(''),
-      child3Name: Joi.string().optional().allow(''),
-      child3Dob: Joi.string().isoDate().optional().allow(''),
-      child3Gender: Joi.string().valid("male", "female", "other").optional().allow(''),
-      child4Name: Joi.string().optional().allow(''),
-      child4Dob: Joi.string().isoDate().optional().allow(''),
-      child4Gender: Joi.string().valid("male", "female", "other").optional().allow(''),
-      child5Name: Joi.string().optional().allow(''),
-      child5Dob: Joi.string().isoDate().optional().allow(''),
-      child5Gender: Joi.string().valid("male", "female", "other").optional().allow(''),
 
       nationality: Joi.string().min(1).required(),
       aadharCard: Joi.string()
@@ -417,7 +393,7 @@ const finalSubmitSchema = candidateDraftSchema.concat(
       branchName: Joi.string().min(1).required(),
       accountNumber: Joi.string().min(8).required(),
       ifscCode: Joi.string().regex(/^[A-Z]{4}0[A-Z0-9]{6}$/i).required(),
-      accountType: Joi.string().valid("savings", "current").required(),
+      accountType: Joi.string().valid("savings", "current", "fixed", "salary").required(),
     }).required(),
 
     documents: Joi.object({
