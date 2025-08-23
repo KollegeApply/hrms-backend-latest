@@ -16,18 +16,24 @@ exports.getQuotes = catchAsync(async (req, res) => {
         'X-Api-Key': process.env.QUOTES_API_KEY
       },
       cache: {
-        ttl: 60 * 60 * 24 * 1000, // 24 hours in milliseconds
-        interpretHeader: false,
-        key: 'daily-quote'
+        ttl: 60 * 5 * 1000, 
+        interpretHeader: false
       }
     });
 
-    const data = response.data;
-    // console.log('Cached quote:', data);
+    const quotes = response.data || [];
+
+    const unsafeWords = ['sex', 'naked', 'drugs', 'violence'];
+
+    const filteredQuotes = quotes.filter(q =>
+      !unsafeWords.some(word => q.quote.toLowerCase().includes(word))
+    );
+
+    const randomQuote = filteredQuotes[Math.floor(Math.random() * filteredQuotes.length)] || {};
 
     res.status(200).json({
       success: true,
-      data: data[0] || {}
+      data: randomQuote
     });
 
   } catch (err) {
@@ -38,3 +44,5 @@ exports.getQuotes = catchAsync(async (req, res) => {
     });
   }
 });
+
+

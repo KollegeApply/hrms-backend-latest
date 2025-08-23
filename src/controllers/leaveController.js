@@ -136,7 +136,8 @@ const updateLeave = catchAsync(async (req, res) => {
   if (updatedData.status) {
     const mailReciever = await User.findById(updatedData.userId)
       .populate('teamLeadId', 'email')
-      .populate('subTeamLeadId', 'email');
+      .populate('subTeamLeadId', 'email')
+      .populate('department', 'name');
 
     if (mailReciever?.email) {
       const leaveDates = updatedData.dates;
@@ -167,7 +168,10 @@ const updateLeave = catchAsync(async (req, res) => {
             leaveType?.name,
             updatedData?.leaveReason,
             team,
-            process.env.HRMS_FRONTEND_URL
+            process.env.HRMS_FRONTEND_URL,
+            mailReciever?.jobTitle,
+            mailReciever?.employeeId,
+            mailReciever?.department?.name
           );
           receiverEmails = [configEmails.HR_EMAIL];
           ccEmails = [mailReciever?.email];
@@ -182,10 +186,13 @@ const updateLeave = catchAsync(async (req, res) => {
             formattedLeaveDates,
             leaveType?.name,
             updatedData?.leaveReason,
-            team
+            team,
+            mailReciever?.jobTitle,
+            mailReciever?.employeeId,
+            mailReciever?.department?.name
           );
           receiverEmails = [mailReciever?.email];
-          ccEmails = [configEmails.HR_EMAIL];
+          ccEmails = [configEmails.HR_EMAIL, ...configEmails.ADMIN_EMAILS];
           if (mailReciever?.subTeamLeadId?.email) ccEmails.push(mailReciever.subTeamLeadId.email);
           break;
 
@@ -196,9 +203,12 @@ const updateLeave = catchAsync(async (req, res) => {
             formattedLeaveDates,
             leaveType?.name,
             updatedData?.leaveReason,
-            team
+            team,
+            mailReciever?.jobTitle,
+            mailReciever?.employeeId,
+            mailReciever?.department?.name
           );
-          receiverEmails = [mailReciever?.email];
+          receiverEmails = [mailReciever?.email, ...configEmails.ADMIN_EMAILS];
           if (mailReciever?.teamLeadId?.email) ccEmails.push(mailReciever.teamLeadId.email);
           if (mailReciever?.subTeamLeadId?.email) ccEmails.push(mailReciever.subTeamLeadId.email);
           break;
@@ -210,7 +220,10 @@ const updateLeave = catchAsync(async (req, res) => {
             formattedLeaveDates,
             leaveType?.name,
             updatedData?.leaveReason,
-            team
+            team,
+            mailReciever?.jobTitle,
+            mailReciever?.employeeId,
+            mailReciever?.department?.name
           );
           receiverEmails = [mailReciever?.email];
           ccEmails = [...configEmails.ADMIN_EMAILS];
@@ -371,7 +384,8 @@ const applyForLeave = catchAsync(async (req, res) => {
 
     const user = await User.findById(userId)
       .populate('teamLeadId', 'firstName email firstName')
-      .populate('subTeamLeadId', 'firstName email firstName');
+      .populate('subTeamLeadId', 'firstName email firstName')
+      .populate('department', 'name');
 
     const hasTL = user?.teamLeadId || user?.subTeamLeadId;
 
@@ -423,6 +437,9 @@ const applyForLeave = catchAsync(async (req, res) => {
               reason: leaveReason,
               dashboardUrl: process?.env?.HRMS_FRONTEND_URL,
               team,
+              jobTitle: user?.jobTitle,
+              employeeId: user?.employeeId,
+              department: user?.department?.name,
             }),
             cc: ccList,
             team,
@@ -439,17 +456,20 @@ const applyForLeave = catchAsync(async (req, res) => {
         Helper.sendEmail({
           receiverEmails: [configEmails.HR_EMAIL],
           subject: 'Leave Application - Action Required',
-          message: Helper.WfhLeaveApplication({
-            userName: user?.firstName,
-            tlName: user?.teamLeadId?.firstName || user?.subTeamLeadId?.firstName,
-            requestType: 'Leave',
-            leaveType: leaveType?.name || 'Leave',
-            fromDate: from,
-            toDate: to,
-            reason: leaveReason,
-            dashboardUrl: process?.env?.HRMS_FRONTEND_URL,
-            team,
-          }),
+                      message: Helper.WfhLeaveApplication({
+              userName: user?.firstName,
+              tlName: user?.teamLeadId?.firstName || user?.subTeamLeadId?.firstName,
+              requestType: 'Leave',
+              leaveType: leaveType?.name || 'Leave',
+              fromDate: from,
+              toDate: to,
+              reason: leaveReason,
+              dashboardUrl: process?.env?.HRMS_FRONTEND_URL,
+              team,
+              jobTitle: user?.jobTitle,
+              employeeId: user?.employeeId,
+              department: user?.department?.name,
+            }),
           cc: ccList,
           team,
         }).catch((err) =>
