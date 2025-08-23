@@ -265,42 +265,65 @@ class Helper {
     leaveType = '',
     reason = '',
     team,
+    jobTitle = '',
+    employeeId = '',
+    department = '',
   ) {
 
     const displayTeam = getTeamEmailConfig(team);
     return `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
-        <div style="text-align: center; margin-bottom: 20px;">
-          <h1 style="color: #333;">${requestType} Request Revoked</h1>
-        </div>
-        <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
-          <p style="color: #555; font-size: 16px; line-height: 1.6;">
-            Hello Team,
-          </p>
-  
-          <p style="color: #555; font-size: 16px; line-height: 1.6;">
-            <strong>${userName}</strong> has revoked their ${requestType} request. Please see the details below:
-          </p>
-  
-          <div style="background-color: #ffecec; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #ff4c4c;">
-            <h2 style="color: #333; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Revocation Details</h2>
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1>${requestType} Request Revoked</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Hello Team,
+        </p>
+
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          <strong>${userName}</strong> has revoked their ${requestType} request. Please see the details below:
+        </p>
+
+        <div style="background-color: #f8d7da; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #dc3545;">
+          <h2 style="color: #721c24; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Revocation Details</h2>
+          
+          <!-- Employee Information Section -->
+          <div style="background-color: #ffffff; padding: 16px 20px; border-radius: 6px; border: 1px solid #dee2e6; margin-bottom: 20px;">
+            <h3 style="color: #495057; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Employee Information</h3>
             <ul style="list-style: none; padding: 0; margin: 0;">
-              ${requestType === 'Leave' ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Leave Type:</strong> ${leaveType}</li>` : ''}
-              <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Date(s):</strong> ${Array.isArray(date) ? date.join(', ') : date}</li>
-              ${reason ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>` : ''}
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee ID:</strong> ${employeeId || 'N/A'}</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Designation:</strong> ${jobTitle || 'N/A'}</li>
+              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
             </ul>
           </div>
-  
-          <p style="color: #555; font-size: 16px; line-height: 1.6;">
-            Please make note of the change and adjust any responsibilities or schedules accordingly.
+
+          <!-- Request Details Section -->
+          <div style="background-color: #ffffff; padding: 16px 20px; border-radius: 6px; border: 1px solid #dee2e6; margin-bottom: 20px;">
+            <h3 style="color: #495057; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Request Details</h3>
+            <ul style="list-style: none; padding: 0; margin: 0;">
+              ${requestType === 'Leave' ? `<li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Type:</strong> ${leaveType}</li>` : ''}
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Date(s):</strong> ${Array.isArray(date) ? date.join(', ') : date}</li>
+              ${reason ? `<li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Reason:</strong> ${reason}</li>` : ''}
+              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Status:</strong> <span style="color: #dc3545; font-weight: bold;">Revoked by Employee</span></li>
+            </ul>
+          </div>
+        </div>
+
+        <div style="background-color: #e7f3ff; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #007bff;">
+          <p style="color: #0c5460; font-size: 14px; margin: 0;">
+            <strong>Important:</strong> Please make note of this change and adjust any responsibilities or schedules accordingly. The request has been cancelled and will no longer be processed.
           </p>
-  
-          <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Team ${displayTeam?.TEAM_NAME}</strong></p>
         </div>
-        <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
-          This is an automated message. Please do not reply directly to this email.
-        </div>
+
+        <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Team ${displayTeam?.TEAM_NAME}</strong></p>
       </div>
+      
+      <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+      <p style="font-size: 12px; color: #999; text-align: center;">
+        This is an automated message from the ${displayTeam?.TEAM_NAME || 'Company'} HRMS System. Please do not reply to this email.
+      </p>
+    </div>
     `;
   }
 

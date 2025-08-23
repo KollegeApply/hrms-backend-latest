@@ -5,6 +5,21 @@ const _ = require('lodash');
 const jwt = require('jsonwebtoken');
 const User = require('../models/userModel');
 
+
+const cleanDataForUpdate = (data) => {
+  const cleanData = JSON.parse(JSON.stringify(data));
+  delete cleanData._id;
+  
+  const nestedFields = ['personalInfo', 'addressDetails', 'educationDetails', 'medicalInfo', 'backgroundInfo', 'bankDetails', 'documents'];
+  nestedFields.forEach(field => {
+    if (cleanData[field] && cleanData[field]._id) {
+      delete cleanData[field]._id;
+    }
+  });
+  
+  return cleanData;
+};
+
 class CandidateService {
   async createCandidate(data, userId) {
     try {
@@ -68,14 +83,14 @@ class CandidateService {
 
 
   async saveDraft(email, data) {
-    const user = await User.findOne({ email: email });
+    const user = await User.findOne({ email: email, isDeleted: false });
     let candidate;
 
     if (user) {
       candidate = await User
-        .findOne({ email: email });
+        .findOne({ email: email, isDeleted: false });
     } else {
-      candidate = await Candidate.findOne({ personalEmail: email });
+      candidate = await Candidate.findOne({ personalEmail: email, isDeleted: false, status: { $ne: 'backout' } });
     }
     if (!candidate) {
       throw new Error('Candidate not found');
@@ -90,7 +105,9 @@ class CandidateService {
         candidate.userDetails = newUserDetails._id;
       } else {
         const mergedData = _.merge(existingDetails.toObject(), cleanedData);
-        await UserDetails.findByIdAndUpdate(candidate.userDetails, mergedData);
+        const cleanMergedData = cleanDataForUpdate(mergedData);
+        
+        await UserDetails.findByIdAndUpdate(candidate.userDetails, cleanMergedData);
       }
     } else {
       const userDetails = await UserDetails.create(cleanedData);
@@ -115,12 +132,12 @@ class CandidateService {
 
     await candidate.save();
 
-    return Candidate.findOne({ personalEmail: email }).populate('userDetails');
+    return Candidate.findOne({ personalEmail: email, isDeleted: false }).populate('userDetails');
   }
 
 
 async finalSubmit(email, data) {
-  const user = await User.findOne({ email: email });
+  const user = await User.findOne({ email: email, isDeleted: false });
   let candidate;
   let existingUser = false;
 
@@ -128,7 +145,7 @@ async finalSubmit(email, data) {
     candidate = user;
     existingUser = true;
   } else {
-    candidate = await Candidate.findOne({ personalEmail: email });
+    candidate = await Candidate.findOne({ personalEmail: email, isDeleted: false, status: { $ne: 'backout' } });
   }
 
   if (!candidate) throw new Error('Candidate not found');
@@ -152,9 +169,11 @@ async finalSubmit(email, data) {
   }
 
 
+  const cleanData = cleanDataForUpdate(data);
+
   const updatedUserDetails = await UserDetails.findByIdAndUpdate(
     candidate.userDetails,
-    { ...data },
+    cleanData,
     { new: true }
   );
 
@@ -182,8 +201,11 @@ async finalSubmit(email, data) {
     } else {
       status = "underReview";
     }
-    await UserDetails.findByIdAndUpdate(candidate.userDetails, { ...data, status: status }, { new: true });
-    return await Candidate.findOne({ personalEmail: email }).populate('userDetails');
+    
+    const cleanData = cleanDataForUpdate(data);
+    
+    await UserDetails.findByIdAndUpdate(candidate.userDetails, { ...cleanData, status: status }, { new: true });
+    return await Candidate.findOne({ personalEmail: email, isDeleted: false }).populate('userDetails');
   }
 
   async reviewUpdateCandidate(candidateId, updateData) {

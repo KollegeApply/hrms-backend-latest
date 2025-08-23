@@ -38,7 +38,6 @@ const getAllLeave = catchAsync(async (req, res) => {
   });
 });
 
-// Get leave by Id
 const getLeaveById = catchAsync(async (req, res) => {
   const validatedData = await leaveValidator?.leaveIdSchema?.validateAsync({
     id: req?.params?.id,
@@ -61,70 +60,14 @@ const getLeaveById = catchAsync(async (req, res) => {
 
 
 const updateLeave = catchAsync(async (req, res) => {
-  const leaveId = req?.params?.id;
-  const status = req?.body?.status;
-  const edittorId = req?.user?.id;
-  const user = req?.user;
-  const team = user?.team;
+  const { id: leaveId } = req.params;
+  const { status: action } = req.body; 
+  const editor = req.user;
 
-  const currentLeave = await LeaveApplication.findById(leaveId).populate('userId');
-  if (!currentLeave) {
-    throw new ApiError(httpStatus.NOT_FOUND, 'Leave not found.');
-  }
-
-  let targetStatus = status;
-
-
-  if (status === 'approved') {
-    if (['teamlead', 'subteamlead'].includes(user.role)) {
-      if (currentLeave.status === 'tl-pending') {
-        targetStatus = 'hr-pending';
-      } else {
-        throw new ApiError(httpStatus.FORBIDDEN, 'Team leads can only approve TL-pending leaves.');
-      }
-    } else if (['admin', 'hr', 'subadmin'].includes(user.role)) {
-      if (currentLeave.status === 'hr-pending') {
-        targetStatus = 'approved';
-      } else {
-        throw new ApiError(httpStatus.CONFLICT, 'HR can only approve HR-pending leaves.');
-      }
-    } else {
-      throw new ApiError(httpStatus.FORBIDDEN, 'You do not have permission to approve leaves.');
-    }
-
-  } else if (status === 'rejected') {
-    if (['teamlead', 'subteamlead'].includes(user.role)) {
-      if (currentLeave.status === 'tl-pending') {
-        targetStatus = 'tl-rejected';
-      } else {
-        throw new ApiError(httpStatus.FORBIDDEN, 'Team leads can only reject TL-pending leaves.');
-      }
-    } else if (['admin', 'hr', 'subadmin'].includes(user.role)) {
-      if (currentLeave.status === 'hr-pending') {
-        targetStatus = 'hr-rejected';
-      } else {
-        throw new ApiError(httpStatus.CONFLICT, 'HR can only reject HR-pending leaves.');
-      }
-    } else {
-      throw new ApiError(httpStatus.FORBIDDEN, 'You do not have permission to reject leaves.');
-    }
-
-  } else if (status === 'auto-rejected') {
-    targetStatus = 'auto-rejected';
-
-  } else if (status === 'revoked') {
-    if (['tl-pending', 'hr-pending'].includes(currentLeave.status)) {
-      targetStatus = 'revoked';
-    } else {
-      throw new ApiError(httpStatus.CONFLICT, 'You can only revoke pending leaves.');
-    }
-  }
-
-  const validatedData = await leaveValidator?.updateLeaveSchema?.validateAsync({
+  const updatedLeave = await leaveService.updateLeaveStatus({
     leaveId,
-    status: targetStatus,
-    edittorId,
-    userId: user?.id,
+    action,
+    editor,
   });
   const updatedData = await leaveService?.updateLeave(validatedData);
   if (!updatedData) {
@@ -254,9 +197,12 @@ const updateLeave = catchAsync(async (req, res) => {
             formattedLeaveDates,
             leaveType?.name,
             updatedData?.leaveReason,
-            team
+            team,
+            mailReciever?.jobTitle,
+            mailReciever?.employeeId,
+            mailReciever?.department?.name
           );
-          receiverEmails = [configEmails.HR_EMAIL];
+          receiverEmails = [configEmails.HR_EMAIL, ...configEmails.ADMIN_EMAILS];
           if (currentLeave.status === 'tl-pending' && mailReciever?.teamLeadId?.email) {
             receiverEmails = [mailReciever.teamLeadId.email];
           }
@@ -302,7 +248,8 @@ const deleteLeave = catchAsync(async (req, res) => {
 
   const user = await User?.findById(req?.user?.id)
     .populate('teamLeadId', 'email')
-    .populate('subTeamLeadId', 'email');
+    .populate('subTeamLeadId', 'email')
+    .populate('department', 'name');
 
   const sendMail = req?.query?.sendMail === 'true';
   if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
@@ -348,7 +295,8 @@ const deleteLeave = catchAsync(async (req, res) => {
     // Send email
     Helper.sendEmail({
       receiverEmails: [
-        configEmails?.HR_EMAIL
+        configEmails?.HR_EMAIL,
+        ...configEmails?.ADMIN_EMAILS
       ],
       subject: 'Revoked leave application',
       message: Helper.WfhLeaveRevoked(
@@ -358,6 +306,9 @@ const deleteLeave = catchAsync(async (req, res) => {
         leaveType,
         null,
         teamCode,
+        user?.jobTitle,
+        user?.employeeId,
+        user?.department?.name,
       ),
       cc: ccEmails,
       team:teamCode,

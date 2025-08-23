@@ -187,7 +187,8 @@ const deleteWfh = catchAsync(async (req, res) => {
 
   const user = await User?.findById(req?.user?.id)
     .populate('teamLeadId', 'email')
-    .populate('subTeamLeadId', 'email');
+    .populate('subTeamLeadId', 'email')
+    .populate('department', 'name');
 
   const sendMail = req?.body?.sendMail === true;
   if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
@@ -202,7 +203,13 @@ const deleteWfh = catchAsync(async (req, res) => {
       message: Helper.WfhLeaveRevoked(
         user?.firstName,
         'WFH',
-        formatDateToKolkata(validatedData?.date)
+        formatDateToKolkata(validatedData?.date),
+        '',
+        '',
+        user?.team,
+        user?.jobTitle,
+        user?.employeeId,
+        user?.department?.name,
       ),
     }).catch((err) =>
       logger.error(

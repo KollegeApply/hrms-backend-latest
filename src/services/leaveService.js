@@ -70,164 +70,131 @@ class leaveService {
    * @param {Object} updateData - Validated update data
    * @returns {Promise<Leave|null>}
    */
-  async updateLeave(leaveData) {
-    const oldLeave = await LeaveApplication.findOne({
-      _id: leaveData.leaveId,
-      isDeleted: false,
-    }).populate('leaveTypeId');
+async updateLeaveStatus({ leaveId, action, editor }) {
+  // 1. Fetch the leave application
+  const leave = await LeaveApplication.findById(leaveId).populate('leaveTypeId');
+  if (!leave) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Leave application not found.');
+  }
 
-    if (!oldLeave) {
-      throw new ApiError(httpStatus.NOT_FOUND, 'Leave not found.');
-    }
+  // Check if leave is deleted
+  if (leave.isDeleted) {
+    throw new ApiError(httpStatus.CONFLICT, 'Cannot modify a deleted leave application.');
+  }
 
-    // Allow status change from rejected to approved
-    // if (oldLeave.status === 'approved') {
-    //   throw new ApiError(409, 'Cannot modify approved leaves');
-    // }
+  const { role: editorRole, id: editorId } = editor;
+  const currentStatus = leave.status;
 
-    // Allow only certain statuses to be updated based on current state
-    const allowedStatuses = ['tl-pending', 'hr-pending', 'tl-rejected', 'hr-rejected', 'approved', 'auto-rejected', 'revoked'];
-    if (!allowedStatuses.includes(oldLeave.status)) {
-      throw new ApiError(
-        httpStatus.CONFLICT,
-        'Leave status cannot be modified in its current state.'
-      );
-    }
+  // Validate action parameter
+  const validActions = ['approved', 'rejected', 'revoked'];
+  if (!validActions.includes(action)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, `Invalid action '${action}'. Valid actions are: ${validActions.join(', ')}`);
+  }
 
-    if (leaveData.status === 'tl-rejected') {
-      // Team Lead rejection
-      if (oldLeave.status !== 'tl-pending') {
-        throw new ApiError(
-          httpStatus.CONFLICT,
-          'Team Lead can only reject leaves that are pending TL approval.'
-        );
+  const isTeamLead = ['teamlead', 'subteamlead'].includes(editorRole);
+  const isAdminOrHR = ['admin', 'hr', 'subadmin'].includes(editorRole);
+  
+  // 2. State Machine: Determine the next state based on current state, action, and user role
+  switch (currentStatus) {
+    case 'tl-pending':
+      if (isTeamLead) {
+        if (action === 'approved') {
+          leave.status = 'hr-pending';
+          leave.tlApprovedBy = editorId;
+          leave.approvedBy = editorId; // Backward compatibility
+        } else if (action === 'rejected') {
+          leave.status = 'tl-rejected';
+          leave.tlRejectedBy = editorId;
+          leave.rejectedBy = editorId; // Backward compatibility
+        } else {
+          throw new ApiError(httpStatus.BAD_REQUEST, `Invalid action '${action}' for a TL-pending leave.`);
+        }
+      } else if (editorId.toString() === leave.userId.toString() && action === 'revoked') {
+        leave.status = 'revoked';
+      } else {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Only a Team Lead can action this leave.');
       }
-      oldLeave.status = leaveData.status;
-      oldLeave.tlRejectedBy = leaveData.edittorId;
-      oldLeave.rejectedBy = leaveData.edittorId; // Keep for backward compatibility
-    } else if (leaveData.status === 'hr-pending') {
-      // TL approved - move to HR pending
-      if (oldLeave.status !== 'tl-pending') {
-        throw new ApiError(
-          httpStatus.CONFLICT,
-          'Leave can only be moved to HR pending after TL approval.'
-        );
-      }
-      oldLeave.status = leaveData.status;
-      oldLeave.tlApprovedBy = leaveData.edittorId;
-      oldLeave.approvedBy = leaveData.edittorId; // Keep for backward compatibility
-    } else if (leaveData.status === 'hr-rejected') {
-      // HR rejection
-      if (oldLeave.status !== 'hr-pending') {
-        throw new ApiError(
-          httpStatus.CONFLICT,
-          'HR can only reject leaves that are pending HR approval.'
-        );
-      }
-      oldLeave.status = leaveData.status;
-      oldLeave.hrRejectedBy = leaveData.edittorId;
-      oldLeave.rejectedBy = leaveData.edittorId; // Keep for backward compatibility
-    } else if (leaveData.status === 'approved') {
-      // HR approval - final step
-      if (oldLeave.status !== 'hr-pending') {
-        throw new ApiError(
-          httpStatus.CONFLICT,
-          'Leave can only be approved by HR when it is pending HR approval.'
-        );
-      }
-      oldLeave.status = leaveData.status;
-      oldLeave.hrApprovedBy = leaveData.edittorId;
-      oldLeave.approvedBy = leaveData.edittorId; // Keep for backward compatibility
-    } else if (leaveData.status === 'hr-rejected') {
-      // HR rejection (can reject from tl-approved state)
-      if (oldLeave.status !== 'tl-approved') {
-        throw new ApiError(
-          httpStatus.CONFLICT,
-          'HR can only reject leaves that are TL approved.'
-        );
-      }
-      oldLeave.status = leaveData.status;
-      oldLeave.hrRejectedBy = leaveData.edittorId;
-      oldLeave.rejectedBy = leaveData.edittorId; // Keep for backward compatibility
+      break;
 
-      // Only process attendance and balance for final HR approval
-      try {
-        const leaveRecords = Array.isArray(leaveData.leaves)
-          ? leaveData.leaves
-          : [oldLeave];
-
-        await Promise.all(
-          leaveRecords.map(async (leave) => {
-            // Fetch current balance
+    case 'hr-pending':
+      if (isAdminOrHR) {
+        if (action === 'approved') {
+          // --- Side Effects for Approval ---
+          // A. Check and update leave balance (for paid leaves only)
+          if (leave.leaveTypeId.code !== 'LOP') {
             const empBalance = await EmployeeLeaveBalance.findOne({
               userId: leave.userId,
               leaveTypeId: leave.leaveTypeId._id,
             });
 
-            const total =
-              (empBalance?.accrued || 0) + (empBalance?.carryForwarded || 0);
+            const totalAvailable = (empBalance?.accrued || 0) + (empBalance?.carryForwarded || 0);
             const used = empBalance?.used || 0;
-            const daysToAdd = leave.dates?.length || leave.totalDays || 0;
+            const daysToAdd = leave.totalDays || 0;
 
-            if (total - used < daysToAdd) {
-              throw new ApiError(
-                409,
-                `Cannot approve leave: Employee has insufficient leave balance. Available: ${total - used} days, Requested: ${daysToAdd} days.`
-              );
+            if (!empBalance || totalAvailable - used < daysToAdd) {
+              throw new ApiError(httpStatus.CONFLICT, `Insufficient leave balance. Available: ${totalAvailable - used}, Requested: ${daysToAdd}`);
             }
+            empBalance.used += daysToAdd;
+            await empBalance.save();
+          }
 
-            // Proceed with attendance creation only on final HR approval
-            await attendanceService.bulkCreateOrUpdateLeaveAttendance(
-              leave.userId,
-              leave._id,
-              leave.dates
-            );
+          // B. Create attendance records
+          await attendanceService.bulkCreateOrUpdateLeaveAttendance(leave.userId, leave._id, leave.dates);
+          
+          // C. Update the leave status
+          leave.status = 'approved';
+          leave.hrApprovedBy = editorId;
+          leave.approvedBy = editorId; // Backward compatibility
 
-            if (empBalance) {
-              empBalance.used = used + daysToAdd;
-              empBalance.total = total;
-              await empBalance.save();
-            }
-          })
-        );
-      } catch (err) {
-        console.error('Error updating attendance or leave balance total:', err);
-        throw err; // rethrow to prevent save on failure
+        } else if (action === 'rejected') {
+          leave.status = 'hr-rejected';
+          leave.hrRejectedBy = editorId;
+          leave.rejectedBy = editorId; // Backward compatibility
+        } else {
+          throw new ApiError(httpStatus.BAD_REQUEST, `Invalid action '${action}' for an HR-pending leave.`);
+        }
+      } else if (editorId.toString() === leave.userId.toString() && action === 'revoked') {
+        leave.status = 'revoked';
+      } else {
+        throw new ApiError(httpStatus.FORBIDDEN, 'Only HR or an Admin can action this leave.');
       }
-    } else if (leaveData.status === 'rejected') {
-      // Generic rejection (backward compatibility)
-      oldLeave.status = leaveData.status;
-      oldLeave.rejectedBy = leaveData.edittorId;
-    } else if (
-      oldLeave.status === 'hr-approved' &&
-      leaveData.status === 'rejected'
-    ) {
-      oldLeave.status = leaveData.status;
-      // 1. Revert attendance
-      await attendanceService.bulkRevertLeaveAttendance(
-        oldLeave.userId,
-        oldLeave._id,
-        oldLeave.dates
-      );
+      break;
 
-      // 2. Deduct leave from used
-      const empBalance = await EmployeeLeaveBalance.findOne({
-        userId: oldLeave.userId,
-        leaveTypeId: oldLeave.leaveTypeId,
-      });
-
-      if (empBalance) {
-        const daysUsed = oldLeave.dates?.length || oldLeave.totalDays || 0;
-        empBalance.used = Math.max((empBalance.used || 0) - daysUsed, 0); // avoid negative
-        await empBalance.save();
+    case 'approved':
+      // Logic for reverting an already approved leave (Admin/HR action)
+      if (isAdminOrHR && action === 'rejected') {
+          // A. Revert leave balance
+          if (leave.leaveTypeId.code !== 'LOP') {
+              const empBalance = await EmployeeLeaveBalance.findOne({
+                userId: leave.userId,
+                leaveTypeId: leave.leaveTypeId._id,
+              });
+              if (empBalance) {
+                const daysToRevert = leave.totalDays || 0;
+                empBalance.used = Math.max(0, empBalance.used - daysToRevert);
+                await empBalance.save();
+              }
+          }
+          // B. Revert attendance records
+          await attendanceService.bulkRevertLeaveAttendance(leave.userId, leave._id, leave.dates);
+          
+          // C. Update status
+          leave.status = 'hr-rejected';
+          leave.hrRejectedBy = editorId;
+          leave.rejectedBy = editorId; // Backward compatibility
+      } else {
+          throw new ApiError(httpStatus.BAD_REQUEST, 'This leave has already been approved and cannot be changed.');
       }
+      break;
 
-      // 3. Set rejectedBy
-      oldLeave.rejectedBy = leaveData.edittorId;
-    }
-
-    return await oldLeave.save();
+    default:
+      // Covers 'tl-rejected', 'hr-rejected', 'revoked', etc.
+      throw new ApiError(httpStatus.CONFLICT, `Leave in '${currentStatus}' state cannot be modified.`);
   }
+
+  // 3. Save the updated document
+  return await leave.save();
+}
 
   async getLeaveTl({ id, team }) {
     const leadUsers = await User.find(

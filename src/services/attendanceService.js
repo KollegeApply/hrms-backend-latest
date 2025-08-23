@@ -283,10 +283,6 @@ async getTeamMembers(leaderId) {
               message: 'Start date cannot be after end date.',
             };
           }
-
-          // console.log(
-          //   `Using date range: ${startDate.toISOString()} to ${endDate.toISOString()}`
-          // );
           dateQuery = { $gte: startDate, $lte: endDate };
         } else {
           return {
@@ -300,9 +296,7 @@ async getTeamMembers(leaderId) {
         const defaultRange = getCurrentMonthRange();
         startDate = defaultRange?.startOfMonth;
         endDate = defaultRange?.endOfMonth;
-        console.log(
-          `Default: ${startDate.toISOString()} to ${endDate.toISOString()}`
-        );
+       
         dateQuery = { $gte: startDate, $lte: endDate };
       }
       let query = { date: dateQuery };
@@ -458,9 +452,6 @@ if (['teamlead', 'subteamlead'].includes(role)) {
         date: { $in: standardizedDates },
       });
 
-      console.log(
-        `✅ Reverted ${result.deletedCount} leave attendance records for user ${userId}`
-      );
     } catch (err) {
       console.error('❌ Failed to revert leave attendance:', err);
       throw err;

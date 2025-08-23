@@ -33,7 +33,8 @@ const upload = multer({
         case 'LIMIT_FILE_SIZE':
           return next(new ApiError(400, 'File too large. Max size is 5MB'));
         case 'LIMIT_UNEXPECTED_FILE':
-          return next(new ApiError(400, 'Unexpected file upload field'));
+          // Allow unexpected files (optional documents)
+          return next();
         case 'LIMIT_FIELD_KEY':
           return next(new ApiError(400, 'Field name too long'));
         case 'LIMIT_FIELD_VALUE': 
@@ -58,7 +59,15 @@ const upload = multer({
 // Helper to wrap multer middleware with error handling
 const safeUpload = (fields) => {
   return (req, res, next) => {
-    const uploadMiddleware = upload.fields(fields);
+    let uploadMiddleware;
+    
+    if (fields.length === 0) {
+      // Allow any file fields
+      uploadMiddleware = upload.any();
+    } else {
+      // Use specific fields
+      uploadMiddleware = upload.fields(fields);
+    }
     
     uploadMiddleware(req, res, (err) => {
       if (err) {

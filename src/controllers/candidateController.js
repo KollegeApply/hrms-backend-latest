@@ -139,11 +139,10 @@ const finalSubmit = catchAsync(async (req, res) => {
   const files = req.files || {};
 
   const uploadedEntries = await Promise.all(
-  Object.entries(files).map(async ([field, fileArray]) => {
-    if (fileArray?.[0]) {
-      const file = fileArray[0];
-      const simpleField = field.replace('documents.', '');
-      const relativePath = await uploadToAzure(file.buffer, file.originalname);
+    files.map(async (file) => {
+    if (file) {
+      const simpleField = file.fieldname.replace('documents.', '');
+      const relativePath = await uploadToAzure(file.buffer, file.originalname, 'hrms-cif-documents/');
       return [simpleField, relativePath];
     }
     return null;
@@ -155,7 +154,6 @@ const uploadedPaths = Object.fromEntries(
   uploadedEntries.filter(Boolean)
 );
 
-
   const parsedBody = {};
   for (const key in req.body) {
     try {
@@ -165,11 +163,20 @@ const uploadedPaths = Object.fromEntries(
     }
   }
 
+  // Filter out undefined or empty values from uploadedPaths for optional documents
+  const filteredUploadedPaths = {};
+  Object.entries(uploadedPaths).forEach(([key, value]) => {
+    if (value && value.trim() !== '') {
+      filteredUploadedPaths[key] = value;
+    }
+  });
+
+
   const dataToValidate = {
     ...parsedBody,
     documents: {
       ...(parsedBody.documents || {}),
-      ...uploadedPaths,
+      ...filteredUploadedPaths,
     },
   };
 
@@ -212,11 +219,10 @@ const reviewUpdateCandidate = catchAsync(async (req, res) => {
 
   const files = req.files || {};
   const uploadedPaths = {};
-  for (const [field, fileArray] of Object.entries(files)) {
-    if (fileArray && fileArray[0]) {
-      const file = fileArray[0];
-      const relativePath = await uploadToAzure(file.buffer, file.originalname);
-      const simpleField = field.replace('documents.', '');
+  for (const file of files) {
+    if (file) {
+      const relativePath = await uploadToAzure(file.buffer, file.originalname, 'hrms-cif-documents/');
+      const simpleField = file.fieldname.replace('documents.', '');
       uploadedPaths[simpleField] = relativePath;
     }
   }
@@ -230,11 +236,18 @@ const reviewUpdateCandidate = catchAsync(async (req, res) => {
     }
   }
 
+  const filteredUploadedPaths = {};
+  Object.entries(uploadedPaths).forEach(([key, value]) => {
+    if (value && value.trim() !== '') {
+      filteredUploadedPaths[key] = value;
+    }
+  });
+
   const dataToValidate = {
     ...parsedBody,
     documents: {
       ...(parsedBody.documents || {}),
-      ...uploadedPaths,
+      ...filteredUploadedPaths,
     },
   };
 
