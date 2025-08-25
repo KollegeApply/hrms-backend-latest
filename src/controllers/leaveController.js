@@ -63,13 +63,13 @@ const updateLeave = catchAsync(async (req, res) => {
   const { id: leaveId } = req.params;
   const { status: action } = req.body; 
   const editor = req.user;
+  const team = req.user.team;
 
-  const updatedLeave = await leaveService.updateLeaveStatus({
+  const updatedData = await leaveService.updateLeaveStatus({
     leaveId,
     action,
     editor,
   });
-  const updatedData = await leaveService?.updateLeave(validatedData);
   if (!updatedData) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Leave not found or update failed.');
   }
