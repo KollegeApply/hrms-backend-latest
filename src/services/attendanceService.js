@@ -330,24 +330,9 @@ if (['teamlead', 'subteamlead'].includes(role)) {
   async getTodayCheckInStatus(userId) {
     try {
       const now = new Date();
-      const todayStart = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate(),
-        0,
-        0,
-        0,
-        0
-      );
-      const todayEnd = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate(),
-        23,
-        59,
-        59,
-        999
-      );
+      const todayStart = moment.tz('Asia/Kolkata').startOf('day').utc().toDate();
+      const todayEnd = moment.tz('Asia/Kolkata').endOf('day').utc().toDate();
+
 
       const attendance = await Attendance.findOne({
         user: userId,

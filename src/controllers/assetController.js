@@ -27,15 +27,31 @@ const assignAsset = catchAsync(async (req, res) => {
   const sendMail = req?.body?.sendMail === true;
   if (sendMail && process.env.HRMS_FRONTEND_URL) {
     const { assetName, assetType, assignee } = validatedData;
-    const employee = await User.findById(assignee);
+    const employee = await User.findById(assignee)
+      .populate('teamLeadId', 'firstName lastName email')
+      .populate('subTeamLeadId', 'firstName lastName email')
+      .populate('department', 'name');
     const team = req?.user?.team;
+    
+    // Construct full names
+    const employeeFullName = `${employee?.firstName || ''} ${employee?.lastName || ''}`.trim();
+    const teamLeadName = employee?.teamLeadId ? 
+      `${employee.teamLeadId.firstName || ''} ${employee.teamLeadId.lastName || ''}`.trim() : 
+      (employee?.subTeamLeadId ? 
+        `${employee.subTeamLeadId.firstName || ''} ${employee.subTeamLeadId.lastName || ''}`.trim() : 
+        'N/A');
+    
     const emailSubject = `Asset Assignment Notification - ${assetName}`;
     const emailMessage = Helper.getAssetAssignmentEmail(
-      employee.firstName,
+      employeeFullName,
       assetName,
       assetType,
       process.env.HRMS_FRONTEND_URL,
       team,
+      employee?.jobTitle,
+      employee?.employeeId,
+      employee?.department?.name,
+      teamLeadName
     );
 
     const pocEmail = req?.user?.email;
@@ -115,15 +131,29 @@ const updateAssignedAsset = catchAsync(async (req, res) => {
     sendMail &&
     process.env.HRMS_FRONTEND_URL
   ) {
-    const employee = await User.findById(updatedRequest.assignee);
+    const employee = await User.findById(updatedRequest.assignee)
+      .populate('teamLeadId', 'firstName lastName email')
+      .populate('subTeamLeadId', 'firstName lastName email')
+      .populate('department', 'name');
     if (employee) {
+      // Construct full names
+      const employeeFullName = `${employee?.firstName || ''} ${employee?.lastName || ''}`.trim();
+      const teamLeadName = employee?.teamLeadId ? 
+        `${employee.teamLeadId.firstName || ''} ${employee.teamLeadId.lastName || ''}`.trim() : 
+        (employee?.subTeamLeadId ? 
+          `${employee.subTeamLeadId.firstName || ''} ${employee.subTeamLeadId.lastName || ''}`.trim() : 
+          'N/A');
+      
       const emailSubject = `Asset Returned Confirmation - ${updatedRequest.assetName}`;
       const emailMessage = Helper.getAssetReceivedConfirmationEmail(
-        employee.firstName,
+        employeeFullName,
         employee.employeeId,
         updatedRequest.assetName,
         updatedRequest.assetType,
-        process.env.HRMS_FRONTEND_URL
+        process.env.HRMS_FRONTEND_URL,
+        employee?.jobTitle,
+        employee?.department?.name,
+        teamLeadName
       );
 
       const configEmails = getTeamEmailConfig(req.user.team);
@@ -211,18 +241,31 @@ const acknowledgeAsset = catchAsync(async (req, res) => {
   if (sendMail && process.env.HRMS_FRONTEND_URL) {
     const { assetName, assetType, assignee, assignedBy } = updatedAssignment;
     const [employee, poc] = await Promise.all([
-      User.findById(assignee),
+      User.findById(assignee)
+        .populate('teamLeadId', 'firstName lastName email')
+        .populate('subTeamLeadId', 'firstName lastName email')
+        .populate('department', 'name'),
       User.findById(assignedBy),
     ]);
 
+    // Construct full names
+    const employeeFullName = `${employee?.firstName || ''} ${employee?.lastName || ''}`.trim();
+    const teamLeadName = employee?.teamLeadId ? 
+      `${employee.teamLeadId.firstName || ''} ${employee.teamLeadId.lastName || ''}`.trim() : 
+      (employee?.subTeamLeadId ? 
+        `${employee.subTeamLeadId.firstName || ''} ${employee.subTeamLeadId.lastName || ''}`.trim() : 
+        'N/A');
 
     const emailSubject = `Asset Acknowledgment Confirmation - ${assetName}`;
     const emailMessage = Helper.getAssetAcknowledgmentEmail(
-      employee.firstName,
+      employeeFullName,
       employee.employeeId,
       assetName,
       assetType,
-      process.env.HRMS_FRONTEND_URL
+      process.env.HRMS_FRONTEND_URL,
+      employee?.jobTitle,
+      employee?.department?.name,
+      teamLeadName
     );
 
     const configEmails = getTeamEmailConfig(req.user.team);
@@ -281,17 +324,31 @@ const rejectAsset = catchAsync(async (req, res) => {
     const { assetName, assetType, assignedBy } = assetAssignment;
 
     const [employee, poc] = await Promise.all([
-      User.findById(userId),
+      User.findById(userId)
+        .populate('teamLeadId', 'firstName lastName email')
+        .populate('subTeamLeadId', 'firstName lastName email')
+        .populate('department', 'name'),
       User.findById(assignedBy),
     ]);
 
+    // Construct full names
+    const employeeFullName = `${employee?.firstName || ''} ${employee?.lastName || ''}`.trim();
+    const teamLeadName = employee?.teamLeadId ? 
+      `${employee.teamLeadId.firstName || ''} ${employee.teamLeadId.lastName || ''}`.trim() : 
+      (employee?.subTeamLeadId ? 
+        `${employee.subTeamLeadId.firstName || ''} ${employee.subTeamLeadId.lastName || ''}`.trim() : 
+        'N/A');
+
     const emailSubject = `Asset Rejection Notification - ${assetName}`;
     const emailMessage = Helper.getAssetRejectionEmail(
-      employee.firstName,
+      employeeFullName,
       employee.employeeId,
       assetName,
       assetType,
-      process.env.HRMS_FRONTEND_URL
+      process.env.HRMS_FRONTEND_URL,
+      employee?.jobTitle,
+      employee?.department?.name,
+      teamLeadName
     );
 
     const configEmails = getTeamEmailConfig(team);
@@ -351,18 +408,32 @@ const returnAsset = catchAsync(async (req, res) => {
   if (sendMail && process.env.HRMS_FRONTEND_URL) {
     const { assignedBy } = updatedAssignment;
     const [employee, poc] = await Promise.all([
-      User.findById({ _id: userId }),
+      User.findById({ _id: userId })
+        .populate('teamLeadId', 'firstName lastName email')
+        .populate('subTeamLeadId', 'firstName lastName email')
+        .populate('department', 'name'),
       User.findById(assignedBy),
     ]);
     const { assetName, assetType } = updatedAssignment;
 
+    // Construct full names
+    const employeeFullName = `${employee?.firstName || ''} ${employee?.lastName || ''}`.trim();
+    const teamLeadName = employee?.teamLeadId ? 
+      `${employee.teamLeadId.firstName || ''} ${employee.teamLeadId.lastName || ''}`.trim() : 
+      (employee?.subTeamLeadId ? 
+        `${employee.subTeamLeadId.firstName || ''} ${employee.subTeamLeadId.lastName || ''}`.trim() : 
+        'N/A');
+
     const emailSubject = `Asset Return Request - ${assetName}`;
     const emailMessage = Helper.getAssetReturnRequestEmail(
-      employee.firstName,
+      employeeFullName,
       employee.employeeId,
       assetName,
       assetType,
-      process.env.HRMS_FRONTEND_URL
+      process.env.HRMS_FRONTEND_URL,
+      employee?.jobTitle,
+      employee?.department?.name,
+      teamLeadName
     );
      
     const configEmails = getTeamEmailConfig(team);
@@ -422,19 +493,33 @@ const handleAssetRequestUpdate = catchAsync(async (req, res) => {
   const sendMail = req?.body?.sendMail;
   const shouldSendEmail = ['return_approved', 'return_rejected'].includes(status.toLowerCase());
   if (sendMail && shouldSendEmail && process.env.HRMS_FRONTEND_URL) {
-    const employee = await User.findById(updatedRequest.assignee);
+    const employee = await User.findById(updatedRequest.assignee)
+      .populate('teamLeadId', 'firstName lastName email')
+      .populate('subTeamLeadId', 'firstName lastName email')
+      .populate('department', 'name');
     const { assetName, assetType } = updatedRequest;
+
+    // Construct full names
+    const employeeFullName = `${employee?.firstName || ''} ${employee?.lastName || ''}`.trim();
+    const teamLeadName = employee?.teamLeadId ? 
+      `${employee.teamLeadId.firstName || ''} ${employee.teamLeadId.lastName || ''}`.trim() : 
+      (employee?.subTeamLeadId ? 
+        `${employee.subTeamLeadId.firstName || ''} ${employee.subTeamLeadId.lastName || ''}`.trim() : 
+        'N/A');
 
     const updStatus = (status === "return_approved") ? "approved" : "rejected";
 
     const emailSubject = `Asset Return Request ${updStatus.charAt(0).toUpperCase() + updStatus.slice(1)} - ${assetName}`;
     const emailMessage = Helper.getAssetReturnStatusEmail(
-      employee.firstName,
+      employeeFullName,
       employee.employeeId,
       assetName,
       assetType,
       updStatus,
-      process.env.HRMS_FRONTEND_URL
+      process.env.HRMS_FRONTEND_URL,
+      employee?.jobTitle,
+      employee?.department?.name,
+      teamLeadName
     );
    
     const configEmails = getTeamEmailConfig(team);
