@@ -78,12 +78,19 @@ const updateLeave = catchAsync(async (req, res) => {
 
   if (updatedData.status) {
     const mailReciever = await User.findById(updatedData.userId)
-      .populate('teamLeadId', 'email')
-      .populate('subTeamLeadId', 'email')
+      .populate('teamLeadId', 'firstName lastName email')
+      .populate('subTeamLeadId', 'firstName lastName email')
       .populate('department', 'name');
 
     // Construct full name
     const fullName = `${mailReciever?.firstName || ''} ${mailReciever?.lastName || ''}`.trim();
+    
+    // Construct Team Lead name
+    const teamLeadName = mailReciever?.teamLeadId ? 
+      `${mailReciever.teamLeadId.firstName || ''} ${mailReciever.teamLeadId.lastName || ''}`.trim() : 
+      (mailReciever?.subTeamLeadId ? 
+        `${mailReciever.subTeamLeadId.firstName || ''} ${mailReciever.subTeamLeadId.lastName || ''}`.trim() : 
+        'N/A');
 
     if (mailReciever?.email) {
       const leaveDates = updatedData.dates;
@@ -117,7 +124,8 @@ const updateLeave = catchAsync(async (req, res) => {
             process.env.HRMS_FRONTEND_URL,
             mailReciever?.jobTitle,
             mailReciever?.employeeId,
-            mailReciever?.department?.name
+            mailReciever?.department?.name,
+            teamLeadName
           );
           receiverEmails = [configEmails.HR_EMAIL];
           ccEmails = [mailReciever?.email];
@@ -135,7 +143,8 @@ const updateLeave = catchAsync(async (req, res) => {
             team,
             mailReciever?.jobTitle,
             mailReciever?.employeeId,
-            mailReciever?.department?.name
+            mailReciever?.department?.name,
+            teamLeadName
           );
           receiverEmails = [mailReciever?.email];
           ccEmails = [configEmails.HR_EMAIL, ...configEmails.ADMIN_EMAILS];
@@ -152,7 +161,8 @@ const updateLeave = catchAsync(async (req, res) => {
             team,
             mailReciever?.jobTitle,
             mailReciever?.employeeId,
-            mailReciever?.department?.name
+            mailReciever?.department?.name,
+            teamLeadName
           );
           receiverEmails = [mailReciever?.email, ...configEmails.ADMIN_EMAILS];
           if (mailReciever?.teamLeadId?.email) ccEmails.push(mailReciever.teamLeadId.email);
@@ -169,7 +179,8 @@ const updateLeave = catchAsync(async (req, res) => {
             team,
             mailReciever?.jobTitle,
             mailReciever?.employeeId,
-            mailReciever?.department?.name
+            mailReciever?.department?.name,
+            teamLeadName
           );
           receiverEmails = [mailReciever?.email];
           ccEmails = [...configEmails.ADMIN_EMAILS];
@@ -185,7 +196,8 @@ const updateLeave = catchAsync(async (req, res) => {
             leaveType?.name,
             updatedData?.leaveReason,
             team,
-            mailReciever?.employeeId
+            mailReciever?.employeeId,
+            teamLeadName
           );
           receiverEmails = [mailReciever?.email];
           ccEmails = [configEmails.HR_EMAIL];
@@ -204,7 +216,8 @@ const updateLeave = catchAsync(async (req, res) => {
             team,
             mailReciever?.jobTitle,
             mailReciever?.employeeId,
-            mailReciever?.department?.name
+            mailReciever?.department?.name,
+            teamLeadName
           );
           receiverEmails = [configEmails.HR_EMAIL, ...configEmails.ADMIN_EMAILS];
           if (currentLeave.status === 'tl-pending' && mailReciever?.teamLeadId?.email) {

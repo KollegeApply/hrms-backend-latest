@@ -27,8 +27,13 @@ const assignedAssetSchema = new Schema(
       required: function() {
         return this.assetType === 'laptop';
       },
-      enum: {
-        values: VALID_LAPTOP_TYPES,
+      validate: {
+        validator: function(value) {
+          if (this.assetType === 'laptop') {
+            return VALID_LAPTOP_TYPES.includes(value);
+          }
+          return value === '' || value === null || value === undefined;
+        },
         message: 'Invalid laptop type: {VALUE}',
       },
       trim: true,

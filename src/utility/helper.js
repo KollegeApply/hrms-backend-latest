@@ -224,7 +224,8 @@ class Helper {
         <ul style="list-style: none; padding: 0; margin: 0;">
           <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee:</strong> ${userName} (${employeeId || 'N/A'})</li>
           <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Designation:</strong> ${jobTitle || 'N/A'}</li>
-          <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+          <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+          <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Team Lead:</strong> N/A</li>
         </ul>
       </div>
 
@@ -284,7 +285,7 @@ class Helper {
         <h1>${requestType} Request Revoked</h1>
       </div>
       <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
-        <p style="text-align: center; margin-bottom: 20px;">
+        <p style="font-size: 16px; margin-bottom: 20px;">
           Hello Team,
         </p>
 
@@ -301,7 +302,8 @@ class Helper {
             <ul style="list-style: none; padding: 0; margin: 0;">
               <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee:</strong> ${userName} (${employeeId || 'N/A'})</li>
               <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Designation:</strong> ${jobTitle || 'N/A'}</li>
-              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Team Lead:</strong> N/A</li>
             </ul>
           </div>
 
@@ -440,7 +442,8 @@ class Helper {
   <ul style="list-style: none; padding: 0; margin: 0;">
     <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee:</strong> ${userName} (${employeeId || 'N/A'})</li>
     <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Designation:</strong> ${jobTitle || 'N/A'}</li>
-    <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+    <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+    <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Team Lead:</strong> ${tlName || 'N/A'}</li>
   </ul>
 </div>
 
@@ -525,7 +528,7 @@ class Helper {
   }
 
 
-  static getAssetReturnRequestEmail(firstName, employeeId, assetName, assetType, dashboardUrl) {
+  static getAssetReturnRequestEmail(firstName, employeeId, assetName, assetType, dashboardUrl, jobTitle, department, teamLeadName) {
     return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
       <div style="text-align: center; margin-bottom: 20px;">
@@ -538,12 +541,19 @@ class Helper {
         </p>
 
         <div style="background-color: #eef; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #007bff;">
-          <p style="color: #555; font-size: 15px;">
-            <strong>Employee Name:</strong> ${firstName}<br>
-            <strong>Employee ID:</strong> ${employeeId}<br>
-            <strong>Asset Name:</strong> ${assetName}<br>
-            <strong>Asset Type:</strong> ${assetType}
-          </p>
+          <h3 style="color: #495057; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Employee Information</h3>
+          <ul style="list-style: none; padding: 0; margin: 0;">
+            <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee:</strong> ${firstName} (${employeeId})</li>
+            <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Designation:</strong> ${jobTitle || 'N/A'}</li>
+            <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+            <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Team Lead:</strong> ${teamLeadName || 'N/A'}</li>
+          </ul>
+          
+          <h3 style="color: #495057; font-size: 15px; margin: 20px 0 10px 0; font-weight: 600;">Asset Information</h3>
+          <ul style="list-style: none; padding: 0; margin: 0;">
+            <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Asset Name:</strong> ${assetName}</li>
+            <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Asset Type:</strong> ${assetType}</li>
+          </ul>
         </div>
 
         <p style="color: #555; font-size: 16px; line-height: 1.6;">
@@ -558,7 +568,7 @@ class Helper {
 
 
 
-  static getAssetAssignmentEmail(firstName, assetName, assetType, loginUrl, team) {
+  static getAssetAssignmentEmail(firstName, assetName, assetType, loginUrl, team, jobTitle, employeeId, department, teamLeadName) {
     return `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
   <div style="text-align: center; margin-bottom: 20px;">
@@ -573,6 +583,17 @@ class Helper {
     <p style="color: #555; font-size: 16px; line-height: 1.6;">
       You have been assigned a new asset: <strong>${assetName}</strong> (Asset Type: ${assetType}).
     </p>
+
+    <!-- Employee Information Section -->
+    <div style="background-color: #f8f9fa; padding: 16px 20px; border-radius: 6px; border: 1px solid #dee2e6; margin: 20px 0;">
+      <h3 style="color: #495057; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Employee Information</h3>
+      <ul style="list-style: none; padding: 0; margin: 0;">
+        <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee:</strong> ${firstName} (${employeeId || 'N/A'})</li>
+        <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Designation:</strong> ${jobTitle || 'N/A'}</li>
+        <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+        <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Team Lead:</strong> ${teamLeadName || 'N/A'}</li>
+      </ul>
+    </div>
 
     <p style="color: #555; font-size: 16px; line-height: 1.6;">
       Please review and acknowledge the receipt of this asset.
@@ -602,7 +623,10 @@ class Helper {
     employeeId,
     assetName,
     assetType,
-    dashboardUrl
+    dashboardUrl,
+    jobTitle,
+    department,
+    teamLeadName
   ) {
     return `
 <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
@@ -616,12 +640,19 @@ class Helper {
     </p>
 
     <div style="background-color: #eef; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #66f;">
-      <p style="color: #555; font-size: 15px;">
-        <strong>Employee Name:</strong> ${employeeName}<br>
-        <strong>Employee ID:</strong> ${employeeId}<br>
-        <strong>Asset Name:</strong> ${assetName}<br>
-        <strong>Asset Type:</strong> ${assetType}
-      </p>
+      <h3 style="color: #495057; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Employee Information</h3>
+      <ul style="list-style: none; padding: 0; margin: 0;">
+        <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee:</strong> ${employeeName} (${employeeId})</li>
+        <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Designation:</strong> ${jobTitle || 'N/A'}</li>
+        <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+        <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Team Lead:</strong> ${teamLeadName || 'N/A'}</li>
+      </ul>
+      
+      <h3 style="color: #495057; font-size: 15px; margin: 20px 0 10px 0; font-weight: 600;">Asset Information</h3>
+      <ul style="list-style: none; padding: 0; margin: 0;">
+        <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Asset Name:</strong> ${assetName}</li>
+        <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Asset Type:</strong> ${assetType}</li>
+      </ul>
     </div>
 
     <p style="color: #555; font-size: 16px; line-height: 1.6;">
@@ -641,14 +672,14 @@ class Helper {
   `;
   }
 
-  static getAssetReturnStatusEmail(firstName, employeeId, assetName, assetType, status, dashboardUrl) {
+  static getAssetReturnStatusEmail(firstName, employeeId, assetName, assetType, status, dashboardUrl, jobTitle, department, teamLeadName) {
     const statusColor = status === 'approved' ? '#28a745' : '#dc3545';
     const capitalizedStatus = status.charAt(0).toUpperCase() + status.slice(1);
 
     return `
   <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 24px; border: 1px solid #ddd; border-radius: 8px; background-color: #fdfdfd;">
     <div style="text-align: center; margin-bottom: 24px;">
-      <h2 style="color: #333; font-size: 22px;">Asset Return Request <span style="color: ${statusColor};">${capitalizedStatus}</span></h2>
+      <h2 style="color: #333; font-size: 22px;">Asset Return Request ${capitalizedStatus}</h2>
     </div>
 
     <div style="background-color: #fff; padding: 28px 24px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
@@ -657,24 +688,29 @@ class Helper {
       </p>
 
       <p style="font-size: 15px; color: #555; line-height: 1.5; margin-bottom: 16px;">
-        Your asset return request has been 
-        <strong style="color: ${statusColor};">${capitalizedStatus}</strong>. Below are the request details:
+        Your asset return request has been ${capitalizedStatus}. Below are the request details:
       </p>
 
-      <table style="width: 100%; font-size: 14px; color: #555; margin-bottom: 24px;">
-        <tr>
-          <td style="padding: 8px 0;"><strong>Employee ID:</strong></td>
-          <td style="padding: 8px 0;">${employeeId}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0;"><strong>Asset Name:</strong></td>
-          <td style="padding: 8px 0;">${assetName}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0;"><strong>Asset Type:</strong></td>
-          <td style="padding: 8px 0;">${assetType}</td>
-        </tr>
-      </table>
+      <!-- Employee Information Section -->
+      <div style="background-color: #f8f9fa; padding: 16px 20px; border-radius: 6px; border: 1px solid #dee2e6; margin: 20px 0;">
+        <h3 style="color: #495057; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Employee Information</h3>
+        <ul style="list-style: none; padding: 0; margin: 0;">
+          <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee:</strong> ${firstName} (${employeeId})</li>
+          <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Designation:</strong> ${jobTitle || 'N/A'}</li>
+          <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+          <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Team Lead:</strong> ${teamLeadName || 'N/A'}</li>
+        </ul>
+      </div>
+
+      <!-- Asset Information Section -->
+      <div style="background-color: #f8f9fa; padding: 16px 20px; border-radius: 6px; border: 1px solid #dee2e6; margin: 20px 0;">
+        <h3 style="color: #495057; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Asset Information</h3>
+        <ul style="list-style: none; padding: 0; margin: 0;">
+          <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Asset Name:</strong> ${assetName}</li>
+          <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Asset Type:</strong> ${assetType}</li>
+          <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Status:</strong> <span style="color: ${statusColor}; font-weight: bold;">${capitalizedStatus}</span></li>
+        </ul>
+      </div>
 
       <div style="text-align: center; margin: 30px 0;">
         <a href="${dashboardUrl}" style="background-color: #007bff; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
@@ -706,12 +742,15 @@ class Helper {
     employeeId,
     assetName,
     assetType,
-    dashboardUrl
+    dashboardUrl,
+    jobTitle,
+    department,
+    teamLeadName
   ) {
     return `
   <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 24px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
     <div style="text-align: center; margin-bottom: 24px;">
-      <h2 style="color: #dc3545; font-size: 22px;">🚫 Asset Rejection Notification</h2>
+      <h2 style="color: #dc3545; font-size: 22px;">Asset Rejection Notification</h2>
     </div>
 
     <div style="background-color: #fff; padding: 28px 24px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
@@ -723,24 +762,25 @@ class Helper {
         The following asset has been <strong>rejected</strong> by the employee:
       </p>
 
-      <table style="width: 100%; font-size: 14px; color: #555; margin-bottom: 24px;">
-        <tr>
-          <td style="padding: 8px 0;"><strong>Employee Name:</strong></td>
-          <td style="padding: 8px 0;">${employeeName}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0;"><strong>Employee ID:</strong></td>
-          <td style="padding: 8px 0;">${employeeId}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0;"><strong>Asset Name:</strong></td>
-          <td style="padding: 8px 0;">${assetName}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0;"><strong>Asset Type:</strong></td>
-          <td style="padding: 8px 0;">${assetType}</td>
-        </tr>
-      </table>
+      <!-- Employee Information Section -->
+      <div style="background-color: #f8f9fa; padding: 16px 20px; border-radius: 6px; border: 1px solid #dee2e6; margin: 20px 0;">
+        <h3 style="color: #495057; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Employee Information</h3>
+        <ul style="list-style: none; padding: 0; margin: 0;">
+          <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee:</strong> ${employeeName} (${employeeId})</li>
+          <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Designation:</strong> ${jobTitle || 'N/A'}</li>
+          <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+          <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Team Lead:</strong> ${teamLeadName || 'N/A'}</li>
+        </ul>
+      </div>
+
+      <!-- Asset Information Section -->
+      <div style="background-color: #f8f9fa; padding: 16px 20px; border-radius: 6px; border: 1px solid #dee2e6; margin: 20px 0;">
+        <h3 style="color: #495057; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Asset Information</h3>
+        <ul style="list-style: none; padding: 0; margin: 0;">
+          <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Asset Name:</strong> ${assetName}</li>
+          <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Asset Type:</strong> ${assetType}</li>
+        </ul>
+      </div>
 
       <p style="font-size: 15px; color: #555; line-height: 1.5; margin-bottom: 20px;">
         You can review this rejection in the dashboard below:
@@ -767,7 +807,7 @@ class Helper {
 
 
 
-  static getAssetReceivedConfirmationEmail(firstName, employeeId, assetName, assetType, dashboardUrl) {
+  static getAssetReceivedConfirmationEmail(firstName, employeeId, assetName, assetType, dashboardUrl, jobTitle, department, teamLeadName) {
     return `
   <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 24px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
     <div style="text-align: center; margin-bottom: 24px;">
@@ -783,24 +823,25 @@ class Helper {
         The following asset has been successfully <strong>returned and received</strong> from the employee:
       </p>
 
-      <table style="width: 100%; font-size: 14px; color: #555; margin-bottom: 24px;">
-        <tr>
-          <td style="padding: 8px 0;"><strong>Employee Name:</strong></td>
-          <td style="padding: 8px 0;">${firstName}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0;"><strong>Employee ID:</strong></td>
-          <td style="padding: 8px 0;">${employeeId}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0;"><strong>Asset Name:</strong></td>
-          <td style="padding: 8px 0;">${assetName}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px 0;"><strong>Asset Type:</strong></td>
-          <td style="padding: 8px 0;">${assetType}</td>
-        </tr>
-      </table>
+      <!-- Employee Information Section -->
+      <div style="background-color: #f8f9fa; padding: 16px 20px; border-radius: 6px; border: 1px solid #dee2e6; margin: 20px 0;">
+        <h3 style="color: #495057; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Employee Information</h3>
+        <ul style="list-style: none; padding: 0; margin: 0;">
+          <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee:</strong> ${firstName} (${employeeId})</li>
+          <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Designation:</strong> ${jobTitle || 'N/A'}</li>
+          <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+          <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Team Lead:</strong> ${teamLeadName || 'N/A'}</li>
+        </ul>
+      </div>
+
+      <!-- Asset Information Section -->
+      <div style="background-color: #f8f9fa; padding: 16px 20px; border-radius: 6px; border: 1px solid #dee2e6; margin: 20px 0;">
+        <h3 style="color: #495057; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Asset Information</h3>
+        <ul style="list-style: none; padding: 0; margin: 0;">
+          <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Asset Name:</strong> ${assetName}</li>
+          <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Asset Type:</strong> ${assetType}</li>
+        </ul>
+      </div>
 
       <p style="font-size: 15px; color: #555; line-height: 1.5; margin-bottom: 20px;">
         You can review the full record in the dashboard below:
@@ -1407,7 +1448,7 @@ class Helper {
   /**
    * Email template for Team Lead approval notification
    */
-  static leaveTLApprovalNotification(userName, date, leaveType, reason, team, jobTitle = 'N/A', employeeId = 'N/A', department = 'N/A') {
+  static leaveTLApprovalNotification(userName, date, leaveType, reason, team, jobTitle = 'N/A', employeeId = 'N/A', department = 'N/A', teamLeadName = 'N/A') {
     const displayTeam = getTeamEmailConfig(team);
     
     // Extract firstName from full name for greeting
@@ -1436,7 +1477,8 @@ class Helper {
             <ul style="list-style: none; padding: 0; margin: 0;">
               <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee:</strong> ${userName} (${employeeId})</li>
               <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Designation:</strong> ${jobTitle}</li>
-              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Department:</strong> ${department}</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Department:</strong> ${department}</li>
+              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Team Lead:</strong> ${teamLeadName}</li>
             </ul>
           </div>
 
@@ -1478,7 +1520,7 @@ class Helper {
   /**
    * Email template for Team Lead rejection notification
    */
-  static leaveTLRejectionNotification(userName, date, leaveType, reason, team, jobTitle, employeeId, department) {
+  static leaveTLRejectionNotification(userName, date, leaveType, reason, team, jobTitle, employeeId, department, teamLeadName) {
     const displayTeam = getTeamEmailConfig(team);
     
     // Extract firstName from full name for greeting
@@ -1507,7 +1549,8 @@ class Helper {
             <ul style="list-style: none; padding: 0; margin: 0;">
               <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee:</strong> ${userName} (${employeeId || 'N/A'})</li>
               <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Designation:</strong> ${jobTitle || 'N/A'}</li>
-              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Team Lead:</strong> ${teamLeadName || 'N/A'}</li>
             </ul>
           </div>
 
@@ -1548,7 +1591,7 @@ class Helper {
   /**
    * Email template for HR final approval notification
    */
-  static leaveHRApprovalNotification(userName, date, leaveType, reason, team, jobTitle, employeeId, department) {
+  static leaveHRApprovalNotification(userName, date, leaveType, reason, team, jobTitle, employeeId, department, teamLeadName) {
     const displayTeam = getTeamEmailConfig(team);
     
     // Extract firstName from full name for greeting
@@ -1577,7 +1620,8 @@ class Helper {
             <ul style="list-style: none; padding: 0; margin: 0;">
               <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee:</strong> ${userName} (${employeeId || 'N/A'})</li>
               <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Designation:</strong> ${jobTitle || 'N/A'}</li>
-              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Team Lead:</strong> ${teamLeadName || 'N/A'}</li>
             </ul>
           </div>
 
@@ -1619,7 +1663,7 @@ class Helper {
   /**
    * Email template for HR rejection notification
    */
-  static leaveHRRejectionNotification(userName, date, leaveType, reason, team, jobTitle, employeeId, department) {
+  static leaveHRRejectionNotification(userName, date, leaveType, reason, team, jobTitle, employeeId, department, teamLeadName) {
     const displayTeam = getTeamEmailConfig(team);
     
     // Extract firstName from full name for greeting
@@ -1648,7 +1692,8 @@ class Helper {
             <ul style="list-style: none; padding: 0; margin: 0;">
               <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee:</strong> ${userName} (${employeeId || 'N/A'})</li>
               <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Designation:</strong> ${jobTitle || 'N/A'}</li>
-              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Team Lead:</strong> ${teamLeadName || 'N/A'}</li>
             </ul>
           </div>
 
@@ -1689,7 +1734,7 @@ class Helper {
   /**
    * Email template for HR notification when leave needs their approval
    */
-  static leaveHRPendingNotification(employeeName, date, leaveType, reason, team, dashboardUrl, jobTitle, employeeId, department) {
+  static leaveHRPendingNotification(employeeName, date, leaveType, reason, team, dashboardUrl, jobTitle, employeeId, department, teamLeadName) {
     const displayTeam = getTeamEmailConfig(team);
 
     return `
@@ -1715,7 +1760,8 @@ class Helper {
             <ul style="list-style: none; padding: 0; margin: 0;">
               <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee:</strong> ${employeeName} (${employeeId || 'N/A'})</li>
               <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Designation:</strong> ${jobTitle || 'N/A'}</li>
-              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Team Lead:</strong> ${teamLeadName || 'N/A'}</li>
             </ul>
           </div>
 
@@ -1766,7 +1812,7 @@ class Helper {
   /**
    * Email template for automatic leave rejection notification
    */
-  static leaveAutoRejectionNotification(userName, date, leaveType, reason, team, employeeId = 'N/A') {
+  static leaveAutoRejectionNotification(userName, date, leaveType, reason, team, employeeId = 'N/A', teamLeadName = 'N/A') {
     const displayTeam = getTeamEmailConfig(team);
     
     // Extract firstName from full name for greeting
@@ -1794,6 +1840,7 @@ class Helper {
             <h3 style="color: #495057; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Employee Information</h3>
             <ul style="list-style: none; padding: 0; margin: 0;">
               <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee:</strong> ${userName} (${employeeId})</li>
+              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Team Lead:</strong> ${teamLeadName}</li>
             </ul>
           </div>
 
@@ -1833,7 +1880,7 @@ class Helper {
   /**
    * Email template for leave revocation notification
    */
-  static leaveRevokedNotification(userName, date, leaveType, reason, team, jobTitle, employeeId, department) {
+  static leaveRevokedNotification(userName, date, leaveType, reason, team, jobTitle, employeeId, department, teamLeadName) {
     const displayTeam = getTeamEmailConfig(team);
     
     // Extract firstName from full name for greeting
@@ -1862,7 +1909,8 @@ class Helper {
             <ul style="list-style: none; padding: 0; margin: 0;">
               <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee:</strong> ${userName} (${employeeId || 'N/A'})</li>
               <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Designation:</strong> ${jobTitle || 'N/A'}</li>
-              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Team Lead:</strong> ${teamLeadName || 'N/A'}</li>
             </ul>
           </div>
 
