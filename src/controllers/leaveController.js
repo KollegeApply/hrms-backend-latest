@@ -82,6 +82,9 @@ const updateLeave = catchAsync(async (req, res) => {
       .populate('subTeamLeadId', 'email')
       .populate('department', 'name');
 
+    // Construct full name
+    const fullName = `${mailReciever?.firstName || ''} ${mailReciever?.lastName || ''}`.trim();
+
     if (mailReciever?.email) {
       const leaveDates = updatedData.dates;
       if (!leaveDates || (Array.isArray(leaveDates) && leaveDates.length === 0)) {
@@ -106,7 +109,7 @@ const updateLeave = catchAsync(async (req, res) => {
         case 'hr-pending':
           emailSubject = 'Leave Request Pending Your Approval';
           emailMessage = Helper.leaveHRPendingNotification(
-            mailReciever?.firstName,
+            fullName,
             formattedLeaveDates,
             leaveType?.name,
             updatedData?.leaveReason,
@@ -125,7 +128,7 @@ const updateLeave = catchAsync(async (req, res) => {
         case 'tl-rejected':
           emailSubject = 'Your Leave Request Has Been Rejected by Team Lead';
           emailMessage = Helper.leaveTLRejectionNotification(
-            mailReciever?.firstName,
+            fullName,
             formattedLeaveDates,
             leaveType?.name,
             updatedData?.leaveReason,
@@ -142,7 +145,7 @@ const updateLeave = catchAsync(async (req, res) => {
         case 'hr-rejected':
           emailSubject = 'Your Leave Request Has Been Rejected by HR';
           emailMessage = Helper.leaveHRRejectionNotification(
-            mailReciever?.firstName,
+            fullName,
             formattedLeaveDates,
             leaveType?.name,
             updatedData?.leaveReason,
@@ -159,7 +162,7 @@ const updateLeave = catchAsync(async (req, res) => {
         case 'approved':
           emailSubject = 'Your Leave Request Has Been Approved';
           emailMessage = Helper.leaveHRApprovalNotification(
-            mailReciever?.firstName,
+            fullName,
             formattedLeaveDates,
             leaveType?.name,
             updatedData?.leaveReason,
@@ -177,11 +180,12 @@ const updateLeave = catchAsync(async (req, res) => {
         case 'auto-rejected':
           emailSubject = 'Your Leave Request Has Been Automatically Rejected';
           emailMessage = Helper.leaveAutoRejectionNotification(
-            mailReciever?.firstName,
+            fullName,
             formattedLeaveDates,
             leaveType?.name,
             updatedData?.leaveReason,
-            team
+            team,
+            mailReciever?.employeeId
           );
           receiverEmails = [mailReciever?.email];
           ccEmails = [configEmails.HR_EMAIL];
@@ -193,7 +197,7 @@ const updateLeave = catchAsync(async (req, res) => {
         case 'revoked':
           emailSubject = 'Leave Request Revoked by Employee';
           emailMessage = Helper.leaveRevokedNotification(
-            mailReciever?.firstName,
+            fullName,
             formattedLeaveDates,
             leaveType?.name,
             updatedData?.leaveReason,
@@ -251,6 +255,9 @@ const deleteLeave = catchAsync(async (req, res) => {
     .populate('subTeamLeadId', 'email')
     .populate('department', 'name');
 
+  // Construct full name
+  const userFullName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim();
+
   const sendMail = req?.query?.sendMail === 'true';
   if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
     logger.info(`Sending revoke email to ${user?.teamLeadId?.email}`);
@@ -300,7 +307,7 @@ const deleteLeave = catchAsync(async (req, res) => {
       ],
       subject: 'Revoked leave application',
       message: Helper.WfhLeaveRevoked(
-        user?.firstName,
+        userFullName,
         'Leave',
         formattedLeaveDates,
         leaveType,
@@ -334,9 +341,15 @@ const applyForLeave = catchAsync(async (req, res) => {
     const team = req.user.team;
 
     const user = await User.findById(userId)
-      .populate('teamLeadId', 'firstName email firstName')
-      .populate('subTeamLeadId', 'firstName email firstName')
+      .populate('teamLeadId', 'firstName lastName email')
+      .populate('subTeamLeadId', 'firstName lastName email')
       .populate('department', 'name');
+
+    // Construct full names
+    const userFullName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim();
+    const tlFullName = user?.teamLeadId ? `${user.teamLeadId.firstName || ''} ${user.teamLeadId.lastName || ''}`.trim() : '';
+    const subTlFullName = user?.subTeamLeadId ? `${user.subTeamLeadId.firstName || ''} ${user.subTeamLeadId.lastName || ''}`.trim() : '';
+    const primaryTlName = tlFullName || subTlFullName;
 
     const hasTL = user?.teamLeadId || user?.subTeamLeadId;
 
@@ -379,8 +392,8 @@ const applyForLeave = catchAsync(async (req, res) => {
             receiverEmails: [primaryRecipient],
             subject: 'Leave Application - Action Required',
             message: Helper.WfhLeaveApplication({
-              userName: user?.firstName,
-              tlName: user?.teamLeadId?.firstName || user?.subTeamLeadId?.firstName,
+              userName: userFullName,
+              tlName: primaryTlName,
               requestType: 'Leave',
               leaveType: leaveType?.name || 'Leave',
               fromDate: from,
@@ -408,8 +421,8 @@ const applyForLeave = catchAsync(async (req, res) => {
           receiverEmails: [configEmails.HR_EMAIL],
           subject: 'Leave Application - Action Required',
                       message: Helper.WfhLeaveApplication({
-              userName: user?.firstName,
-              tlName: user?.teamLeadId?.firstName || user?.subTeamLeadId?.firstName,
+              userName: userFullName,
+              tlName: primaryTlName,
               requestType: 'Leave',
               leaveType: leaveType?.name || 'Leave',
               fromDate: from,

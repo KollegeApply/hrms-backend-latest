@@ -24,8 +24,12 @@ const createWfh = catchAsync(async (req, res) => {
   const data = await wfhService?.createWfh(validatedData);
 
   const user = await User.findById(req?.user?.id)
-    .populate('teamLeadId', 'email')
-    .populate('subTeamLeadId', 'email');
+    .populate('teamLeadId', 'firstName lastName email')
+    .populate('subTeamLeadId', 'firstName lastName email')
+    .populate('department', 'name');
+
+  // Construct full names
+  const userFullName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim();
 
   const sendMail = req?.body?.sendMail === true;
   if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
@@ -51,11 +55,15 @@ const createWfh = catchAsync(async (req, res) => {
       ],
       subject: 'Applied for wfh',
       message: Helper.WfhLeaveApplication({
-        userName: user?.firstName,
+        userName: userFullName,
         requestType: 'WFH',
         fromDate: fromDate,
         toDate: toDate,
         reason: wfhReason,
+        team: req?.user?.team,
+        jobTitle: user?.jobTitle,
+        employeeId: user?.employeeId,
+        department: user?.department?.name,
       }),
     }).catch((err) =>
       logger.error(`Failed to send wfh email to ${user?.teamLeadId}:`, err)
@@ -118,6 +126,9 @@ const updateWfh = catchAsync(async (req, res) => {
   // const userDetail = await User.findById(user.id);
 
   const mailReciever = await User.findById(updated?.userId);
+  
+  // Construct full name
+  const mailRecieverFullName = `${mailReciever?.firstName || ''} ${mailReciever?.lastName || ''}`.trim();
   // console.log(userDetail);
   if (updated?.status === 'approved') {
     const sendMail = req?.body?.sendMail === true;
@@ -127,7 +138,7 @@ const updateWfh = catchAsync(async (req, res) => {
         receiverEmails: [mailReciever?.email],
         subject: `Your WFH Request Has Been Approved`,
         message: Helper.leaveWFHApproval(
-          mailReciever?.firstName,
+          mailRecieverFullName,
           'WFH',
           formatDateToKolkata(updated?.date),
           'Work From Home',
@@ -149,7 +160,7 @@ const updateWfh = catchAsync(async (req, res) => {
         receiverEmails: [mailReciever?.email],
         subject: `Your WFH Request Has Been Declined`,
         message: Helper.leaveWFHReject(
-          mailReciever?.firstName,
+          mailRecieverFullName,
           'WFH',
           formatDateToKolkata(updated?.date),
           'Work From Home',
@@ -190,6 +201,9 @@ const deleteWfh = catchAsync(async (req, res) => {
     .populate('subTeamLeadId', 'email')
     .populate('department', 'name');
 
+  // Construct full name
+  const userFullName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim();
+
   const sendMail = req?.body?.sendMail === true;
   if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
     logger.info(`Sending revoke email to ${user?.teamLeadId}`);
@@ -201,7 +215,7 @@ const deleteWfh = catchAsync(async (req, res) => {
       ],
       subject: 'Revoked WFH application',
       message: Helper.WfhLeaveRevoked(
-        user?.firstName,
+        userFullName,
         'WFH',
         formatDateToKolkata(validatedData?.date),
         '',
