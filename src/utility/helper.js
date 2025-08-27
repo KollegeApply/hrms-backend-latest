@@ -1186,7 +1186,7 @@ class Helper {
     return `
       <p>Dear ${candidate?.firstName},</p>
   
-      <p>Welcome aboard! We're excited to have you as part of the Sportsdunia family.</p>
+      <p>Welcome aboard! We're excited to have you as part of the ${displayTeam?.TEAM_NAME || "our"} family.</p>
   
       <p>
         Please complete your Candidate Information Form (CIF) by clicking the button below.
@@ -1214,7 +1214,7 @@ class Helper {
   
       <p>Please ensure all required information is accurate and complete.</p>
   
-      <p>Best regards,<br/>HR Team - ${displayTeam?.TEAM_NAME}</p>
+      <p>Best regards,<br/>HR Team - ${displayTeam?.TEAM_NAME || 'HRMS'}</p>
     `;
   }
 
