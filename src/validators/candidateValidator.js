@@ -409,7 +409,7 @@ const finalSubmitSchema = candidateDraftSchema.concat(
       graduationProof: Joi.string().required(),
       updatedResume: Joi.string().required(),
       cancelledChequeOrPassbook: Joi.string().required(),
-      form11: Joi.string().required(),
+      form11: Joi.string().optional().allow(null, ''),
 
       // --- Optional Documents ---
       postGraduationProof: Joi.string().optional().allow(null, ''),
