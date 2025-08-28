@@ -402,6 +402,9 @@ const weeklyReport = async () => {
     }
 };
 
+
+
+
 if (require.main === module) {
     (async () => {
         try {
@@ -410,6 +413,8 @@ if (require.main === module) {
 
             if (mode === 'weekly') {
                 await weeklyReport();
+            } else if (mode === 'incomplete') {
+                await updateIncompleteAttendance();
             } else {
                 await dailyAttendanceCheck();
             }
@@ -422,7 +427,72 @@ if (require.main === module) {
     })();
 }
 
+const updateIncompleteAttendance = async () => {
+    try {
+        const now = moment().tz('Asia/Kolkata');
+        const today = now.clone().startOf('day');
+        const yesterday = today.clone().subtract(1, 'day');
+
+        logger.info(`Starting incomplete attendance update for ${formatDateYMD(yesterday.toDate())}`);
+
+        // Find all attendance records from yesterday that have check-in but no check-out
+        const incompleteAttendances = await Attendance.find({
+            date: {
+                $gte: yesterday.toDate(),
+                $lt: today.toDate()
+            },
+            checkInTime: { $exists: true, $ne: null },
+            checkOutTime: null,
+            status: { 
+                $in: ['present', 'late_in'] 
+            }
+        });
+
+        let updatedCount = 0;
+
+        for (const attendance of incompleteAttendances) {
+            // Check if user has any leave applied for that day
+            const leaveAttendance = await Attendance.findOne({
+                user: attendance.user,
+                date: attendance.date,
+                status: { 
+                    $in: ['leave_applied_first_half', 'leave_applied_second_half', 'leave_applied_full'] 
+                }
+            });
+
+            if (!leaveAttendance) {
+                // No leave applied, mark as absent
+                attendance.status = 'absent';
+                await attendance.save();
+                updatedCount++;
+
+                logger.info(`Updated attendance for user ${attendance.user} on ${formatDateYMD(attendance.date)} to absent`);
+            } else {
+                // Leave was applied, keep the original status
+                logger.info(`Skipping attendance update for user ${attendance.user} on ${formatDateYMD(attendance.date)} - leave was applied`);
+            }
+        }
+
+        logger.info(`Incomplete attendance update completed. Updated ${updatedCount} records.`);
+        
+        return {
+            status: 'success',
+            message: `Updated ${updatedCount} incomplete attendance records to absent`,
+            updatedCount
+        };
+
+    } catch (error) {
+        logger.error('Error in updateIncompleteAttendance:', error);
+        return {
+            status: 'error',
+            message: 'Failed to update incomplete attendance records',
+            error: error.message
+        };
+    }
+};
+
 module.exports = {
     dailyAttendanceCheck,
     weeklyReport,
+    updateIncompleteAttendance,
 };
