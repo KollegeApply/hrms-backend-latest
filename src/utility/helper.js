@@ -1614,6 +1614,274 @@ static teamWeeklyReportEmail(teamLeadName, startDate, endDate, tableRows, team) 
     </div>
     `;
   }
+
+  /**
+   * Email template for regularization notification to Team Lead
+   */
+  static regularizationNotificationEmail(teamLeadName, employeeFirstName, employeeLastName, date, checkInTime, checkOutTime, reason, type, regularizationId, team = 'SD', employeeId = '', jobTitle = '', department = '') {
+    const displayTeam = getTeamEmailConfig(team);
+    
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1>New Regularization Request</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Hi <strong>${teamLeadName}</strong>,
+        </p>
+
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          A new regularization request has been submitted by <strong>${employeeFirstName} ${employeeLastName}</strong> and requires your review and approval.
+        </p>
+
+        <div style="background-color: #e7f3ff; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #007bff;">
+          <h2 style="color: #0056b3; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Regularization Request Details</h2>
+          
+          <!-- Employee Information Section -->
+          <div style="background-color: #ffffff; padding: 16px 20px; border-radius: 6px; border: 1px solid #dee2e6; margin-bottom: 20px;">
+            <h3 style="color: #495057; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Employee Information</h3>
+            <ul style="list-style: none; padding: 0; margin: 0;">
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee:</strong> ${employeeFirstName} ${employeeLastName}</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee ID:</strong> ${employeeId || 'N/A'}</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Designation:</strong> ${jobTitle || 'N/A'}</li>
+              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+            </ul>
+          </div>
+
+          <!-- Regularization Details Section -->
+          <div style="background-color: #ffffff; padding: 16px 20px; border-radius: 6px; border: 1px solid #dee2e6; margin-bottom: 20px;">
+            <h3 style="color: #495057; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Regularization Details</h3>
+            <ul style="list-style: none; padding: 0; margin: 0;">
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Date:</strong> ${date}</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Requested Check-in Time:</strong> ${checkInTime}</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Requested Check-out Time:</strong> ${checkOutTime}</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Type:</strong> ${type.charAt(0).toUpperCase() + type.slice(1)} Regularization</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Reason:</strong> ${reason}</li>
+              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Status:</strong> <span style="color: #ffc107; font-weight: bold;">Pending TL Approval</span></li>
+            </ul>
+          </div>
+        </div>
+
+        <div style="background-color: #fff3cd; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #ffc107;">
+          <p style="color: #856404; font-size: 14px; margin: 0;">
+            <strong>Action Required:</strong> Please review this regularization request and provide your decision. You can approve or reject the request with appropriate comments.
+          </p>
+        </div>
+
+        <div style="text-align: center; margin-top: 30px;">
+          <a href="${process.env.HRMS_FRONTEND_URL}/regularization" style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-size: 16px;">
+            Review Request
+          </a>
+        </div>
+
+        <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Team ${displayTeam?.TEAM_NAME}</strong></p>
+      </div>
+      
+      <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+      <p style="font-size: 12px; color: #999; text-align: center;">
+        This is an automated message from the ${displayTeam?.TEAM_NAME || 'Company'} HRMS System. Please do not reply to this email.
+      </p>
+    </div>
+    `;
+  }
+
+  /**
+   * Email template for regularization decision notification to employee
+   */
+  static regularizationDecisionEmail(employeeFirstName, reviewerFirstName, reviewerLastName, action, date, checkInTime, checkOutTime, originalReason, rejectionReason = '', team = 'SD', employeeId = '', jobTitle = '', department = '') {
+    const displayTeam = getTeamEmailConfig(team);
+    const isApproved = action === 'approved';
+    
+    // Determine status message based on action
+    let statusMessage = '';
+    let statusColor = '';
+    
+    switch(action) {
+      case 'approved':
+        statusMessage = 'Fully Approved & Active';
+        statusColor = '#28a745';
+        break;
+      case 'tl-rejected':
+        statusMessage = 'Rejected by Team Lead';
+        statusColor = '#dc3545';
+        break;
+      case 'hr-rejected':
+        statusMessage = 'Rejected by HR';
+        statusColor = '#dc3545';
+        break;
+      case 'hr-pending':
+        statusMessage = 'TL Approved - Pending HR Approval';
+        statusColor = '#007bff';
+        break;
+      case 'tl-pending':
+        statusMessage = 'Pending TL Approval';
+        statusColor = '#ffc107';
+        break;
+      case 'revoked':
+        statusMessage = 'Revoked';
+        statusColor = '#6c757d';
+        break;
+      default:
+        statusMessage = action.charAt(0).toUpperCase() + action.slice(1);
+        statusColor = isApproved ? '#28a745' : '#dc3545';
+    }
+    
+    // Format action for heading
+    const formatActionForHeading = (action) => {
+      switch(action) {
+        case 'tl-rejected':
+          return 'Rejected by Team Lead';
+        case 'hr-rejected':
+          return 'Rejected by HR';
+        case 'hr-pending':
+          return 'Team Lead Approved';
+        case 'tl-pending':
+          return 'Pending Team Lead Approval';
+        case 'approved':
+          return 'Approved';
+        case 'revoked':
+          return 'Revoked';
+        default:
+          return action.charAt(0).toUpperCase() + action.slice(1);
+      }
+    };
+
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1>Regularization Request ${formatActionForHeading(action)}</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Hi <strong>${employeeFirstName}</strong>,
+        </p>
+
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Your regularization request has been <strong>${action}</strong> by ${reviewerFirstName} ${reviewerLastName}.
+        </p>
+
+        <div style="background-color: ${isApproved ? '#d4edda' : '#f8d7da'}; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid ${statusColor};">
+          <h2 style="color: ${isApproved ? '#155724' : '#721c24'}; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Regularization Request Details</h2>
+          
+          <!-- Employee Information Section -->
+          <div style="background-color: #ffffff; padding: 16px 20px; border-radius: 6px; border: 1px solid #dee2e6; margin-bottom: 20px;">
+            <h3 style="color: #495057; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Employee Information</h3>
+            <ul style="list-style: none; padding: 0; margin: 0;">
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee ID:</strong> ${employeeId || 'N/A'}</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Designation:</strong> ${jobTitle || 'N/A'}</li>
+              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+            </ul>
+          </div>
+
+          <!-- Regularization Details Section -->
+          <div style="background-color: #ffffff; padding: 16px 20px; border-radius: 6px; border: 1px solid #dee2e6; margin-bottom: 20px;">
+            <h3 style="color: #495057; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Regularization Details</h3>
+            <ul style="list-style: none; padding: 0; margin: 0;">
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Date:</strong> ${date}</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Requested Check-in Time:</strong> ${checkInTime}</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Requested Check-out Time:</strong> ${checkOutTime}</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Reason:</strong> ${originalReason}</li>
+              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Status:</strong> <span style="color: ${statusColor}; font-weight: bold;">${statusMessage}</span></li>
+            </ul>
+          </div>
+        </div>
+
+        ${!isApproved && rejectionReason ? `
+        <div style="background-color: #fff3cd; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #ffc107;">
+          <h3 style="color: #856404; font-size: 16px; margin-top: 0; margin-bottom: 10px;">Rejection Reason</h3>
+          <p style="color: #856404; font-size: 14px; line-height: 1.5; margin: 0;">${rejectionReason}</p>
+        </div>
+        ` : ''}
+
+        ${action === 'hr-pending' ? `
+        <div style="background-color: #fff3cd; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #ffc107;">
+          <p style="color: #856404; font-size: 14px; margin: 0;">
+            <strong>Next Step:</strong> HR will review and provide final approval for your regularization request. You will be notified once a decision is made.
+          </p>
+        </div>
+        ` : action === 'approved' ? `
+        <div style="background-color: #e7f3ff; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #007bff;">
+          <p style="color: #0c5460; font-size: 14px; margin: 0;">
+            <strong>Important:</strong> Your attendance record has been updated with the corrected times. The changes will be reflected in your attendance history.
+          </p>
+        </div>
+        ` : `
+        <p style="color: #555; font-size: 14px; line-height: 1.6;">
+          If you have any questions about this decision, please contact your Team Lead or HR department for clarification.
+        </p>
+        `}
+
+        <div style="text-align: center; margin-top: 30px;">
+          <a href="${process.env.HRMS_FRONTEND_URL}/regularization" style="background-color: ${isApproved ? '#28a745' : '#6c757d'}; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-size: 16px;">
+            View Regularization History
+          </a>
+        </div>
+
+        <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Team ${displayTeam?.TEAM_NAME}</strong></p>
+      </div>
+      
+      <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+      <p style="font-size: 12px; color: #999; text-align: center;">
+        This is an automated message from the ${displayTeam?.TEAM_NAME || 'Company'} HRMS System. Please do not reply to this email.
+      </p>
+    </div>
+    `;
+  }
+
+  /**
+   * Email template for regularization revoked notification
+   */
+  static regularizationRevokedEmail(employeeFirstName, date, checkInTime, checkOutTime, reason, team = 'SD') {
+    const displayTeam = getTeamEmailConfig(team);
+    
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1>Regularization Request Revoked</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Hi <strong>${employeeFirstName}</strong>,
+        </p>
+
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Your regularization request has been <strong style="color: #6c757d;">revoked</strong> by you.
+        </p>
+
+        <div style="background-color: #f8f9fa; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #6c757d;">
+          <h2 style="color: #495057; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Revoked Regularization Details</h2>
+          <ul style="list-style: none; padding: 0; margin: 0;">
+            <li style="color: #495057; margin-bottom: 10px; font-size: 15px;"><strong>Date:</strong> ${date}</li>
+            <li style="color: #495057; margin-bottom: 10px; font-size: 15px;"><strong>Requested Check-in Time:</strong> ${checkInTime}</li>
+            <li style="color: #495057; margin-bottom: 10px; font-size: 15px;"><strong>Requested Check-out Time:</strong> ${checkOutTime}</li>
+            <li style="color: #495057; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>
+            <li style="color: #495057; margin-bottom: 0; font-size: 15px;"><strong>Status:</strong> <span style="color: #6c757d; font-weight: bold;">Revoked</span></li>
+          </ul>
+        </div>
+
+        <div style="background-color: #e7f3ff; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #007bff;">
+          <p style="color: #0c5460; font-size: 14px; margin: 0;">
+            <strong>Note:</strong> The regularization request has been cancelled. If you need to submit a new regularization request, you can do so through the HRMS system.
+          </p>
+        </div>
+
+        <div style="text-align: center; margin-top: 30px;">
+          <a href="${process.env.HRMS_FRONTEND_URL}/regularization" style="background-color: #6c757d; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-size: 16px;">
+            View Regularization History
+          </a>
+        </div>
+
+        <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Team ${displayTeam?.TEAM_NAME}</strong></p>
+      </div>
+      
+      <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+      <p style="font-size: 12px; color: #999; text-align: center;">
+        This is an automated message from the ${displayTeam?.TEAM_NAME || 'Company'} HRMS System. Please do not reply to this email.
+      </p>
+    </div>
+    `;
+  }
 }
 
 module.exports = Helper;

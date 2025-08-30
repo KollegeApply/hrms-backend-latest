@@ -27,7 +27,8 @@ const RegularizationSchema = new Schema({
       'tl-rejected',
       'hr-pending',
       'approved',
-      'hr-rejected'
+      'hr-rejected',
+      'revoked'
     ],
     default: 'tl-pending'
   },
