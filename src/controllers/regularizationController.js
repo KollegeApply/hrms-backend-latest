@@ -91,7 +91,16 @@ const regularizationController = {
     // Send email notification to employee
     if (result.status === 'success') {
       try {
-        const action = user.role === 'teamlead' ? 'hr-pending' : 'approved';
+        // Determine the action based on the new status, not just user role
+        let action;
+        if (result.data.regularization.status === 'hr-pending') {
+          action = 'hr-pending'; // Team lead approval (including HR acting as team lead)
+        } else if (result.data.regularization.status === 'approved') {
+          action = 'approved'; // HR approval
+        } else {
+          // Fallback to role-based logic
+          action = user.role === 'teamlead' ? 'hr-pending' : 'approved';
+        }
         await sendRegularizationStatusUpdateEmail(result.data, action, user.team);
       } catch (error) {
         logger.error('Error sending regularization approval email notification:', error);
@@ -113,7 +122,16 @@ const regularizationController = {
     // Send email notification to employee
     if (result.status === 'success') {
       try {
-        const action = user.role === 'teamlead' ? 'tl-rejected' : 'hr-rejected';
+        // Determine the action based on the new status, not just user role
+        let action;
+        if (result.data.regularization.status === 'tl-rejected') {
+          action = 'tl-rejected'; // Team lead rejection (including HR acting as team lead)
+        } else if (result.data.regularization.status === 'hr-rejected') {
+          action = 'hr-rejected'; // HR rejection
+        } else {
+          // Fallback to role-based logic
+          action = user.role === 'teamlead' ? 'tl-rejected' : 'hr-rejected';
+        }
         await sendRegularizationStatusUpdateEmail(result.data, action, user.team, reason);
       } catch (error) {
         logger.error('Error sending regularization rejection email notification:', error);
@@ -188,6 +206,7 @@ async function sendRegularizationStatusUpdateEmail(attendance, action, team, rej
 
   switch (action) {
     case 'new_request':
+      // When apply then to TL, cc HR
       emailSubject = 'New Regularization Request';
       emailMessage = Helper.regularizationNotificationEmail(
         employee.teamLeadId?.firstName || 'Team Lead',
@@ -205,29 +224,31 @@ async function sendRegularizationStatusUpdateEmail(attendance, action, team, rej
         employee.department?.name || 'N/A'
       );
       receiverEmails = [employee.teamLeadId?.email].filter(Boolean);
-      ccEmails = [employee.email, employee.subTeamLeadId?.email].filter(Boolean);
+      ccEmails = [configEmails.HR_EMAIL].filter(Boolean);
       break;
+      
     case 'hr-pending':
+      // When tl-approved then to HR, cc Employee
       emailSubject = 'Regularization Request - Team Lead Approved';
-      emailMessage = Helper.regularizationDecisionEmail(
+      emailMessage = Helper.regularizationHRPendingNotification(
         employee.firstName,
-        'Team Lead',
-        'Reviewer',
-        'hr-pending',
+        employee.lastName,
         formattedDate,
         checkInTime,
         checkOutTime,
         regularization.reason,
-        '',
+        regularization.type,
         team,
         employee.employeeId,
         employee.jobTitle,
         employee.department?.name || 'N/A'
       );
-      receiverEmails = [employee.email];
-      ccEmails = [...configEmails.ADMIN_EMAILS, employee.teamLeadId?.email, employee.subTeamLeadId?.email].filter(Boolean);
+      receiverEmails = [configEmails.HR_EMAIL];
+      ccEmails = [employee.email].filter(Boolean);
       break;
+      
     case 'tl-rejected':
+      // When tl-rejected then to Employee, cc HR
       emailSubject = 'Regularization Request Rejected by Team Lead';
       emailMessage = Helper.regularizationDecisionEmail(
         employee.firstName,
@@ -245,9 +266,11 @@ async function sendRegularizationStatusUpdateEmail(attendance, action, team, rej
         employee.department?.name || 'N/A'
       );
       receiverEmails = [employee.email];
-      ccEmails = [configEmails.HR_EMAIL, employee.teamLeadId?.email, employee.subTeamLeadId?.email].filter(Boolean);
+      ccEmails = [configEmails.HR_EMAIL].filter(Boolean);
       break;
+      
     case 'approved':
+      // When approved then to Employee, cc TL
       emailSubject = 'Regularization Request Approved';
       emailMessage = Helper.regularizationDecisionEmail(
         employee.firstName,
@@ -265,9 +288,11 @@ async function sendRegularizationStatusUpdateEmail(attendance, action, team, rej
         employee.department?.name || 'N/A'
       );
       receiverEmails = [employee.email];
-      ccEmails = [...configEmails.ADMIN_EMAILS, employee.teamLeadId?.email, employee.subTeamLeadId?.email].filter(Boolean);
+      ccEmails = [employee.teamLeadId?.email].filter(Boolean);
       break;
+      
     case 'hr-rejected':
+      // When hr-rejected then to Employee, cc TL
       emailSubject = 'Regularization Request Rejected by HR';
       emailMessage = Helper.regularizationDecisionEmail(
         employee.firstName,
@@ -285,9 +310,11 @@ async function sendRegularizationStatusUpdateEmail(attendance, action, team, rej
         employee.department?.name || 'N/A'
       );
       receiverEmails = [employee.email];
-      ccEmails = [configEmails.HR_EMAIL, employee.teamLeadId?.email, employee.subTeamLeadId?.email].filter(Boolean);
+      ccEmails = [employee.teamLeadId?.email].filter(Boolean);
       break;
+      
     case 'revoked':
+      // When empl revoked to TL, cc HR
       emailSubject = 'Regularization Request Revoked by Employee';
       emailMessage = Helper.regularizationRevokedEmail(
         employee.firstName,
@@ -297,8 +324,8 @@ async function sendRegularizationStatusUpdateEmail(attendance, action, team, rej
         regularization.reason,
         team
       );
-      receiverEmails = [configEmails.HR_EMAIL, employee.teamLeadId?.email].filter(Boolean);
-      ccEmails = [...configEmails.ADMIN_EMAILS, employee.subTeamLeadId?.email].filter(Boolean);
+      receiverEmails = [employee.teamLeadId?.email].filter(Boolean);
+      ccEmails = [configEmails.HR_EMAIL].filter(Boolean);
       break;
   }
 

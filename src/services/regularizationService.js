@@ -70,9 +70,13 @@ const regularizationService = {
       }
 
       // Check if user has full day leave applied
-      if (existingAttendance && existingAttendance.status === 'leave_applied_full') {
-        throw new Error('Cannot create regularization request when full day leave is already applied');
+      if (
+        existingAttendance &&
+        (existingAttendance.status === 'leave_applied_full' || existingAttendance.status === 'leave_applied')
+      ) {
+        throw new Error('Cannot create regularization request when leave is already applied');
       }
+      
 
       // Check if user already has present status (no need for regularization)
       if (existingAttendance && existingAttendance.status === 'present') {
@@ -170,17 +174,22 @@ const regularizationService = {
           // Team leads can see their team members' requests
           const teamMembers = await this.getTeamMembers(userId);
           query.user = { $in: teamMembers };
+        } else if (['hr', 'subadmin', 'admin'].includes(userRole)) {
+          // HR/Admin/SubAdmin can see all requests by default
+          // No additional filtering needed - they can see all regularization requests
         } else if (userRole === 'employee') {
           // Employees can only see their own requests (same as my-log)
           query.user = userId;
         }
-        // For admin, subadmin, hr - no additional filtering needed (can see all)
       } else {
         // Default behavior (backward compatibility)
         if (userRole === 'teamlead') {
           // Team leads can see their team members' requests
           const teamMembers = await this.getTeamMembers(userId);
           query.user = { $in: teamMembers };
+        } else if (['hr', 'subadmin', 'admin'].includes(userRole)) {
+          // HR/Admin/SubAdmin can see all requests by default
+          // No additional filtering needed
         } else if (userRole === 'employee') {
           // Employees can only see their own requests
           query.user = userId;
@@ -199,7 +208,7 @@ const regularizationService = {
       const attendances = await Attendance.find(query)
         .populate({
           path: 'user',
-          select: 'firstName lastName employeeId email role',
+          select: 'firstName lastName employeeId email role teamLeadId',
           populate: {
             path: 'department',
             select: 'name'
@@ -242,7 +251,7 @@ const regularizationService = {
         _id: regularizationId,
         'regularization.status': { $exists: true }
       })
-        .populate('user', 'firstName lastName employeeId email')
+        .populate('user', 'firstName lastName employeeId email teamLeadId')
         .populate('regularization.tl.reviewer', 'firstName lastName')
         .populate('regularization.hr.reviewer', 'firstName lastName')
         .lean();
@@ -292,8 +301,11 @@ const regularizationService = {
       const regularization = attendance.regularization;
       let newStatus = regularization.status;
 
-      if (userRole === 'teamlead' && regularization.status === 'tl-pending') {
-        // Team Lead approval
+      // Check if user is a team lead (either by role or by being assigned as teamLeadId)
+      const isTeamLead = userRole === 'teamlead' || await this.isUserTeamLead(reviewerId, attendance.user._id);
+
+      if (isTeamLead && regularization.status === 'tl-pending') {
+        // Team Lead approval (including HR/Admin/SubAdmin who are team leads)
         regularization.tl = {
           reviewer: reviewerId,
           decision: 'approved',
@@ -351,8 +363,11 @@ const regularizationService = {
       const regularization = attendance.regularization;
       let newStatus = regularization.status;
 
-      if (userRole === 'teamlead' && regularization.status === 'tl-pending') {
-        // Team Lead rejection
+      // Check if user is a team lead (either by role or by being assigned as teamLeadId)
+      const isTeamLead = userRole === 'teamlead' || await this.isUserTeamLead(reviewerId, attendance.user._id);
+
+      if (isTeamLead && regularization.status === 'tl-pending') {
+        // Team Lead rejection (including HR/Admin/SubAdmin who are team leads)
         regularization.tl = {
           reviewer: reviewerId,
           decision: 'rejected',
@@ -432,13 +447,16 @@ const regularizationService = {
         const teamMembers = await this.getTeamMembers(userId);
         query.user = { $in: teamMembers };
       } else if (['hr', 'subadmin', 'admin'].includes(userRole)) {
-        query['regularization.status'] = 'hr-pending';
+        // HR/Admin/SubAdmin can see both hr-pending and tl-pending requests where they are team leads
+        const teamMembers = await this.getTeamMembers(userId);
+        query['regularization.status'] = { $in: ['hr-pending', 'tl-pending'] };
+        query.user = { $in: teamMembers };
       } else {
         return { status: 'success', data: [] };
       }
 
       const attendances = await Attendance.find(query)
-        .populate('user', 'firstName lastName employeeId email')
+        .populate('user', 'firstName lastName employeeId email teamLeadId')
         .sort({ 'regularization.appliedAt': -1 })
         .lean();
 
@@ -495,16 +513,27 @@ const regularizationService = {
     return false;
   },
 
+  // Helper method to check if a user is a team lead for a specific employee
+  async isUserTeamLead(reviewerId, employeeId) {
+    try {
+      const employee = await User.findById(employeeId).select('teamLeadId');
+      return employee && employee.teamLeadId && employee.teamLeadId.toString() === reviewerId.toString();
+    } catch (error) {
+      return false;
+    }
+  },
+
   async updateAttendanceRecord(attendance) {
     try {
       const regularization = attendance.regularization;
       
-      // Update check-in and check-out times
-      attendance.checkInTime = regularization.requestedCheckInTime;
-      attendance.checkOutTime = regularization.requestedCheckOutTime;
+      if (!attendance.checkInTime) {
+        attendance.checkInTime = regularization.requestedCheckInTime;
+      }
+      if (!attendance.checkOutTime) {
+        attendance.checkOutTime = regularization.requestedCheckOutTime;
+      }
       
-      // When regularization is approved, set status to 'present'
-      // The regularization was requested to correct attendance issues
       attendance.status = 'present';
       await attendance.save();
       
@@ -513,8 +542,6 @@ const regularizationService = {
       throw error;
     }
   },
-
-
 };
 
 module.exports = regularizationService;
