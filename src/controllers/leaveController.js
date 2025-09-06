@@ -105,25 +105,25 @@ async function sendLeaveStatusUpdateEmail(updatedLeave, team) {
   switch (updatedLeave.status) {
     case 'hr-pending':
       emailSubject = 'Leave Request Pending Your Approval';
-      emailMessage = Helper.leaveHRPendingNotification(mailReceiver.firstName, formattedLeaveDates, leaveType.name, updatedLeave.leaveReason, team, process.env.HRMS_FRONTEND_URL);
+      emailMessage = Helper.leaveHRPendingNotification(mailReceiver.firstName, formattedLeaveDates, leaveType.name, updatedLeave.leaveReason, team, process.env.HRMS_FRONTEND_URL, updatedLeave.isHalfDay, updatedLeave.halfDayType);
       receiverEmails = [configEmails.HR_EMAIL];
       ccEmails = [mailReceiver.email, mailReceiver.teamLeadId?.email, mailReceiver.subTeamLeadId?.email].filter(Boolean);
       break;
     case 'approved':
       emailSubject = 'Your Leave Request Has Been Approved';
-      emailMessage = Helper.leaveHRApprovalNotification(mailReceiver.firstName, formattedLeaveDates, leaveType.name, updatedLeave.leaveReason, team);
+      emailMessage = Helper.leaveHRApprovalNotification(mailReceiver.firstName, formattedLeaveDates, leaveType.name, updatedLeave.leaveReason, team, updatedLeave.isHalfDay, updatedLeave.halfDayType);
       receiverEmails = [mailReceiver.email];
       ccEmails = [...configEmails.ADMIN_EMAILS, mailReceiver.teamLeadId?.email, mailReceiver.subTeamLeadId?.email].filter(Boolean);
       break;
     case 'tl-rejected':
       emailSubject = 'Your Leave Request Has Been Rejected by Team Lead';
-      emailMessage = Helper.leaveTLRejectionNotification(mailReceiver.firstName, formattedLeaveDates, leaveType.name, updatedLeave.leaveReason, team);
+      emailMessage = Helper.leaveTLRejectionNotification(mailReceiver.firstName, formattedLeaveDates, leaveType.name, updatedLeave.leaveReason, team, updatedLeave.isHalfDay, updatedLeave.halfDayType);
       receiverEmails = [mailReceiver.email];
       ccEmails = [configEmails.HR_EMAIL, mailReceiver.teamLeadId?.email, mailReceiver.subTeamLeadId?.email].filter(Boolean);
       break;
     case 'hr-rejected':
       emailSubject = 'Your Leave Request Has Been Rejected by HR';
-      emailMessage = Helper.leaveHRRejectionNotification(mailReceiver.firstName, formattedLeaveDates, leaveType.name, updatedLeave.leaveReason, team);
+      emailMessage = Helper.leaveHRRejectionNotification(mailReceiver.firstName, formattedLeaveDates, leaveType.name, updatedLeave.leaveReason, team, updatedLeave.isHalfDay, updatedLeave.halfDayType);
       receiverEmails = [mailReceiver.email];
       ccEmails = [configEmails.HR_EMAIL, mailReceiver.teamLeadId?.email, mailReceiver.subTeamLeadId?.email].filter(Boolean);
       break;
@@ -268,6 +268,8 @@ const applyForLeave = catchAsync(async (req, res) => {
     const from = result?.data?.dates[0];
     const to = result?.data?.dates[result?.data?.dates?.length - 1];
     const leaveReason = result?.data?.leaveReason;
+    const isHalfDay = result?.data?.isHalfDay;
+    const halfDayType = result?.data?.halfDayType;
 
     const configEmails = getTeamEmailConfig(team);
 
@@ -297,6 +299,8 @@ const applyForLeave = catchAsync(async (req, res) => {
               reason: leaveReason,
               dashboardUrl: process?.env?.HRMS_FRONTEND_URL,
               team,
+              isHalfDay: isHalfDay,
+              halfDayType: halfDayType,
             }),
             cc: ccList,
             team,
@@ -323,6 +327,8 @@ const applyForLeave = catchAsync(async (req, res) => {
             reason: leaveReason,
             dashboardUrl: process?.env?.HRMS_FRONTEND_URL,
             team,
+            isHalfDay: isHalfDay,
+            halfDayType: halfDayType,
           }),
           cc: ccList,
           team,

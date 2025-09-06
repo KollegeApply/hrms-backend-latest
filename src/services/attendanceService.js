@@ -486,10 +486,20 @@ async getTeamMembers(leaderId) {
     }
   },
 
-  async bulkCreateOrUpdateLeaveAttendance(userId, leaveId, dates) {
+  async bulkCreateOrUpdateLeaveAttendance(userId, leaveId, dates, isHalfDay = false, halfDayType = null) {
     try {
       if (!Array.isArray(dates) || dates.length === 0) {
         throw new Error('No dates provided for bulk leave attendance.');
+      }
+
+      // Determine the attendance status based on half-day information
+      let attendanceStatus = 'leave_applied_full';
+      if (isHalfDay) {
+        if (halfDayType === 'first') {
+          attendanceStatus = 'leave_applied_first_half';
+        } else if (halfDayType === 'second') {
+          attendanceStatus = 'leave_applied_second_half';
+        }
       }
 
       const attendanceOps = dates.map((date) => {
@@ -502,7 +512,7 @@ async getTeamMembers(leaderId) {
               $set: {
                 user: userId,
                 date: standardizedDate,
-                status: 'leave_applied_full',
+                status: attendanceStatus,
                 leaveId,
               },
             },

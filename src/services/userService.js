@@ -516,19 +516,29 @@ async getUserById(id) {
         // Delete existing onroll balances
         await employeeLeaveBalanceModel.deleteMany({ userId: user._id });
 
-        // Create 1 leave type for probation
-        const probationMapping = await leavePolicyMappingModel.findOne({
+        // Create balance records for all probation policy mappings (including LOP)
+        const probationMappings = await leavePolicyMappingModel.find({
           leavePolicyId: probationPolicy._id,
+          isDeleted: false,
         });
 
-        await employeeLeaveBalanceModel.create({
-          userId: user._id,
-          leaveTypeId: probationMapping.leaveTypeId,
-          accrued: probationMapping.accrualPerMonth,
-          used: 0,
-          carryForwarded: 0,
-          total: probationMapping.accrualPerMonth,
-        });
+        for (const mapping of probationMappings) {
+          let accrued = 0;
+          if (mapping.accrualType === 'monthly') {
+            accrued = mapping.accrualPerMonth;
+          } else if (mapping.accrualType === 'yearly') {
+            accrued = mapping.quota;
+          }
+
+          await employeeLeaveBalanceModel.create({
+            userId: user._id,
+            leaveTypeId: mapping.leaveTypeId,
+            accrued,
+            used: 0,
+            carryForwarded: 0,
+            total: accrued || mapping.quota,
+          });
+        }
 
         updateData.leavePolicyId = probationPolicy._id;
       }

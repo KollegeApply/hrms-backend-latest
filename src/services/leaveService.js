@@ -120,26 +120,42 @@ async updateLeaveStatus({ leaveId, action, editor }) {
       if (isAdminOrHR) {
         if (action === 'approved') {
           // --- Side Effects for Approval ---
-          // A. Check and update leave balance (for paid leaves only)
-          if (leave.leaveTypeId.code !== 'LOP') {
-            const empBalance = await EmployeeLeaveBalance.findOne({
-              userId: leave.userId,
-              leaveTypeId: leave.leaveTypeId._id,
-            });
+          // A. Update leave balance (for tracking purposes)
+          const empBalance = await EmployeeLeaveBalance.findOne({
+            userId: leave.userId,
+            leaveTypeId: leave.leaveTypeId._id,
+          });
 
+          const daysToAdd = leave.totalDays || 0;
+
+          if (leave.leaveTypeId.code !== 'LOP') {
+            // For paid leaves: check balance and deduct
             const totalAvailable = (empBalance?.accrued || 0) + (empBalance?.carryForwarded || 0);
             const used = empBalance?.used || 0;
-            const daysToAdd = leave.totalDays || 0;
 
             if (!empBalance || totalAvailable - used < daysToAdd) {
               throw new ApiError(httpStatus.CONFLICT, `Insufficient leave balance. Available: ${totalAvailable - used}, Requested: ${daysToAdd}`);
             }
             empBalance.used += daysToAdd;
             await empBalance.save();
+          } else {
+            // For LOP leaves: just track usage without balance check
+            if (empBalance) {
+              empBalance.used += daysToAdd;
+              await empBalance.save();
+            }
           }
 
-          // B. Create attendance records
-          await attendanceService.bulkCreateOrUpdateLeaveAttendance(leave.userId, leave._id, leave.dates);
+          // B. Create attendance records (skip for LOP leaves)
+          if (leave.leaveTypeId.code !== 'LOP') {
+            await attendanceService.bulkCreateOrUpdateLeaveAttendance(
+              leave.userId, 
+              leave._id, 
+              leave.dates, 
+              leave.isHalfDay, 
+              leave.halfDayType
+            );
+          }
           
           // C. Update the leave status
           leave.status = 'approved';
@@ -164,19 +180,20 @@ async updateLeaveStatus({ leaveId, action, editor }) {
       // Logic for reverting an already approved leave (Admin/HR action)
       if (isAdminOrHR && action === 'rejected') {
           // A. Revert leave balance
-          if (leave.leaveTypeId.code !== 'LOP') {
-              const empBalance = await EmployeeLeaveBalance.findOne({
-                userId: leave.userId,
-                leaveTypeId: leave.leaveTypeId._id,
-              });
-              if (empBalance) {
-                const daysToRevert = leave.totalDays || 0;
-                empBalance.used = Math.max(0, empBalance.used - daysToRevert);
-                await empBalance.save();
-              }
+          const empBalance = await EmployeeLeaveBalance.findOne({
+            userId: leave.userId,
+            leaveTypeId: leave.leaveTypeId._id,
+          });
+          
+          if (empBalance) {
+            const daysToRevert = leave.totalDays || 0;
+            empBalance.used = Math.max(0, empBalance.used - daysToRevert);
+            await empBalance.save();
           }
-          // B. Revert attendance records
-          await attendanceService.bulkRevertLeaveAttendance(leave.userId, leave._id, leave.dates);
+          // B. Revert attendance records (skip for LOP leaves)
+          if (leave.leaveTypeId.code !== 'LOP') {
+            await attendanceService.bulkRevertLeaveAttendance(leave.userId, leave._id, leave.dates);
+          }
           
           // C. Update status
           leave.status = 'hr-rejected';
@@ -273,7 +290,7 @@ async updateLeaveStatus({ leaveId, action, editor }) {
     }
   }
 
-async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
+async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = false) {
     try {
       const today = moment().tz('Asia/Kolkata').startOf('day').toDate();
 
@@ -469,14 +486,20 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
       const isProbationLeave = leaveType.code === 'PROBATION';
 
       if (isInFirstMonth && isProbationLeave) {
-        const availableAfterRequest = totalAvailable - validDates.length;
+        // Calculate requested days considering half-day logic
+        let requestedDays = validDates.length;
+        if (isHalfDay) {
+          requestedDays = validDates.length * 0.5;
+        }
+        
+        const availableAfterRequest = totalAvailable - requestedDays;
 
         if (availableAfterRequest < 0) {
           return {
             isValid: false,
-            reason: `Insufficient leave balance. Available: ${Math.floor(totalAvailable)}, Requested: ${validDates.length}`,
+            reason: `Insufficient leave balance. Available: ${Math.floor(totalAvailable)}, Requested: ${requestedDays}`,
             rejectedReasons: [
-              `Insufficient leave balance. Available: ${Math.floor(totalAvailable)}, Requested: ${validDates.length}`,
+              `Insufficient leave balance. Available: ${Math.floor(totalAvailable)}, Requested: ${requestedDays}`,
             ],
             dates: validDates,
           };
@@ -492,7 +515,12 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
         };
       }
 
-      const totalRequestedDays = validDates.length;
+      // Calculate total requested days considering half-day logic
+      let totalRequestedDays = validDates.length;
+      if (isHalfDay) {
+        totalRequestedDays = validDates.length * 0.5; // Half day = 0.5 days
+      }
+
       const groupedRejectedReasons = Object.entries(reasonMap).map(
         ([reason, dates]) => `${reason}: ${dates.join(', ')}`
       );
@@ -508,7 +536,7 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
       }
       
 
-      if (totalRequestedDays === 0) {
+      if (validDates.length === 0) {
         return {
           isValid: false,
           reason: 'No valid leave dates found',
@@ -768,6 +796,8 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
         to: endDate,
         leaveType,
         leaveReason: reason,
+        isHalfDay = false,
+        halfDayType,
       } = leaveData;
 
       // Validate dates
@@ -786,6 +816,21 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
         };
       }
 
+      // Validate half-day fields
+      if (isHalfDay && !halfDayType) {
+        return {
+          status: false,
+          message: 'Half day type is required when half day is selected',
+        };
+      }
+
+      if (isHalfDay && !['first', 'second'].includes(halfDayType)) {
+        return {
+          status: false,
+          message: 'Invalid half day type. Must be "first" or "second"',
+        };
+      }
+
       // Get leave type ID
       const leaveTypeDoc = await LeaveType.findOne({ _id: leaveType });
       if (!leaveTypeDoc) {
@@ -801,7 +846,8 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
         userId,
         startDate,
         endDate,
-        leaveType
+        leaveType,
+        isHalfDay
       );
 
 
@@ -857,14 +903,22 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId) {
         initialStatus = 'hr-pending';
       }
 
+      // Calculate total days based on half-day logic
+      let totalDays = validationResult.dates.length;
+      if (isHalfDay) {
+        totalDays = validationResult.dates.length * 0.5; // Half day = 0.5 days
+      }
+
       // Create leave application
       const leaveApplication = new LeaveApplication({
         userId,
         leaveTypeId: leaveTypeDoc._id,
         leaveReason: reason,
         dates: validationResult.dates,
-        totalDays: validationResult.dates.length,
+        totalDays: totalDays,
         isUnpaid: leaveTypeDoc.code === 'LOP',
+        isHalfDay: isHalfDay,
+        halfDayType: isHalfDay ? halfDayType : undefined,
         status: initialStatus,
         appliedAt: new Date(),
       });

@@ -353,6 +353,8 @@ class Helper {
     reason,
     dashboardUrl,
     team,
+    isHalfDay = false,
+    halfDayType,
   }) {
      const fromMoment = moment(fromDate).tz('Asia/Kolkata');
      const toMoment = moment(toDate).tz('Asia/Kolkata');
@@ -364,6 +366,13 @@ class Helper {
       leaveMessage = `${fromMoment.format('DD MMMM YYYY')}`;
     } else {
       leaveMessage = `${fromMoment.format('DD MMMM YYYY')} to ${toMoment.format('DD MMMM YYYY')}`;
+    }
+
+    // Modify leave type to include half-day information
+    let displayLeaveType = leaveType;
+    if (isHalfDay) {
+      const halfDayText = halfDayType === 'first' ? 'First Half' : 'Second Half';
+      displayLeaveType = `${leaveType} (${halfDayText})`;
     }
 
     const displayTeam = getTeamEmailConfig(team);
@@ -386,7 +395,7 @@ class Helper {
           <div style="background-color: #eef; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #66f;">
             <h2 style="color: #333; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Request Details</h2>
             <ul style="list-style: none; padding: 0; margin: 0;">
-              ${requestType === 'Leave' ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${leaveType}</li>` : ''}
+              ${requestType === 'Leave' ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${displayLeaveType}</li>` : ''}
               <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Date:</strong> ${leaveMessage}</li>
               <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>
             </ul>
@@ -1393,8 +1402,15 @@ static teamWeeklyReportEmail(teamLeadName, startDate, endDate, tableRows, team) 
   /**
    * Email template for Team Lead rejection notification
    */
-  static leaveTLRejectionNotification(userName, date, leaveType, reason, team) {
+  static leaveTLRejectionNotification(userName, date, leaveType, reason, team, isHalfDay = false, halfDayType = null) {
     const displayTeam = getTeamEmailConfig(team);
+    
+    // Modify leave type to include half-day information
+    let displayLeaveType = leaveType;
+    if (isHalfDay) {
+      const halfDayText = halfDayType === 'first' ? 'First Half' : 'Second Half';
+      displayLeaveType = `${leaveType} (${halfDayText})`;
+    }
     
     return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
@@ -1413,7 +1429,7 @@ static teamWeeklyReportEmail(teamLeadName, startDate, endDate, tableRows, team) 
         <div style="background-color: #f8d7da; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #dc3545;">
           <h2 style="color: #721c24; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Leave Details</h2>
           <ul style="list-style: none; padding: 0; margin: 0;">
-            <li style="color: #721c24; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${leaveType}</li>
+            <li style="color: #721c24; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${displayLeaveType}</li>
             <li style="color: #721c24; margin-bottom: 10px; font-size: 15px;"><strong>Date(s):</strong> ${date}</li>
             <li style="color: #721c24; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>
             <li style="color: #721c24; margin-bottom: 10px; font-size: 15px;"><strong>Status:</strong> <span style="color: #dc3545; font-weight: bold;">Rejected by Team Lead</span></li>
@@ -1445,8 +1461,15 @@ static teamWeeklyReportEmail(teamLeadName, startDate, endDate, tableRows, team) 
   /**
    * Email template for HR final approval notification
    */
-  static leaveHRApprovalNotification(userName, date, leaveType, reason, team) {
+  static leaveHRApprovalNotification(userName, date, leaveType, reason, team, isHalfDay = false, halfDayType = null) {
     const displayTeam = getTeamEmailConfig(team);
+    
+    // Modify leave type to include half-day information
+    let displayLeaveType = leaveType;
+    if (isHalfDay) {
+      const halfDayText = halfDayType === 'first' ? 'First Half' : 'Second Half';
+      displayLeaveType = `${leaveType} (${halfDayText})`;
+    }
     
     return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
@@ -1465,7 +1488,7 @@ static teamWeeklyReportEmail(teamLeadName, startDate, endDate, tableRows, team) 
         <div style="background-color: #d4edda; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #28a745;">
           <h2 style="color: #155724; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Approved Leave Details</h2>
           <ul style="list-style: none; padding: 0; margin: 0;">
-            <li style="color: #155724; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${leaveType}</li>
+            <li style="color: #155724; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${displayLeaveType}</li>
             <li style="color: #155724; margin-bottom: 10px; font-size: 15px;"><strong>Date(s):</strong> ${date}</li>
             <li style="color: #155724; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>
             <li style="color: #155724; margin-bottom: 10px; font-size: 15px;"><strong>Status:</strong> <span style="color: #28a745; font-weight: bold;">Fully Approved & Active</span></li>
@@ -1498,8 +1521,15 @@ static teamWeeklyReportEmail(teamLeadName, startDate, endDate, tableRows, team) 
   /**
    * Email template for HR rejection notification
    */
-  static leaveHRRejectionNotification(userName, date, leaveType, reason, team) {
+  static leaveHRRejectionNotification(userName, date, leaveType, reason, team, isHalfDay = false, halfDayType = null) {
     const displayTeam = getTeamEmailConfig(team);
+    
+    // Modify leave type to include half-day information
+    let displayLeaveType = leaveType;
+    if (isHalfDay) {
+      const halfDayText = halfDayType === 'first' ? 'First Half' : 'Second Half';
+      displayLeaveType = `${leaveType} (${halfDayText})`;
+    }
     
     return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
@@ -1532,7 +1562,7 @@ static teamWeeklyReportEmail(teamLeadName, startDate, endDate, tableRows, team) 
             <div style="background-color: #ffffff; padding: 16px 20px; border-radius: 6px; border: 1px solid #dee2e6; margin-bottom: 20px;">
               <h3 style="color: #495057; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Leave Details</h3>
               <ul style="list-style: none; padding: 0; margin: 0;">
-                <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Type:</strong> ${leaveType}</li>
+                <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Type:</strong> ${displayLeaveType}</li>
                 <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Date(s):</strong> ${date}</li>
                 <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Reason:</strong> ${reason}</li>
                 <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Status:</strong> <span style="color: #dc3545; font-weight: bold;">Rejected by HR</span></li>
@@ -1565,8 +1595,15 @@ static teamWeeklyReportEmail(teamLeadName, startDate, endDate, tableRows, team) 
   /**
    * Email template for HR notification when leave needs their approval
    */
-  static leaveHRPendingNotification(employeeName, date, leaveType, reason, team, dashboardUrl) {
+  static leaveHRPendingNotification(employeeName, date, leaveType, reason, team, dashboardUrl, isHalfDay = false, halfDayType = null) {
     const displayTeam = getTeamEmailConfig(team);
+    
+    // Modify leave type to include half-day information
+    let displayLeaveType = leaveType;
+    if (isHalfDay) {
+      const halfDayText = halfDayType === 'first' ? 'First Half' : 'Second Half';
+      displayLeaveType = `${leaveType} (${halfDayText})`;
+    }
     
     return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
@@ -1586,7 +1623,7 @@ static teamWeeklyReportEmail(teamLeadName, startDate, endDate, tableRows, team) 
           <h2 style="color: #856404; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Leave Request Details</h2>
           <ul style="list-style: none; padding: 0; margin: 0;">
             <li style="color: #856404; margin-bottom: 10px; font-size: 15px;"><strong>Employee:</strong> ${employeeName}</li>
-            <li style="color: #856404; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${leaveType}</li>
+            <li style="color: #856404; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${displayLeaveType}</li>
             <li style="color: #856404; margin-bottom: 10px; font-size: 15px;"><strong>Date(s):</strong> ${date}</li>
             <li style="color: #856404; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>
             <li style="color: #856404; margin-bottom: 10px; font-size: 15px;"><strong>Current Status:</strong> <span style="color: #007bff; font-weight: bold;">TL Approved - Awaiting HR Approval</span></li>

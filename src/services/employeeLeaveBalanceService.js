@@ -46,6 +46,10 @@ class EmployeeLeaveBalanceService {
         if (!mapping.leaveTypeId) return false;
         const code = mapping.leaveTypeId.code;
         if (!code) return false;
+        
+        // LOP (Loss of Pay) is available to all users regardless of status
+        if (code === 'LOP') return true;
+        
         return user.status === 'probation'
           ? code === 'PROBATION'
           : code !== 'PROBATION';
@@ -77,7 +81,11 @@ class EmployeeLeaveBalanceService {
             })();
 
             let accrued = 0;
-            if (user.status === 'onroll') {
+            
+            // Special handling for LOP (Loss of Pay) - unlimited for all users
+            if (leaveType.code === 'LOP') {
+              accrued = 999; // Set a high number to indicate unlimited
+            } else if (user.status === 'onroll') {
               accrued =
                 mapping.accrualType === 'monthly'
                   ? remainingMonths * mapping.accrualPerMonth
@@ -100,9 +108,16 @@ class EmployeeLeaveBalanceService {
             const used = balance?.used || 0;
 
             const totalProjected = Math.floor(accrued + carryForwarded);
-            const available = Math.floor(
-              (balance?.total || 0) - used - pendingDays
-            );
+            
+            // Special handling for LOP - always show as available
+            let available = 0;
+            if (leaveType.code === 'LOP') {
+              available = 999; // Show as unlimited available
+            } else {
+              available = Math.floor(
+                (balance?.total || 0) - used - pendingDays
+              );
+            }
 
             return {
               leaveTypeId: {
