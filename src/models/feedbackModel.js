@@ -11,47 +11,47 @@ const feedbackSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
-  from : {
+  from: {
     type: Date,
-    required : true,
+    required: true,
   },
-  to : {
+  to: {
     type: Date,
-    required : true,
+    required: true,
   },
   feedback: {
     type: String,
     required: true
   },
   rating: {
-    discipline : {
-        type : Number,
-        required : true,
-    },
-    initiative : {
-        type : Number,
-        required : true,
-    },
-    teamwork : {
-        type : Number,
-        required : true,
-    },
-    ownership : {
-        type : Number,
-        required : true,
-    },
-    skillDevelopment : {
-        type : Number,
-        required : true,
-    },
-    techSkills : {
-        type : Number,
-    },
-    overall : {
-        type : Number,
-        required : true,
-    },
+    discipline: { type: Number, required: true },
+    initiative: { type: Number, required: true },
+    teamwork: { type: Number, required: true },
+    ownership: { type: Number, required: true },
+    skillDevelopment: { type: Number, required: true },
+    techSkills: { type: Number },
+    overall: { type: Number, required: true },
   },
+
+  // 🔹 AI-enhanced fields
+  sentiment: {
+    type: String,
+    enum: ['Positive', 'Neutral', 'Negative'],
+    default: 'Neutral'
+  },
+  sentimentScore: {
+    type: Number, // numeric score from AI (-1 to 1 or 0–100)
+    default: 0
+  },
+  keywords: {
+    type: [String], // extracted themes like "leadership", "deadlines"
+    default: []
+  },
+  aiRecommendation: {
+    type: String, // actionable insight (e.g., "Provide time management training")
+    default: ''
+  },
+
   isDeleted: {
     type: Boolean,
     default: false
@@ -62,10 +62,10 @@ const feedbackSchema = new mongoose.Schema({
     rejected: { type: Boolean, default: false },
     completed: { type: Boolean, default: false },
   },
-  concernRaised : {
+  concernRaised: {
     type: Boolean,
   },
-  concernReason : {
+  concernReason: {
     type: String,
   }
 }, { timestamps: true });
