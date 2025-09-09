@@ -1882,6 +1882,75 @@ static teamWeeklyReportEmail(teamLeadName, startDate, endDate, tableRows, team) 
     </div>
     `;
   }
+
+  /**
+   * Email template for asset request notification
+   */
+  static getAssetRequestEmail(employeeName, employeeId, assetType, specifications, neededBy, description, dashboardUrl, team) {
+    const displayTeam = getTeamEmailConfig(team);
+    const formattedDate = new Date(neededBy).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #333;">New Asset Request</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">Hello Team,</p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          A new asset request has been submitted by an employee. Please review the details below:
+        </p>
+
+        <div style="background-color: #e7f3ff; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #007bff;">
+          <h2 style="color: #0056b3; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Asset Request Details</h2>
+          
+          <!-- Employee Information Section -->
+          <div style="background-color: #ffffff; padding: 16px 20px; border-radius: 6px; border: 1px solid #dee2e6; margin-bottom: 20px;">
+            <h3 style="color: #495057; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Employee Information</h3>
+            <ul style="list-style: none; padding: 0; margin: 0;">
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee Name:</strong> ${employeeName}</li>
+              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Employee ID:</strong> ${employeeId}</li>
+            </ul>
+          </div>
+
+          <!-- Asset Request Details Section -->
+          <div style="background-color: #ffffff; padding: 16px 20px; border-radius: 6px; border: 1px solid #dee2e6; margin-bottom: 20px;">
+            <h3 style="color: #495057; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Asset Request Details</h3>
+            <ul style="list-style: none; padding: 0; margin: 0;">
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Asset Type:</strong> ${assetType}</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Specifications:</strong> ${specifications}</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Needed By:</strong> ${formattedDate}</li>
+              ${description ? `<li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Description:</strong> ${description}</li>` : ''}
+            </ul>
+          </div>
+        </div>
+
+        <div style="background-color: #fff3cd; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #ffc107;">
+          <p style="color: #856404; font-size: 14px; margin: 0;">
+            <strong>Action Required:</strong> Please review this asset request and take appropriate action. You can approve or reject the request with comments.
+          </p>
+        </div>
+
+        <div style="text-align: center; margin-top: 30px;">
+          <a href="${dashboardUrl}/assets/requests" style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-size: 16px;">
+            Review Asset Request
+          </a>
+        </div>
+
+        <p style="color: #777; font-size: 14px; line-height: 1.5;">Best regards,<br><strong>Team ${displayTeam?.TEAM_NAME}</strong></p>
+      </div>
+      
+      <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0;">
+      <p style="font-size: 12px; color: #999; text-align: center;">
+        This is an automated message from the ${displayTeam?.TEAM_NAME || 'Company'} HRMS System. Please do not reply to this email.
+      </p>
+    </div>
+    `;
+  }
 }
 
 module.exports = Helper;

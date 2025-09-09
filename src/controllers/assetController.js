@@ -2,6 +2,7 @@ const httpStatus = require('http-status-codes');
 const catchAsync = require('../utility/catchAsync');
 const logger = require('../config/logger');
 const assetsService = require('../services/assetService');
+const assetRequestService = require('../services/assetRequestService');
 const assetValidator = require('../validators/assetValidator');
 const User = require('../models/userModel');
 const Helper = require('../utility/helper');
@@ -484,6 +485,130 @@ const getPCDepartmentSummary = catchAsync(async (req, res) => {
   });
 });
 
+const createAssetRequest = catchAsync(async (req, res) => {
+  const data = req.body;
+  const requestedById = req.user?.id;
+  data.requestedBy = requestedById;
+
+  const validatedData =
+    await assetValidator.createAssetRequestSchema.validateAsync(req.body);
+
+  const newRequest = await assetRequestService?.createAssetRequest(validatedData);
+
+  if (!newRequest) {
+    return res.status(httpStatus.BAD_REQUEST).json({
+      status: false,
+      message: 'Asset request not created successfully.',
+    });
+  }
+
+  const sendMail = req?.body?.sendMail === true;
+  if (sendMail && process.env.HRMS_FRONTEND_URL) {
+    const { assetType, specifications, neededBy, description } = validatedData;
+    const employee = await User.findById(requestedById);
+    const team = req?.user?.team;
+    const emailSubject = `New Asset Request - ${assetType}`;
+    const emailMessage = Helper.getAssetRequestEmail(
+      `${employee.firstName} ${employee.lastName}`,
+      employee.employeeId,
+      assetType,
+      specifications,
+      neededBy,
+      description,
+      process.env.HRMS_FRONTEND_URL,
+      team,
+    );
+
+    const configEmails = getTeamEmailConfig(team);
+
+    const receiverEmails = [configEmails?.HR_EMAIL, configEmails?.IT_EMAIL];
+    const cc = [employee.email, ...configEmails?.ADMIN_EMAILS];
+
+    logger.info(`Sending asset request email to HR and IT for ${assetType}`);
+
+    Helper.sendEmail({
+      receiverEmails,
+      subject: emailSubject,
+      message: emailMessage,
+      fromHR: false,
+      fromIT: false,
+      cc,
+      team
+    }).catch((err) => {
+      logger.error(
+        `Failed to send asset request email for ${assetType}:`,
+        err
+      );
+    });
+  }
+
+  res.status(httpStatus.CREATED).json({
+    status: true,
+    message: 'Asset request created successfully.',
+    data: newRequest,
+  });
+});
+
+const fetchAssetRequestsList = catchAsync(async (req, res) => {
+  const { page, limit, search } = req.query;
+  const team = req?.user?.team;
+
+  const validatedQuery = await assetValidator.getAllUsersSchema.validateAsync({
+    page,
+    limit,
+    search,
+  });
+
+  const assetRequestsResult = await assetRequestService?.fetchAssetRequests(
+    validatedQuery?.page,
+    validatedQuery?.limit,
+    validatedQuery?.search,
+    team
+  );
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Asset requests fetched successfully.',
+    data: assetRequestsResult,
+  });
+});
+
+const fetchAssetRequestsByUserId = catchAsync(async (req, res) => {
+  const userId = req?.user?.id;
+
+  const assetRequests = await assetRequestService?.fetchAssetRequestsByUserId(userId);
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Asset requests fetched successfully.',
+    data: assetRequests,
+  });
+});
+
+const fetchTeamAssets = catchAsync(async (req, res) => {
+  const { page, limit, search } = req.query;
+  const teamLeadId = req?.user?.id;
+
+  const validatedQuery = await assetValidator.getAllUsersSchema.validateAsync({
+    page,
+    limit,
+    search,
+  });
+
+  const teamAssetsResult = await assetsService?.fetchTeamAssetsByTeamLead(
+    teamLeadId,
+    validatedQuery?.page,
+    validatedQuery?.limit,
+    validatedQuery?.search
+  );
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Team assets fetched successfully.',
+    data: teamAssetsResult,
+  });
+});
+
 module.exports = {
   assignAsset,
   fetchAssignedAssets,
@@ -495,4 +620,8 @@ module.exports = {
   fetchAssetRequests,
   handleAssetRequestUpdate,
   getPCDepartmentSummary,
+  createAssetRequest,
+  fetchAssetRequestsList,
+  fetchAssetRequestsByUserId,
+  fetchTeamAssets,
 };
