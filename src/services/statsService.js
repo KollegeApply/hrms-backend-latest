@@ -13,7 +13,6 @@ const employeeLeaveBalanceModel = require('../models/employeeLeaveBalanceModel')
 const LeavePolicyMapping = require('../models/leavePolicyMappingModel');
 const leaveApplicationModel = require('../models/leaveApplicationModel');
 const { startOfYear } = require('date-fns');
-const { isWeeklyOff } = require('../utility/common');
 
 class StatsService {
   /**
@@ -69,6 +68,38 @@ class StatsService {
         0
       );
 
+      // 2.a Late check-in days (matches attendance statuses used in attendance module)
+      const lateAttendances = await Attendance.find({
+        user: userId,
+        date: { $gte: startOfMonth, $lte: currentDate },
+        status: { $in: ['late_in'] },
+      });
+      const lateCheckInDays = lateAttendances.length;
+
+      // 2.b Early out days (includes combined late_in_early_out)
+      const earlyOutAttendances = await Attendance.find({
+        user: userId,
+        date: { $gte: startOfMonth, $lte: currentDate },
+        status: { $in: ['early_out'] },
+      });
+      const earlyOutDays = earlyOutAttendances.length;
+
+      // 2.c Days with both late check-in & early out
+      const lateInEarlyOutAttendances = await Attendance.find({
+        user: userId,
+        date: { $gte: startOfMonth, $lte: currentDate },
+        status: 'late_in_early_out',
+      });
+      const lateInEarlyOutDays = lateInEarlyOutAttendances.length;
+
+      // Total working days
+      const TotalWorkingdaysAttendances = await Attendance.find({
+        user: userId,
+        date: { $gte: startOfMonth, $lte: currentDate },
+        status: { $in: ['early_out','late_in_early_out','late_in','present'] },
+      });
+      const daysWorkeds = TotalWorkingdaysAttendances.length;
+
       // 3. Leave Balance from EmployeeLeaveBalance
       const balances = await employeeLeaveBalanceModel
         .find({
@@ -107,11 +138,15 @@ class StatsService {
       return {
         workingDays: totalWorkingDays,
         workingDaysElapsed,
-        daysWorked: Number(daysWorked.toFixed(1)),
+        // daysWorked: Number(daysWorked.toFixed(1)),
+        daysWorkeds,
         leaveAllowed,
         leavesTaken,
         leavesAvailable,
         lossOfPayDays: lossOfPay,
+        lateCheckInDays,
+        earlyOutDays,
+        lateInEarlyOutDays,
       };
     } catch (error) {
       console.error('Error in getMonthlyStats:', error);
@@ -133,38 +168,11 @@ class StatsService {
     }
     return count;
   }
-  
 
-  async getTotalWorkingDays(year, month, holidays = []) {
-    const start = new Date(year, month, 1); // 1st day of month
-    const end = new Date(year, month + 1, 0); // last day of month
-    let totalWorkingDays = 0;
-  
-    for (let d = start.getDate(); d <= end.getDate(); d++) {
-      const date = new Date(year, month, d);
-  
-      // Check weekly off (Sunday or alternate Saturday)
-      const day = date.getDay();
-      let isWeeklyOff = false;
-      if (day === 0) isWeeklyOff = true; // Sunday
-      if (day === 6) {
-        const satCount = Math.floor((date.getDate() + 6) / 7);
-        if (satCount === 2 || satCount === 4) isWeeklyOff = true; // alternate Saturday
-      }
-  
-      // Check holiday
-      const isHoliday = holidays.some(
-        (h) => h.date.toDateString() === date.toDateString()
-      );
-  
-      // Count only if not off
-      if (!isWeeklyOff && !isHoliday) totalWorkingDays++;
-    }
-  
-    return totalWorkingDays;
+  async getTotalWorkingDays(year, month, holidays, sundaysCount) {
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    return daysInMonth - holidays.length - sundaysCount;
   }
-  
-  
 
   async calculateLossOfPay(userId, year, month, workingDaysElapsed, holidays) {
     const currentDate = new Date();
@@ -339,6 +347,40 @@ class StatsService {
       totalWorkingDaysToDate - daysWorked - totalLeavesTaken - 1
     );
 
+    // 13. Leave Balance Information for Yearly Stats
+    const leaveAllowed = {};
+    const leavesTaken = {};
+    const leavesAvailable = {};
+
+    leaveBalances.forEach((bal) => {
+      const code = bal.leaveTypeId?.code;
+      if (!code) return;
+
+      const total = bal.total || 0;
+      const used = bal.used || 0;
+
+      leaveAllowed[code] = Math.floor(total);
+      leavesTaken[code] = Math.floor(used);
+      leavesAvailable[code] = Math.max(
+        0,
+        Math.floor(total) - Math.floor(used)
+      );
+    });
+
+    // 14. Probation Leave Information
+    const isProbationEmployee = user.status === 'probation';
+    const probationLeaveInfo = isProbationEmployee ? {
+      isProbation: true,
+      probationLeaveProjected: leaveAllowed['PROBATION'] || 0,
+      probationLeaveTaken: leavesTaken['PROBATION'] || 0,
+      probationLeaveAvailable: leavesAvailable['PROBATION'] || 0,
+    } : {
+      isProbation: false,
+      probationLeaveProjected: 0,
+      probationLeaveTaken: 0,
+      probationLeaveAvailable: 0,
+    };
+
     return {
       totalYearlyLeavesAvailable: Math.round(totalYearlyLeavesAvailable),
       totalAnnualLeaveAllowed: annualLeaveBalance
@@ -347,6 +389,7 @@ class StatsService {
       totalYearlyLeavesTaken: Math.round(totalLeavesTaken),
       totalAnnualLeavesUsed: Math.round(annualLeavesUsed),
       lossOfPayDays: Math.round(lossOfPayDays),
+      ...probationLeaveInfo
     };
   }
 
