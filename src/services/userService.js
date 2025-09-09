@@ -483,7 +483,8 @@ async getUserById(id) {
 
           let carryForwarded = 0;
           if (mapping.leaveTypeId.code === 'ANNUAL') {
-            carryForwarded = unusedProbation > 0 ? unusedProbation - 1 : 0;
+            // Carry forward unused probation leave without penalty
+            carryForwarded = unusedProbation > 0 ? unusedProbation : 0;
           }
 
           const accrued = accrualType === 'monthly' ? accrualPerMonth : quota;

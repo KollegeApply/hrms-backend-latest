@@ -310,7 +310,7 @@ class FeedbacksService {
                 },
                 sentiment: feedback.sentiment,
                 sentimentScore: feedback.sentimentScore,
-                givenBy: `${feedback.givenBy.firstName} ${feedback.givenBy.lastName}`,
+                givenBy: feedback.givenBy ? `${feedback.givenBy.firstName} ${feedback.givenBy.lastName}` : 'Unknown User',
                 createdAt: feedback.createdAt
             })),
             currentPeriod: {

@@ -294,8 +294,9 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
     try {
       const today = moment().tz('Asia/Kolkata').startOf('day').toDate();
 
-      const startMoment = moment(startDate).tz('Asia/Kolkata').startOf('day');
-      const endMoment = moment(endDate).tz('Asia/Kolkata').startOf('day');
+      // Parse dates in Asia/Kolkata timezone to avoid timezone conversion issues
+      const startMoment = moment.tz(startDate, 'Asia/Kolkata').startOf('day');
+      const endMoment = moment.tz(endDate, 'Asia/Kolkata').startOf('day');
 
       if (!startMoment.isValid() || !endMoment.isValid() || startMoment.isAfter(endMoment)) {
         return {
@@ -305,8 +306,9 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
         };
       }
       
-      const currentDate = startMoment.toDate();
-      const lastDate = endMoment.toDate();
+      // Keep dates as moment objects to avoid timezone conversion issues
+      const currentDate = startMoment.clone();
+      const lastDate = endMoment.clone();
 
       const formatDateOnly = (date) => moment(date).tz('Asia/Kolkata').format('YYYY-MM-DD');
 
@@ -334,7 +336,7 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
 
       if (leaveType.code === 'BIRTHDAY') {
         const birthDate = new Date(employee.dateOfBirth);
-        if (moment(currentDate).month() !== moment(birthDate).month()) {
+        if (currentDate.month() !== moment(birthDate).month()) {
           return {
             isValid: false,
             reason: 'Birthday leave can only be taken on your birthday month',
@@ -373,22 +375,55 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
       const [existingLeaves, existingAttendance] = await Promise.all([
         LeaveApplication.find({
           userId,
-          status: { $in: ['approved', 'pending', 'tl-approved', 'hr-approved'] },
-          dates: { $elemMatch: { $gte: startDate, $lte: endDate } },
+          status: { $in: ['approved', 'pending', 'tl-pending', 'hr-pending', 'tl-approved', 'hr-approved'] },
           isDeleted:false,
         }),
         Attendance.find({
           userId,
-          date: { $gte: currentDate, $lte: lastDate },
+          date: { $gte: currentDate.toDate(), $lte: lastDate.toDate() },
         }),
       ]);
+      
+      console.log('=== EXISTING LEAVES DEBUG ===');
+      console.log('Found existing leaves:', existingLeaves.length);
+      existingLeaves.forEach((leave, index) => {
+        console.log(`Leave ${index + 1}:`, {
+          id: leave._id,
+          dates: leave.dates,
+          status: leave.status,
+          isHalfDay: leave.isHalfDay,
+          halfDayType: leave.halfDayType,
+          leaveTypeId: leave.leaveTypeId
+        });
+      });
 
       const existingLeaveDates = new Set();
+      const existingHalfDayLeaves = new Map(); // Map to store half-day leave info by date
       const existingAttendanceDates = new Set();
+      
+      console.log('=== HALF-DAY LEAVES DEBUG ===');
+      console.log('existingHalfDayLeaves:', existingHalfDayLeaves);
 
       existingLeaves.forEach((leave) => {
         leave.dates.forEach((date) => {
-          existingLeaveDates.add(formatDateOnly(date));
+          const dateStr = formatDateOnly(date);
+          const dateMoment = moment.tz(date, 'Asia/Kolkata').startOf('day');
+          
+          // Only consider leaves that overlap with the requested date range
+          if (dateMoment.isSameOrAfter(currentDate, 'day') && dateMoment.isSameOrBefore(lastDate, 'day')) {
+            existingLeaveDates.add(dateStr);
+            
+            // Store half-day leave information
+            if (leave.isHalfDay && leave.halfDayType) {
+              if (!existingHalfDayLeaves.has(dateStr)) {
+                existingHalfDayLeaves.set(dateStr, []);
+              }
+              existingHalfDayLeaves.get(dateStr).push({
+                halfDayType: leave.halfDayType,
+                leaveId: leave._id
+              });
+            }
+          }
         });
       });
 
@@ -406,17 +441,63 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
         reasonMap[reason].push(dateStr);
       };
       
-      let pointer = moment(currentDate).tz('Asia/Kolkata');
+      let pointer = currentDate.clone();
 
       while (pointer.isSameOrBefore(endMoment, 'day')) {
         const dateStr = pointer.format('YYYY-MM-DD');
         const istDay = pointer.day(); // 0 = Sunday, 1 = Monday...
+        console.log(`Processing date: ${dateStr}, existingLeaveDates has: ${existingLeaveDates.has(dateStr)}`);
+        
         if (istDay === 0) {
           // addReason('Sunday', dateStr);
         } else if (existingLeaveDates.has(dateStr)) {
-          addReason('Already applied leave', dateStr);
+          // Check if it's a half-day leave conflict
+          console.log(`Date ${dateStr} has existing leave. isHalfDay: ${isHalfDay}, existingHalfDayLeaves.has: ${existingHalfDayLeaves.has(dateStr)}`);
+          if (isHalfDay && existingHalfDayLeaves.has(dateStr)) {
+            const existingHalfDays = existingHalfDayLeaves.get(dateStr);
+            const hasSameHalfDay = existingHalfDays.some(existing => existing.halfDayType === halfDayType);
+            
+            if (hasSameHalfDay) {
+              addReason(`You already have ${halfDayType === 'first' ? 'first half' : 'second half'} leave applied on this date`, dateStr);
+            } else {
+              // Different half-day, allow it
+              const dateInKolkata = moment.tz(pointer.format('YYYY-MM-DD'), 'Asia/Kolkata').startOf('day').toDate();
+              validDates.push(dateInKolkata);
+            }
+          } else if (!isHalfDay && existingHalfDayLeaves.has(dateStr)) {
+            // Trying to apply full-day leave when half-day leave already exists
+            const existingHalfDays = existingHalfDayLeaves.get(dateStr);
+            const halfDayTypes = existingHalfDays.map(existing => existing.halfDayType).join(' and ');
+            addReason(`Cannot apply full-day leave. You already have ${halfDayTypes} half-day leave applied on this date`, dateStr);
+          } else if (isHalfDay && !existingHalfDayLeaves.has(dateStr)) {
+            // Trying to apply half-day leave when full-day leave already exists
+            addReason(`Cannot apply half-day leave. You already have a full-day leave applied on this date`, dateStr);
+          } else {
+            // Full day leave already exists or no half-day conflict
+            addReason('You already have a leave applied on this date', dateStr);
+          }
         } else if (existingAttendanceDates.has(dateStr)) {
-          addReason('Attendance already marked', dateStr);
+          // Check if attendance conflicts with half-day leave
+          if (isHalfDay) {
+            // For half-day leaves, we need to check the specific attendance status
+            const attendanceRecord = existingAttendance.find(att => formatDateOnly(att.date) === dateStr);
+            if (attendanceRecord) {
+              const status = attendanceRecord.status;
+              if (status === 'leave_applied_full' || status === 'present') {
+                addReason('Attendance already marked', dateStr);
+              } else if (status === 'leave_applied_first_half' && halfDayType === 'first') {
+                addReason('Already applied first half leave', dateStr);
+              } else if (status === 'leave_applied_second_half' && halfDayType === 'second') {
+                addReason('Already applied second half leave', dateStr);
+              } else {
+                // Different half-day or compatible status, allow it
+                const dateInKolkata = moment.tz(pointer.format('YYYY-MM-DD'), 'Asia/Kolkata').startOf('day').toDate();
+                validDates.push(dateInKolkata);
+              }
+            }
+          } else {
+            addReason('Attendance already marked', dateStr);
+          }
         } else {
           const holiday = await Holiday.findOne({
             date: {
@@ -429,7 +510,9 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
           if (holiday) {
             addReason(`Holiday (${holiday.name})`, dateStr);
           } else {
-            validDates.push(pointer.toDate());
+            // Create date in Asia/Kolkata timezone to avoid timezone conversion issues
+            const dateInKolkata = moment.tz(pointer.format('YYYY-MM-DD'), 'Asia/Kolkata').startOf('day').toDate();
+            validDates.push(dateInKolkata);
           }
         }
 
@@ -480,8 +563,8 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
 
       const hireDate = new Date(employee.hireDate);
       const isInFirstMonth =
-        currentDate.getFullYear() === hireDate.getFullYear() &&
-        currentDate.getMonth() === hireDate.getMonth();
+        currentDate.year() === hireDate.getFullYear() &&
+        currentDate.month() === hireDate.getMonth();
 
       const isProbationLeave = leaveType.code === 'PROBATION';
 
@@ -842,6 +925,13 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
 
 
       // Validate dates
+      console.log('=== LEAVE VALIDATION DEBUG ===');
+      console.log('userId:', userId);
+      console.log('startDate:', startDate);
+      console.log('endDate:', endDate);
+      console.log('leaveType:', leaveType);
+      console.log('isHalfDay:', isHalfDay);
+      
       const validationResult = await this.validateLeaveDates(
         userId,
         startDate,
@@ -849,6 +939,8 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
         leaveType,
         isHalfDay
       );
+      
+      console.log('validationResult:', validationResult);
 
 
       if (!validationResult.isValid) {

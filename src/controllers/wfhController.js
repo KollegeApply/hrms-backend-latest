@@ -25,7 +25,8 @@ const createWfh = catchAsync(async (req, res) => {
 
   const user = await User.findById(req?.user?.id)
     .populate('teamLeadId', 'email')
-    .populate('subTeamLeadId', 'email');
+    .populate('subTeamLeadId', 'email')
+    .populate('department', 'name');
 
   const sendMail = req?.body?.sendMail === true;
   if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
@@ -43,6 +44,13 @@ const createWfh = catchAsync(async (req, res) => {
     const fromDate = parsedDate;
     const toDate = parsedDate;
 
+    // Prepare employee information for email templates
+    const employeeInfo = {
+      employeeId: user.employeeId || 'N/A',
+      jobTitle: user.jobTitle || 'N/A',
+      department: user.department?.name || 'N/A'
+    };
+
     Helper.sendEmail({
       receiverEmails: [
         HR_EMAIL,
@@ -56,6 +64,7 @@ const createWfh = catchAsync(async (req, res) => {
         fromDate: fromDate,
         toDate: toDate,
         reason: wfhReason,
+        employeeInfo: employeeInfo,
       }),
     }).catch((err) =>
       logger.error(`Failed to send wfh email to ${user?.teamLeadId}:`, err)
@@ -187,11 +196,20 @@ const deleteWfh = catchAsync(async (req, res) => {
 
   const user = await User?.findById(req?.user?.id)
     .populate('teamLeadId', 'email')
-    .populate('subTeamLeadId', 'email');
+    .populate('subTeamLeadId', 'email')
+    .populate('department', 'name');
 
   const sendMail = req?.body?.sendMail === true;
   if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
     logger.info(`Sending revoke email to ${user?.teamLeadId}`);
+
+    // Prepare employee information for email templates
+    const employeeInfo = {
+      employeeId: user.employeeId || 'N/A',
+      jobTitle: user.jobTitle || 'N/A',
+      department: user.department?.name || 'N/A'
+    };
+
     Helper.sendEmail({
       receiverEmails: [
         HR_EMAIL,
@@ -202,7 +220,11 @@ const deleteWfh = catchAsync(async (req, res) => {
       message: Helper.WfhLeaveRevoked(
         user?.firstName,
         'WFH',
-        formatDateToKolkata(validatedData?.date)
+        formatDateToKolkata(validatedData?.date),
+        '',
+        '',
+        user.team,
+        employeeInfo
       ),
     }).catch((err) =>
       logger.error(
