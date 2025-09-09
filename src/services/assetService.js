@@ -87,7 +87,7 @@ async fetchAssignedAssets(page, limit, search, team) {
     const populateOptions = [
       {
         path: 'assignee',
-        select: 'firstName lastName employeeId email',
+        select: 'firstName lastName employeeId email department',
       },
       {
         path: 'assignedBy',
