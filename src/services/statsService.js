@@ -13,7 +13,6 @@ const employeeLeaveBalanceModel = require('../models/employeeLeaveBalanceModel')
 const LeavePolicyMapping = require('../models/leavePolicyMappingModel');
 const leaveApplicationModel = require('../models/leaveApplicationModel');
 const { startOfYear } = require('date-fns');
-const { isWeeklyOff } = require('../utility/common');
 
 class StatsService {
   /**
@@ -169,38 +168,11 @@ class StatsService {
     }
     return count;
   }
-  
 
-  async getTotalWorkingDays(year, month, holidays = []) {
-    const start = new Date(year, month, 1); // 1st day of month
-    const end = new Date(year, month + 1, 0); // last day of month
-    let totalWorkingDays = 0;
-  
-    for (let d = start.getDate(); d <= end.getDate(); d++) {
-      const date = new Date(year, month, d);
-  
-      // Check weekly off (Sunday or alternate Saturday)
-      const day = date.getDay();
-      let isWeeklyOff = false;
-      if (day === 0) isWeeklyOff = true; // Sunday
-      if (day === 6) {
-        const satCount = Math.floor((date.getDate() + 6) / 7);
-        if (satCount === 2 || satCount === 4) isWeeklyOff = true; // alternate Saturday
-      }
-  
-      // Check holiday
-      const isHoliday = holidays.some(
-        (h) => h.date.toDateString() === date.toDateString()
-      );
-  
-      // Count only if not off
-      if (!isWeeklyOff && !isHoliday) totalWorkingDays++;
-    }
-  
-    return totalWorkingDays;
+  async getTotalWorkingDays(year, month, holidays, sundaysCount) {
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    return daysInMonth - holidays.length - sundaysCount;
   }
-  
-  
 
   async calculateLossOfPay(userId, year, month, workingDaysElapsed, holidays) {
     const currentDate = new Date();

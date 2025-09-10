@@ -9,7 +9,8 @@ const { IT_EMAIL, HR_EMAIL, getTeamEmailConfig } = require('../utility/constants
 const feedbackModel = require('../models/feedbackModel');
 
 const createFeedback = catchAsync(async (req, res) => {
-  const data = req?.body?.data;
+  // Handle both formats: { data: { feedback: ... } } and { feedback: ... }
+  const data = req?.body?.data || req.body;
   const team = req.user.team;
   const validateData = await feedbackValidator.createFeedbackValidator.validateAsync(data);
   const feedback = await feedbackService.createFeedback(validateData, req.user);
@@ -61,13 +62,23 @@ const createFeedback = catchAsync(async (req, res) => {
 )
 
 const getAllFeedbacks = catchAsync(async (req, res) => {
-  const { id: userId, role: userRole, team:userTeam } = req.user;
+  const { id: userId, role: userRole, team: userTeam } = req.user;
+  
+  // Extract filter parameters from query
+  const filters = {
+    department: req.query.department,
+    periodFrom: req.query.periodFrom,
+    periodTo: req.query.periodTo,
+    page: req.query.page,
+    limit: req.query.limit
+  };
 
-  const feedbacks = await feedbackService.getAllFeedbacks(userId, userRole, userTeam);
+  const result = await feedbackService.getAllFeedbacks(userId, userRole, userTeam, filters);
 
   res.status(200).json({
     success: true,
-    data: feedbacks,
+    data: result.feedbacks,
+    pagination: result.pagination
   });
 });
 
@@ -300,6 +311,31 @@ const updateFeedback = catchAsync(async (req, res) => {
   });
 });
 
+const getDepartments = catchAsync(async (req, res) => {
+  const Department = require('../models/departmentModel');
+  
+  const departments = await Department.find({ isDeleted: false })
+    .select('_id name')
+    .sort({ name: 1 });
+
+  res.status(200).json({
+    success: true,
+    data: departments,
+  });
+});
+
+const getFeedbackTrends = catchAsync(async (req, res) => {
+  const { id: userId, role: userRole } = req.user;
+  const feedbackId = req.params.id;
+
+  const trends = await feedbackService.getFeedbackTrends(feedbackId, userId, userRole);
+
+  res.status(200).json({
+    success: true,
+    data: trends,
+  });
+});
+
 
 module.exports = {
   createFeedback,
@@ -309,4 +345,6 @@ module.exports = {
   requestEdit,
   updateEditRequestStatus,
   updateFeedback,
+  getDepartments,
+  getFeedbackTrends,
 }

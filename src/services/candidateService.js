@@ -4,6 +4,8 @@ const { generateCIFToken, cleanEmptyFields } = require('../utility/common');
 const _ = require('lodash');
 const jwt = require('jsonwebtoken');
 const User = require('../models/userModel');
+const aiService = require('./aiService');
+const logger = require('../config/logger');
 
 
 const cleanDataForUpdate = (data) => {

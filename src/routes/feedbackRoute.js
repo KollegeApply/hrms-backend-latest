@@ -5,15 +5,19 @@ const {
 } = require('../middleware/authMiddleware');
 const feedbackController = require("../controllers/feedbackController");
 const { USER_ROLES } = require('../utility/constants');
+const AIPreprocessingMiddleware = require('../middleware/aiPreprocessingMiddleware');
 
 const router = express.Router();
 
-router.post("/", authenticateUser, feedbackController.createFeedback);
+router.post("/", authenticateUser, AIPreprocessingMiddleware.preprocessFeedback, feedbackController.createFeedback);
 
 router.get("/", authenticateUser, feedbackController.getAllFeedbacks);
 
+router.get("/departments", authenticateUser, feedbackController.getDepartments);
 
 router.get("/:id", authenticateUser, feedbackController.getFeedbackById);
+
+router.get("/:id/trends", authenticateUser, feedbackController.getFeedbackTrends);
 
 router.put("/:id/concern", authenticateUser, feedbackController.raiseConcern);
 

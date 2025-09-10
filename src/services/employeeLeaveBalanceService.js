@@ -6,8 +6,62 @@ const { default: httpStatus } = require('http-status');
 const LeaveApplication = require('../models/leaveApplicationModel');
 const LeavePolicyMapping = require('../models/leavePolicyMappingModel');
 const leaveApplicationModel = require('../models/leaveApplicationModel');
+const EmployeeHistory = require('../models/employeeHistory');
 
 class EmployeeLeaveBalanceService {
+  // Helper method to get status change date for probation to onroll transition
+  async getStatusChangeDate(employeeId) {
+    try {
+      const statusChange = await EmployeeHistory.findOne({
+        employeeId,
+        entity: 'status',
+        previous: 'probation',
+        changed: 'onroll'
+      }).sort({ actionAt: -1 });
+      
+      return statusChange ? statusChange.actionAt : null;
+    } catch (error) {
+      console.error('Error getting status change date:', error);
+      return null;
+    }
+  }
+
+  // Helper method to calculate probation leave for the probation period
+  async calculateProbationLeaveForPeriod(employeeId, startDate, endDate) {
+    try {
+      // Get probation leave type
+      const probationLeaveType = await LeaveType.findOne({ code: 'PROBATION' });
+      if (!probationLeaveType) return 0;
+
+      // Calculate months in probation period
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const monthsDiff = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+      
+      // Probation accrual is 1 day per month
+      const probationAccrued = monthsDiff * 1.0;
+
+      // Get used probation leaves during this period
+      const usedLeaves = await leaveApplicationModel.find({
+        userId: employeeId,
+        leaveTypeId: probationLeaveType._id,
+        status: { $in: ['approved', 'pending', 'tl-pending', 'hr-pending'] },
+        isDeleted: false,
+        dates: {
+          $gte: start,
+          $lte: end
+        }
+      });
+
+      const usedDays = usedLeaves.reduce((acc, leave) => acc + (leave.totalDays || 0), 0);
+      
+      return Math.max(0, probationAccrued - usedDays);
+    } catch (error) {
+      console.error('Error calculating probation leave:', error);
+      return 0;
+    }
+  }
+
   // Get all leave balances for an employee for a year
   async getBalancesForEmployee(employeeId) {
     try {
@@ -73,24 +127,57 @@ class EmployeeLeaveBalanceService {
             const typeId = String(leaveType._id);
             const balance = balanceMap.get(typeId);
 
-            // Calculate how many months the employee has worked in this year
-            const remainingMonths = (() => {
-              if (hireYear < currentYear) return 12;
-              if (hireYear === currentYear) return 12 - hireMonth;
-              return 0;
-            })();
-
             let accrued = 0;
+            let carryForwarded = balance?.carryForwarded || 0;
             
             // Special handling for LOP (Loss of Pay) - unlimited for all users
             if (leaveType.code === 'LOP') {
               accrued = 999; // Set a high number to indicate unlimited
             } else if (user.status === 'onroll') {
-              accrued =
-                mapping.accrualType === 'monthly'
+              // Check if employee transitioned from probation to onroll this year
+              const statusChangeDate = await this.getStatusChangeDate(employeeId);
+              
+              if (statusChangeDate && statusChangeDate.getFullYear() === currentYear) {
+                // Employee transitioned from probation to onroll this year
+                const hireDate = new Date(user.hireDate);
+                const probationEndDate = statusChangeDate;
+                const yearEnd = new Date(currentYear, 11, 31);
+                
+                // Calculate probation leave for probation period
+                const unusedProbationLeave = await this.calculateProbationLeaveForPeriod(
+                  employeeId, 
+                  hireDate, 
+                  probationEndDate
+                );
+                
+                // Calculate annual leave for onroll period
+                const onrollStartMonth = statusChangeDate.getMonth();
+                const onrollMonths = 12 - onrollStartMonth;
+                
+                if (mapping.accrualType === 'monthly') {
+                  accrued = onrollMonths * mapping.accrualPerMonth;
+                } else {
+                  accrued = mapping.quota;
+                }
+                
+                // Carry forward unused probation leave (no penalty)
+                if (leaveType.code === 'ANNUAL') {
+                  carryForwarded = unusedProbationLeave;
+                }
+              } else {
+                // Normal onroll employee - calculate from hire date
+                const remainingMonths = (() => {
+                  if (hireYear < currentYear) return 12;
+                  if (hireYear === currentYear) return 12 - hireMonth;
+                  return 0;
+                })();
+                
+                accrued = mapping.accrualType === 'monthly'
                   ? remainingMonths * mapping.accrualPerMonth
                   : mapping.quota;
+              }
             } else {
+              // Probation employee
               accrued = balance?.total || 0;
             }
 
@@ -104,15 +191,14 @@ class EmployeeLeaveBalanceService {
               return acc + (leave.totalDays || 0);
             }, 0);
 
-            const carryForwarded = balance?.carryForwarded || 0;
             const used = balance?.used || 0;
 
             const totalProjected = Math.floor(accrued + carryForwarded);
             
-            // Special handling for LOP - always show as available
+            // Special handling for LOP
             let available = 0;
             if (leaveType.code === 'LOP') {
-              available = 999; // Show as unlimited available
+              available = 999;
             } else {
               available = Math.floor(
                 (balance?.total || 0) - used - pendingDays

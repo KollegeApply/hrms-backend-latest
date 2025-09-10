@@ -15,7 +15,12 @@ const createFeedbackValidator = Joi.object({
     overall: Joi.number().min(1).max(5).optional(),
   }).required(),
   concernRaised: Joi.boolean().optional(),
-  concernReason: Joi.string().optional()
+  concernReason: Joi.string().optional(),
+  // AI Analysis fields (added by middleware)
+  sentiment: Joi.string().valid('Positive', 'Neutral', 'Negative').optional(),
+  sentimentScore: Joi.number().min(0).max(100).optional(),
+  keywords: Joi.array().items(Joi.string()).optional(),
+  recommendation: Joi.string().allow('').optional()
 });
 
 
@@ -35,6 +40,11 @@ const updateFeedbackValidator = Joi.object({
   }).optional(),
   concernRaised: Joi.boolean().optional(),
   concernReason: Joi.string().optional(),
+  // AI Analysis fields (optional for updates)
+  sentiment: Joi.string().valid('Positive', 'Neutral', 'Negative').optional(),
+  sentimentScore: Joi.number().min(0).max(100).optional(),
+  keywords: Joi.array().items(Joi.string()).optional(),
+  recommendation: Joi.string().allow('').optional()
 });
 
 
