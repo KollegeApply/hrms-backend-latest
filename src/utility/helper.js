@@ -1124,7 +1124,7 @@ class Helper {
   }
 
 
-  static getTicketStatusUpdateEmail(employeeName, subject, status, baseUrl, ticketId, teamName) {
+  static getTicketStatusUpdateEmail(employeeName, subject, status, baseUrl, ticketId, teamName, reason = '') {
     const capitalizedStatus = status.charAt(0).toUpperCase() + status.slice(1);
     const statusColor =
       status === "approved"
@@ -1147,10 +1147,16 @@ class Helper {
           <strong style="color: ${statusColor};">${capitalizedStatus}</strong>.
         </p>
 
+        ${reason && reason.trim() !== '' ? `
+        <div style="background-color:#f8f9fa; padding:14px 16px; border-left:4px solid #6c757d; border-radius:6px; margin: 18px 0;">
+          <p style="margin:0; font-size:14px; color:#495057;"><strong>Closure Remark:</strong> ${reason.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</p>
+        </div>
+        ` : ''}
+
         <div style="text-align: center; margin: 30px 0;">
           <a href="${baseUrl}/tickets" target="_blank" rel="noopener noreferrer"
              style="background-color: #007bff; color: white; padding: 12px 24px; border-radius: 5px; text-decoration: none; font-weight: bold;">
-            View Ticket in Dashboard
+            View Ticket
           </a>
         </div>
 
