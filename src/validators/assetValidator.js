@@ -117,11 +117,11 @@ const handleAssetRequestUpdateSchema = Joi.object({
   }),
   status: Joi.string()
     .required()
-    .valid(...VALID_ASSETS_STATUS)
+    .valid(...VALID_ASSET_REQUEST_STATUS)
     .messages({
       'string.empty': 'Status is required',
       'any.required': 'Status is required',
-      'any.only': `Status must be one of the following: ${VALID_ASSETS_STATUS.join(', ')}`,
+      'any.only': `Status must be one of the following: ${VALID_ASSET_REQUEST_STATUS.join(', ')}`,
     }),
 }).options({ stripUnknown: true });
 
@@ -141,6 +141,7 @@ const createAssetRequestSchema = Joi.object({
   description: Joi.string().optional().allow('').max(500).messages({
     'string.max': 'Description cannot exceed 500 characters',
   }),
+  
   sendMail: Joi.boolean().optional(),
 }).options({ stripUnknown: true });
 

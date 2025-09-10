@@ -39,10 +39,10 @@ const ASSETS_STATUS = {
 };
 
 const ASSET_REQUEST_STATUS = {
-  PENDING: 'pending',
-  APPROVED: 'approved',
-  REJECTED: 'rejected',
-  FULFILLED: 'fulfilled',
+  PENDING: 'asset-request-pending',
+  APPROVED: 'asset-request-approved',
+  REJECTED: 'asset-request-rejected',
+  FULFILLED: 'asset-request-fulfilled',
 };
 
 

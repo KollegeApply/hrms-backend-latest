@@ -140,4 +140,17 @@ router.get(
   assetController.fetchTeamAssets
 );
 
+// Route to update return request status
+router.put(
+  '/return-requests/:id',
+  authenticateUser,
+  authorizeRole([
+    USER_ROLES?.IT,
+    USER_ROLES?.HR,
+    USER_ROLES?.SUBADMIN,
+    USER_ROLES?.ADMIN,
+  ]),
+  assetController.updateAssetRequestStatus
+);
+
 module.exports = router;

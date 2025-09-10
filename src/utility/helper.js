@@ -1884,6 +1884,67 @@ static teamWeeklyReportEmail(teamLeadName, startDate, endDate, tableRows, team) 
   }
 
   /**
+   * Email template for asset request status update notification
+   */
+  static getAssetRequestStatusEmail(firstName, employeeId, assetType, specifications, status, dashboardUrl) {
+    const statusColor = status === 'approved' ? '#28a745' : '#dc3545';
+    const capitalizedStatus = status.charAt(0).toUpperCase() + status.slice(1);
+
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 24px; border: 1px solid #ddd; border-radius: 8px; background-color: #fdfdfd;">
+      <div style="text-align: center; margin-bottom: 24px;">
+        <h2 style="color: #333; font-size: 22px;">Asset Request <span style="color: ${statusColor};">${capitalizedStatus}</span></h2>
+      </div>
+
+      <div style="background-color: #fff; padding: 28px 24px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
+        <p style="font-size: 16px; color: #333; line-height: 1.5; margin-bottom: 16px;">
+          Hello <strong>${firstName}</strong>,
+        </p>
+
+        <p style="font-size: 15px; color: #555; line-height: 1.5; margin-bottom: 16px;">
+          Your asset request has been 
+          <strong style="color: ${statusColor};">${capitalizedStatus}</strong>. Below are the request details:
+        </p>
+
+        <table style="width: 100%; font-size: 14px; color: #555; margin-bottom: 24px;">
+          <tr>
+            <td style="padding: 8px 0;"><strong>Employee ID:</strong></td>
+            <td style="padding: 8px 0;">${employeeId}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0;"><strong>Asset Type:</strong></td>
+            <td style="padding: 8px 0;">${assetType}</td>
+          </tr>
+          <tr>
+            <td style="padding: 8px 0;"><strong>Specifications:</strong></td>
+            <td style="padding: 8px 0;">${specifications}</td>
+          </tr>
+        </table>
+
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${dashboardUrl}" style="background-color: #007bff; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+            View Request in Dashboard
+          </a>
+        </div>
+
+        <p style="font-size: 14px; color: #777; line-height: 1.5; margin-bottom: 24px;">
+          If you have any questions or concerns, please feel free to contact the IT department.
+        </p>
+
+        <p style="font-size: 15px; color: #555; line-height: 1.6; margin-bottom: 8px;">
+          Thanks & regards,<br>
+          <strong>IT Department</strong>
+        </p>
+      </div>
+
+      <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #999;">
+        This is an automated message. Please do not reply directly to this email.
+      </div>
+    </div>
+    `;
+  }
+
+  /**
    * Email template for asset request notification
    */
   static getAssetRequestEmail(employeeName, employeeId, assetType, specifications, neededBy, description, dashboardUrl, team) {

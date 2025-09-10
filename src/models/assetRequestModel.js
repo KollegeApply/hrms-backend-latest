@@ -24,8 +24,8 @@ const assetRequestSchema = new Schema(
     },
     status: {
       type: String,
-      enum: ['pending', 'approved', 'rejected', 'fulfilled'],
-      default: 'pending',
+      enum: ["asset-request-pending", "asset-request-approved", "asset-request-rejected"],
+      default: 'asset-request-pending',
       required: true,
     },
     description: {

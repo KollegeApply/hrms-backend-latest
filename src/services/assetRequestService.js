@@ -31,7 +31,7 @@ class AssetRequestService {
       neededBy,
       requestedBy,
       description,
-      status: 'pending',
+      status: 'asset-request-pending',
     });
 
     await newRequest.save();

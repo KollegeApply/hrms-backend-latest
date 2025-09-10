@@ -400,8 +400,25 @@ const returnAsset = catchAsync(async (req, res) => {
 
 const fetchAssetRequests = catchAsync(async (req, res) => {
   const team = req.user.team;
-  const assetRequests = await assetsService.fetchAssetRequests(team);
-  res.status(httpStatus.OK).json(assetRequests);
+  
+  // Fetch both asset requests and asset return requests
+  const [assetRequests, assetReturnRequests] = await Promise.all([
+    assetRequestService.fetchAssetRequests(1, 1000, '', team),
+    assetsService.fetchAssetRequests(team)
+  ]);
+
+  // Combine both types of data
+  const combinedData = {
+    status: true,
+    message: 'Asset requests and return requests fetched successfully.',
+    data: {
+      assetRequests: assetRequests.data || [],
+      assetReturnRequests: assetReturnRequests || [],
+      pagination: assetRequests.pagination || {}
+    }
+  };
+
+  res.status(httpStatus.OK).json(combinedData);
 });
 
 const handleAssetRequestUpdate = catchAsync(async (req, res) => {
@@ -415,25 +432,26 @@ const handleAssetRequestUpdate = catchAsync(async (req, res) => {
       status,
     });
 
-  const updatedRequest = await assetsService.updateAssetRequestStatus(
+  const updatedRequest = await assetRequestService.updateAssetRequestStatus(
     validatedData.id,
-    validatedData.status
+    validatedData.status,
+    req.user.id
   );
 
   const sendMail = req?.body?.sendMail;
-  const shouldSendEmail = ['return_approved', 'return_rejected'].includes(status.toLowerCase());
+  const shouldSendEmail = ['asset-request-approved', 'asset-request-rejected'].includes(status);
   if (sendMail && shouldSendEmail && process.env.HRMS_FRONTEND_URL) {
-    const employee = await User.findById(updatedRequest.assignee);
-    const { assetName, assetType } = updatedRequest;
+    const employee = updatedRequest.requestedBy;
+    const { assetType, specifications } = updatedRequest;
 
-    const updStatus = (status === "return_approved") ? "approved" : "rejected";
+    const updStatus = (status === "asset-request-approved") ? "approved" : "rejected";
 
-    const emailSubject = `Asset Return Request ${updStatus.charAt(0).toUpperCase() + updStatus.slice(1)} - ${assetName}`;
-    const emailMessage = Helper.getAssetReturnStatusEmail(
+    const emailSubject = `Asset Request ${updStatus.charAt(0).toUpperCase() + updStatus.slice(1)} - ${assetType}`;
+    const emailMessage = Helper.getAssetRequestStatusEmail(
       employee.firstName,
       employee.employeeId,
-      assetName,
       assetType,
+      specifications,
       updStatus,
       process.env.HRMS_FRONTEND_URL
     );
@@ -442,7 +460,7 @@ const handleAssetRequestUpdate = catchAsync(async (req, res) => {
     const receiverEmails = [employee.email];
     const ccEmails = [configEmails?.HR_EMAIL, configEmails?.IT_EMAIL, req.user.email, ...configEmails?.ADMIN_EMAILS].filter(Boolean);
 
-    logger.info(`Sending asset return ${updStatus} email to ${employee.email}`);
+    logger.info(`Sending asset request ${updStatus} email to ${employee.email}`);
 
     Helper.sendEmail({
       receiverEmails,
@@ -453,7 +471,7 @@ const handleAssetRequestUpdate = catchAsync(async (req, res) => {
       cc:ccEmails,
       team,
     }).catch((err) => {
-      logger.error(`Failed to send return ${updStatus} email to ${employee.email}:`, err);
+      logger.error(`Failed to send asset request ${updStatus} email to ${employee.email}:`, err);
     });
   }
 
@@ -488,10 +506,10 @@ const getPCDepartmentSummary = catchAsync(async (req, res) => {
 const createAssetRequest = catchAsync(async (req, res) => {
   const data = req.body;
   const requestedById = req.user?.id;
-  data.requestedBy = requestedById;
 
   const validatedData =
     await assetValidator.createAssetRequestSchema.validateAsync(req.body);
+  validatedData.requestedBy = requestedById;
 
   const newRequest = await assetRequestService?.createAssetRequest(validatedData);
 
@@ -609,6 +627,27 @@ const fetchTeamAssets = catchAsync(async (req, res) => {
   });
 });
 
+const updateAssetRequestStatus = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  const validatedData = await assetValidator.handleAssetRequestUpdateSchema.validateAsync({
+    id,
+    status,
+  });
+
+  const updatedRequest = await assetsService.updateAssetRequestStatus(
+    validatedData.id,
+    validatedData.status
+  );
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: `Asset return request ${status} successfully.`,
+    data: updatedRequest,
+  });
+});
+
 module.exports = {
   assignAsset,
   fetchAssignedAssets,
@@ -624,4 +663,5 @@ module.exports = {
   fetchAssetRequestsList,
   fetchAssetRequestsByUserId,
   fetchTeamAssets,
+  updateAssetRequestStatus,
 };
