@@ -105,6 +105,7 @@ const updateTicket = catchAsync(async (req, res) => {
         process.env.HRMS_FRONTEND_URL,
         updatedTicket.ticketId,
         team,
+        validatedData?.actionReason || updatedTicket?.actionReason || ''
       );
 
       let ccEmails = [configEmails?.HR_EMAIL];
