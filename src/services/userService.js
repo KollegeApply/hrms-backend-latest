@@ -367,7 +367,9 @@ async getUserById(id) {
         throw new ApiError(httpStatus.NOT_FOUND, 'Candidate not found');
       }
       candidate.status = 'completed';
+      user.userDetails = candidate.userDetails;
       await candidate.save();
+      await user.save();
     }
 
     logger.info(`User created successfully with ID: ${savedUser?.id}`);

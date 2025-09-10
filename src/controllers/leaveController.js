@@ -63,44 +63,54 @@ const updateLeave = catchAsync(async (req, res) => {
   const { id: leaveId } = req.params;
   const { status: action } = req.body; 
   const editor = req.user;
+  const team = req.user.team;
 
-  const updatedLeave = await leaveService.updateLeaveStatus({
+  const updatedData = await leaveService.updateLeaveStatus({
     leaveId,
     action,
     editor,
   });
-
-  await sendLeaveStatusUpdateEmail(updatedLeave, editor.team);
-
-  res.status(httpStatus.OK).json({
-    status: true,
-    message: 'Leave status updated successfully.',
-    data: updatedLeave,
-  });
-});
-
-
-
-async function sendLeaveStatusUpdateEmail(updatedLeave, team) {
-  const mailReceiver = await User.findById(updatedLeave.userId)
-    .populate('teamLeadId', 'email firstName')
-    .populate('subTeamLeadId', 'email firstName');
-
-  const leaveType = await leaveTypeModel.findById(updatedLeave.leaveTypeId).select('name');
-
-  if (!mailReceiver || !leaveType) {
-    logger.error(`Could not find user or leave type for leave ID: ${updatedLeave._id}`);
-    return;
+  if (!updatedData) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'Leave not found or update failed.');
   }
-  
-  const fromMoment = moment(updatedLeave.dates[0]).tz('Asia/Kolkata');
-  const toMoment = moment(updatedLeave.dates[updatedLeave.dates.length - 1]).tz('Asia/Kolkata');
-  const formattedLeaveDates = fromMoment.isSame(toMoment, 'day')
-      ? fromMoment.format('DD MMMM YYYY')
-      : `${fromMoment.format('DD MMMM YYYY')} to ${toMoment.format('DD MMMM YYYY')}`;
 
-  const configEmails = getTeamEmailConfig(team);
-  let emailSubject = '', emailMessage = '', receiverEmails = [], ccEmails = [];
+  const leaveType = await leaveTypeModel.findById(updatedData?.leaveTypeId).select('name');
+
+  if (updatedData.status) {
+    const mailReciever = await User.findById(updatedData.userId)
+      .populate('teamLeadId', 'firstName lastName email')
+      .populate('subTeamLeadId', 'firstName lastName email')
+      .populate('department', 'name');
+
+    // Construct full name
+    const fullName = `${mailReciever?.firstName || ''} ${mailReciever?.lastName || ''}`.trim();
+    
+    // Construct Team Lead name
+    const teamLeadName = mailReciever?.teamLeadId ? 
+      `${mailReciever.teamLeadId.firstName || ''} ${mailReciever.teamLeadId.lastName || ''}`.trim() : 
+      (mailReciever?.subTeamLeadId ? 
+        `${mailReciever.subTeamLeadId.firstName || ''} ${mailReciever.subTeamLeadId.lastName || ''}`.trim() : 
+        'N/A');
+
+    if (mailReciever?.email) {
+      const leaveDates = updatedData.dates;
+      if (!leaveDates || (Array.isArray(leaveDates) && leaveDates.length === 0)) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid or missing leave date');
+      }
+
+      let formattedLeaveDates = '';
+      if (Array.isArray(leaveDates)) {
+        const fromMoment = moment(leaveDates[0]).tz('Asia/Kolkata');
+        const toMoment = moment(leaveDates[leaveDates.length - 1]).tz('Asia/Kolkata');
+        formattedLeaveDates = fromMoment.isSame(toMoment, 'day')
+          ? fromMoment.format('DD MMMM YYYY')
+          : `${fromMoment.format('DD MMMM YYYY')} to ${toMoment.format('DD MMMM YYYY')}`;
+      } else {
+        formattedLeaveDates = moment(leaveDates).tz('Asia/Kolkata').format('DD MMMM YYYY');
+      }
+
+      const configEmails = getTeamEmailConfig(team);
+      let emailSubject, emailMessage, receiverEmails = [], ccEmails = [];
 
   switch (updatedLeave.status) {
     case 'hr-pending':
@@ -135,18 +145,27 @@ async function sendLeaveStatusUpdateEmail(updatedLeave, team) {
       break;
   }
 
-  if (receiverEmails.length) {
-    Helper.sendEmail({
-      receiverEmails,
-      subject: emailSubject,
-      message: emailMessage,
-      cc: ccEmails,
-      team,
-    }).catch(err => logger.error(`Failed to send leave notification for leave ID ${updatedLeave._id}:`, err));
+      if (receiverEmails.length) {
+        Helper.sendEmail({
+          receiverEmails,
+          subject: emailSubject,
+          message: emailMessage,
+          cc: ccEmails,
+          team,
+        }).catch(err => logger.error(`Failed to send leave notification:`, err));
+      }
+    }
   }
-}
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Leave updated successfully.',
+    data: updatedData,
+  });
+});
 
 
+// delete leave
 const deleteLeave = catchAsync(async (req, res) => {
   const userId = req.user.id;
   const teamCode = req?.user?.team;
@@ -163,7 +182,11 @@ const deleteLeave = catchAsync(async (req, res) => {
 
   const user = await User?.findById(req?.user?.id)
     .populate('teamLeadId', 'email')
-    .populate('subTeamLeadId', 'email');
+    .populate('subTeamLeadId', 'email')
+    .populate('department', 'name');
+
+  // Construct full name
+  const userFullName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim();
 
   const sendMail = req?.query?.sendMail === 'true';
   if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
@@ -209,16 +232,20 @@ const deleteLeave = catchAsync(async (req, res) => {
     // Send email
     Helper.sendEmail({
       receiverEmails: [
-        configEmails?.HR_EMAIL
+        configEmails?.HR_EMAIL,
+        ...configEmails?.ADMIN_EMAILS
       ],
       subject: 'Revoked leave application',
       message: Helper.WfhLeaveRevoked(
-        user?.firstName,
+        userFullName,
         'Leave',
         formattedLeaveDates,
         leaveType,
         null,
         teamCode,
+        user?.jobTitle,
+        user?.employeeId,
+        user?.department?.name,
       ),
       cc: ccEmails,
       team:teamCode,
@@ -244,8 +271,15 @@ const applyForLeave = catchAsync(async (req, res) => {
     const team = req.user.team;
 
     const user = await User.findById(userId)
-      .populate('teamLeadId', 'firstName email firstName')
-      .populate('subTeamLeadId', 'firstName email firstName');
+      .populate('teamLeadId', 'firstName lastName email')
+      .populate('subTeamLeadId', 'firstName lastName email')
+      .populate('department', 'name');
+
+    // Construct full names
+    const userFullName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim();
+    const tlFullName = user?.teamLeadId ? `${user.teamLeadId.firstName || ''} ${user.teamLeadId.lastName || ''}`.trim() : '';
+    const subTlFullName = user?.subTeamLeadId ? `${user.subTeamLeadId.firstName || ''} ${user.subTeamLeadId.lastName || ''}`.trim() : '';
+    const primaryTlName = tlFullName || subTlFullName;
 
     const hasTL = user?.teamLeadId || user?.subTeamLeadId;
 
@@ -290,8 +324,8 @@ const applyForLeave = catchAsync(async (req, res) => {
             receiverEmails: [primaryRecipient],
             subject: 'Leave Application - Action Required',
             message: Helper.WfhLeaveApplication({
-              userName: user?.firstName,
-              tlName: user?.teamLeadId?.firstName || user?.subTeamLeadId?.firstName,
+              userName: userFullName,
+              tlName: primaryTlName,
               requestType: 'Leave',
               leaveType: leaveType?.name || 'Leave',
               fromDate: from,

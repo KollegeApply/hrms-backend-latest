@@ -5,6 +5,7 @@ const {
   authenticateUser,
   authorizeRole,
 } = require('../middleware/authMiddleware');
+const { safeUpload } = require('../middleware/uploadMiddleware');
 const { USER_ROLES } = require('../utility/constants');
 
 const router = express.Router();
@@ -96,5 +97,22 @@ router.post('/reset-password', userController?.verifyOtp);
 
 
 router.get('/:id/history', authenticateUser, userController?.getUserHistory);
+
+// Approve User Form: Restricted to HR/Admin/SubAdmin
+router.put(
+  '/:id/approve',
+  authenticateUser,
+  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]),
+  userController.approveUser
+);
+
+// Update User CIF Form: Restricted to HR/Admin/SubAdmin
+router.put(
+  '/:id/cif-form',
+  authenticateUser,
+  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]),
+  safeUpload([]), // Allow any file fields
+  userController.updateUserCifForm
+);
 
 module.exports = router;

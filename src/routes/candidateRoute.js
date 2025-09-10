@@ -17,10 +17,10 @@ const requiredDocumentFields = [
   { name: 'documents.graduationProof', maxCount: 1 },
   { name: 'documents.updatedResume', maxCount: 1 },
   { name: 'documents.cancelledChequeOrPassbook', maxCount: 1 },
-  { name: 'documents.form11', maxCount: 1 },
 ];
 
 const optionalDocumentFields = [
+  { name: 'documents.form11', maxCount: 1 },
   { name: 'documents.postGraduationProof', maxCount: 1 },
   { name: 'documents.offerLetter', maxCount: 1 },
   { name: 'documents.relievingLetter', maxCount: 1 },
