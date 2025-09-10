@@ -131,7 +131,7 @@ const userSchema = new Schema(
     },
     formStatus : {
       type: String,
-      enum: ["pending","draft","submitted","reminder_sent"],
+      enum: ["pending","draft","submitted","reminder_sent","underReview","approved"],
       required: false,
     },
     candidateId: {
