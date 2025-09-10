@@ -2,6 +2,7 @@ const httpStatus = require('http-status-codes');
 const catchAsync = require('../utility/catchAsync');
 const logger = require('../config/logger');
 const assetsService = require('../services/assetService');
+const assetRequestService = require('../services/assetRequestService');
 const assetValidator = require('../validators/assetValidator');
 const User = require('../models/userModel');
 const Helper = require('../utility/helper');
@@ -470,8 +471,25 @@ const returnAsset = catchAsync(async (req, res) => {
 
 const fetchAssetRequests = catchAsync(async (req, res) => {
   const team = req.user.team;
-  const assetRequests = await assetsService.fetchAssetRequests(team);
-  res.status(httpStatus.OK).json(assetRequests);
+  
+  // Fetch both asset requests and asset return requests
+  const [assetRequests, assetReturnRequests] = await Promise.all([
+    assetRequestService.fetchAssetRequests(1, 1000, '', team),
+    assetsService.fetchAssetRequests(team)
+  ]);
+
+  // Combine both types of data
+  const combinedData = {
+    status: true,
+    message: 'Asset requests and return requests fetched successfully.',
+    data: {
+      assetRequests: assetRequests.data || [],
+      assetReturnRequests: assetReturnRequests || [],
+      pagination: assetRequests.pagination || {}
+    }
+  };
+
+  res.status(httpStatus.OK).json(combinedData);
 });
 
 const handleAssetRequestUpdate = catchAsync(async (req, res) => {
@@ -485,36 +503,26 @@ const handleAssetRequestUpdate = catchAsync(async (req, res) => {
       status,
     });
 
-  const updatedRequest = await assetsService.updateAssetRequestStatus(
+  const updatedRequest = await assetRequestService.updateAssetRequestStatus(
     validatedData.id,
-    validatedData.status
+    validatedData.status,
+    req.user.id
   );
 
   const sendMail = req?.body?.sendMail;
-  const shouldSendEmail = ['return_approved', 'return_rejected'].includes(status.toLowerCase());
+  const shouldSendEmail = ['asset-request-approved', 'asset-request-rejected'].includes(status);
   if (sendMail && shouldSendEmail && process.env.HRMS_FRONTEND_URL) {
-    const employee = await User.findById(updatedRequest.assignee)
-      .populate('teamLeadId', 'firstName lastName email')
-      .populate('subTeamLeadId', 'firstName lastName email')
-      .populate('department', 'name');
-    const { assetName, assetType } = updatedRequest;
+    const employee = updatedRequest.requestedBy;
+    const { assetType, specifications } = updatedRequest;
 
-    // Construct full names
-    const employeeFullName = `${employee?.firstName || ''} ${employee?.lastName || ''}`.trim();
-    const teamLeadName = employee?.teamLeadId ? 
-      `${employee.teamLeadId.firstName || ''} ${employee.teamLeadId.lastName || ''}`.trim() : 
-      (employee?.subTeamLeadId ? 
-        `${employee.subTeamLeadId.firstName || ''} ${employee.subTeamLeadId.lastName || ''}`.trim() : 
-        'N/A');
+    const updStatus = (status === "asset-request-approved") ? "approved" : "rejected";
 
-    const updStatus = (status === "return_approved") ? "approved" : "rejected";
-
-    const emailSubject = `Asset Return Request ${updStatus.charAt(0).toUpperCase() + updStatus.slice(1)} - ${assetName}`;
-    const emailMessage = Helper.getAssetReturnStatusEmail(
-      employeeFullName,
+    const emailSubject = `Asset Request ${updStatus.charAt(0).toUpperCase() + updStatus.slice(1)} - ${assetType}`;
+    const emailMessage = Helper.getAssetRequestStatusEmail(
+      employee.firstName,
       employee.employeeId,
-      assetName,
       assetType,
+      specifications,
       updStatus,
       process.env.HRMS_FRONTEND_URL,
       employee?.jobTitle,
@@ -526,7 +534,7 @@ const handleAssetRequestUpdate = catchAsync(async (req, res) => {
     const receiverEmails = [employee.email];
     const ccEmails = [configEmails?.HR_EMAIL, configEmails?.IT_EMAIL, req.user.email, ...configEmails?.ADMIN_EMAILS].filter(Boolean);
 
-    logger.info(`Sending asset return ${updStatus} email to ${employee.email}`);
+    logger.info(`Sending asset request ${updStatus} email to ${employee.email}`);
 
     Helper.sendEmail({
       receiverEmails,
@@ -537,7 +545,7 @@ const handleAssetRequestUpdate = catchAsync(async (req, res) => {
       cc:ccEmails,
       team,
     }).catch((err) => {
-      logger.error(`Failed to send return ${updStatus} email to ${employee.email}:`, err);
+      logger.error(`Failed to send asset request ${updStatus} email to ${employee.email}:`, err);
     });
   }
 
@@ -569,6 +577,151 @@ const getPCDepartmentSummary = catchAsync(async (req, res) => {
   });
 });
 
+const createAssetRequest = catchAsync(async (req, res) => {
+  const data = req.body;
+  const requestedById = req.user?.id;
+
+  const validatedData =
+    await assetValidator.createAssetRequestSchema.validateAsync(req.body);
+  validatedData.requestedBy = requestedById;
+
+  const newRequest = await assetRequestService?.createAssetRequest(validatedData);
+
+  if (!newRequest) {
+    return res.status(httpStatus.BAD_REQUEST).json({
+      status: false,
+      message: 'Asset request not created successfully.',
+    });
+  }
+
+  const sendMail = req?.body?.sendMail === true;
+  if (sendMail && process.env.HRMS_FRONTEND_URL) {
+    const { assetType, specifications, neededBy, description } = validatedData;
+    const employee = await User.findById(requestedById);
+    const team = req?.user?.team;
+    const emailSubject = `New Asset Request - ${assetType}`;
+    const emailMessage = Helper.getAssetRequestEmail(
+      `${employee.firstName} ${employee.lastName}`,
+      employee.employeeId,
+      assetType,
+      specifications,
+      neededBy,
+      description,
+      process.env.HRMS_FRONTEND_URL,
+      team,
+    );
+
+    const configEmails = getTeamEmailConfig(team);
+
+    const receiverEmails = [configEmails?.HR_EMAIL, configEmails?.IT_EMAIL];
+    const cc = [employee.email, ...configEmails?.ADMIN_EMAILS];
+
+    logger.info(`Sending asset request email to HR and IT for ${assetType}`);
+
+    Helper.sendEmail({
+      receiverEmails,
+      subject: emailSubject,
+      message: emailMessage,
+      fromHR: false,
+      fromIT: false,
+      cc,
+      team
+    }).catch((err) => {
+      logger.error(
+        `Failed to send asset request email for ${assetType}:`,
+        err
+      );
+    });
+  }
+
+  res.status(httpStatus.CREATED).json({
+    status: true,
+    message: 'Asset request created successfully.',
+    data: newRequest,
+  });
+});
+
+const fetchAssetRequestsList = catchAsync(async (req, res) => {
+  const { page, limit, search } = req.query;
+  const team = req?.user?.team;
+
+  const validatedQuery = await assetValidator.getAllUsersSchema.validateAsync({
+    page,
+    limit,
+    search,
+  });
+
+  const assetRequestsResult = await assetRequestService?.fetchAssetRequests(
+    validatedQuery?.page,
+    validatedQuery?.limit,
+    validatedQuery?.search,
+    team
+  );
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Asset requests fetched successfully.',
+    data: assetRequestsResult,
+  });
+});
+
+const fetchAssetRequestsByUserId = catchAsync(async (req, res) => {
+  const userId = req?.user?.id;
+
+  const assetRequests = await assetRequestService?.fetchAssetRequestsByUserId(userId);
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Asset requests fetched successfully.',
+    data: assetRequests,
+  });
+});
+
+const fetchTeamAssets = catchAsync(async (req, res) => {
+  const { page, limit, search } = req.query;
+  const teamLeadId = req?.user?.id;
+
+  const validatedQuery = await assetValidator.getAllUsersSchema.validateAsync({
+    page,
+    limit,
+    search,
+  });
+
+  const teamAssetsResult = await assetsService?.fetchTeamAssetsByTeamLead(
+    teamLeadId,
+    validatedQuery?.page,
+    validatedQuery?.limit,
+    validatedQuery?.search
+  );
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Team assets fetched successfully.',
+    data: teamAssetsResult,
+  });
+});
+
+const updateAssetRequestStatus = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  const validatedData = await assetValidator.handleAssetRequestUpdateSchema.validateAsync({
+    id,
+    status,
+  });
+
+  const updatedRequest = await assetsService.updateAssetRequestStatus(
+    validatedData.id,
+    validatedData.status
+  );
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: `Asset return request ${status} successfully.`,
+    data: updatedRequest,
+  });
+});
+
 module.exports = {
   assignAsset,
   fetchAssignedAssets,
@@ -580,4 +733,9 @@ module.exports = {
   fetchAssetRequests,
   handleAssetRequestUpdate,
   getPCDepartmentSummary,
+  createAssetRequest,
+  fetchAssetRequestsList,
+  fetchAssetRequestsByUserId,
+  fetchTeamAssets,
+  updateAssetRequestStatus,
 };

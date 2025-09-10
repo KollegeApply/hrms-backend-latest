@@ -87,7 +87,7 @@ async fetchAssignedAssets(page, limit, search, team) {
     const populateOptions = [
       {
         path: 'assignee',
-        select: 'firstName lastName employeeId email',
+        select: 'firstName lastName employeeId email department',
       },
       {
         path: 'assignedBy',
@@ -400,6 +400,66 @@ async getPCDepartmentSummary(team) {
       logger.error('Error fetching PC department summary:', error);
       throw error;
     }
+  }
+
+  /**
+   * Fetches assigned assets for team members under a specific team lead
+   * @param {string} teamLeadId - Team lead user ID
+   * @param {number} page - Page number
+   * @param {number} limit - Number of items per page
+   * @param {string} search - Search term
+   * @returns {Promise<object>} - Paginated assigned assets for team members
+   */
+  async fetchTeamAssetsByTeamLead(teamLeadId, page, limit, search) {
+    const query = {};
+
+    if (search) {
+      query.$text = { $search: search };
+    }
+
+    // First, get all users who have this teamLeadId
+    const teamMembers = await User.find({ teamLeadId: teamLeadId }).select('_id');
+    const teamMemberIds = teamMembers.map(member => member._id);
+
+    if (teamMemberIds.length === 0) {
+      // Return empty result if no team members found
+      return {
+        data: [],
+        pagination: {
+          currentPage: page,
+          totalPages: 0,
+          totalItems: 0,
+          itemsPerPage: limit,
+        },
+      };
+    }
+
+    // Find assets assigned to team members
+    query.assignee = { $in: teamMemberIds };
+
+    const populateOptions = [
+      {
+        path: 'assignee',
+        select: 'firstName lastName employeeId email department teamLeadId',
+      },
+      {
+        path: 'assignedBy',
+        select: 'firstName lastName employeeId email team'
+      }
+    ];
+
+    const paginationResult = await paginate(
+      Assets,
+      query,
+      page,
+      limit,
+      { assignedDate: -1 },
+      null,
+      populateOptions
+    );
+
+    logger.info(`Team assets fetched successfully for team lead ${teamLeadId}:`, paginationResult);
+    return paginationResult;
   }
 }
 

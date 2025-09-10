@@ -100,4 +100,57 @@ router.put(
   assetController.handleAssetRequestUpdate
 );
 
+// Route to create asset request
+router.post(
+  '/request',
+  authenticateUser,
+  assetController.createAssetRequest
+);
+
+// Route to fetch all asset requests (for HR/IT/Admin)
+router.get(
+  '/requests-list',
+  authenticateUser,
+  authorizeRole([
+    USER_ROLES?.IT,
+    USER_ROLES?.HR,
+    USER_ROLES?.SUBADMIN,
+    USER_ROLES?.ADMIN,
+  ]),
+  assetController.fetchAssetRequestsList
+);
+
+// Route to fetch asset requests by user ID
+router.get(
+  '/my-requests',
+  authenticateUser,
+  assetController.fetchAssetRequestsByUserId
+);
+
+// Route to fetch team assets (for Team Lead, HR, Admin, Subadmin)
+router.get(
+  '/team-assets',
+  authenticateUser,
+  authorizeRole([
+    USER_ROLES?.TEAMLEAD,
+    USER_ROLES?.HR,
+    USER_ROLES?.SUBADMIN,
+    USER_ROLES?.ADMIN,
+  ]),
+  assetController.fetchTeamAssets
+);
+
+// Route to update return request status
+router.put(
+  '/return-requests/:id',
+  authenticateUser,
+  authorizeRole([
+    USER_ROLES?.IT,
+    USER_ROLES?.HR,
+    USER_ROLES?.SUBADMIN,
+    USER_ROLES?.ADMIN,
+  ]),
+  assetController.updateAssetRequestStatus
+);
+
 module.exports = router;

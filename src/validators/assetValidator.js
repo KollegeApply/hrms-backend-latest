@@ -1,6 +1,6 @@
 // file: validators/assetValidator.js
 const Joi = require('joi');
-const { VALID_ASSETS_STATUS, VALID_LAPTOP_TYPES } = require('../utility/constants');
+const { VALID_ASSETS_STATUS, VALID_LAPTOP_TYPES, VALID_ASSET_REQUEST_STATUS } = require('../utility/constants');
 
 
 const objectIdSchema = Joi.string()
@@ -126,12 +126,32 @@ const handleAssetRequestUpdateSchema = Joi.object({
   }),
   status: Joi.string()
     .required()
-    .valid(...VALID_ASSETS_STATUS)
+    .valid(...VALID_ASSET_REQUEST_STATUS)
     .messages({
       'string.empty': 'Status is required',
       'any.required': 'Status is required',
-      'any.only': `Status must be one of the following: ${VALID_ASSETS_STATUS.join(', ')}`,
+      'any.only': `Status must be one of the following: ${VALID_ASSET_REQUEST_STATUS.join(', ')}`,
     }),
+}).options({ stripUnknown: true });
+
+const createAssetRequestSchema = Joi.object({
+  assetType: Joi.string().required().messages({
+    'string.empty': 'Asset Type is required',
+    'any.required': 'Asset Type is required',
+  }),
+  specifications: Joi.string().required().messages({
+    'string.empty': 'Specifications are required',
+    'any.required': 'Specifications are required',
+  }),
+  neededBy: Joi.date().required().messages({
+    'date.base': 'Needed By date is required',
+    'any.required': 'Needed By date is required',
+  }),
+  description: Joi.string().optional().allow('').max(500).messages({
+    'string.max': 'Description cannot exceed 500 characters',
+  }),
+  
+  sendMail: Joi.boolean().optional(),
 }).options({ stripUnknown: true });
 
 module.exports = {
@@ -143,4 +163,5 @@ module.exports = {
   rejectAssetSchema,
   returnAssetSchema,
   handleAssetRequestUpdateSchema,
+  createAssetRequestSchema,
 };
