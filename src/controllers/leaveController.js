@@ -153,15 +153,15 @@ async function sendLeaveStatusUpdateEmail(updatedLeave, team) {
           team,
         }).catch(err => logger.error(`Failed to send leave notification:`, err));
       }
-    }
-  }
+  
+  
 
   res.status(httpStatus.OK).json({
     status: true,
     message: 'Leave updated successfully.',
     data: updatedData,
   });
-});
+};
 
 
 // delete leave

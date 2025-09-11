@@ -754,7 +754,8 @@ class Helper {
     dashboardUrl,
     jobTitle,
     department,
-    teamLeadName
+    teamLeadName,
+    rejectionReason
   ) {
     return `
   <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 24px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
@@ -791,12 +792,22 @@ class Helper {
         </ul>
       </div>
 
+      <!-- Rejection Reason Section -->
+      ${rejectionReason ? `
+      <div style="background-color: #fff3cd; padding: 16px 20px; border-radius: 6px; border: 1px solid #ffeaa7; margin: 20px 0;">
+        <h3 style="color: #856404; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Rejection Reason</h3>
+        <p style="color: #856404; margin: 0; font-size: 14px; line-height: 1.5; font-style: italic;">
+          "${rejectionReason}"
+        </p>
+      </div>
+      ` : ''}
+
       <p style="font-size: 15px; color: #555; line-height: 1.5; margin-bottom: 20px;">
         You can review this rejection in the dashboard below:
       </p>
 
       <div style="text-align: center; margin: 30px 0;">
-        <a href="${dashboardUrl}" style="background-color: #dc3545; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+        <a href="${dashboardUrl}/assets" style="background-color: #dc3545; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
           View Rejected Asset
         </a>
       </div>

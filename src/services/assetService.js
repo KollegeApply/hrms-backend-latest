@@ -200,10 +200,15 @@ async fetchAssignedAssets(page, limit, search, team) {
     return updatedAssignment;
   }
 
-  async rejectAsset(assetId, userId) {
+  async rejectAsset(assetId, userId, rejectionReason = '') {
+    const updateData = { 
+      status: 'not_acknowledged',
+      ...(rejectionReason && { rejectionReason })
+    };
+    
     const updatedAssignment = await Assets.findOneAndUpdate(
       { _id: assetId, assignee: userId },
-      { $set: { status: 'not_acknowledged' } },
+      { $set: updateData },
       { new: true }
     );
     if (!updatedAssignment) {
@@ -211,7 +216,7 @@ async fetchAssignedAssets(page, limit, search, team) {
       throw new Error('Failed to reject asset');
     }
     logger.info(
-      `Asset ${assetId} not acknowledged successfully:`,
+      `Asset ${assetId} not acknowledged successfully with reason: ${rejectionReason || 'No reason provided'}`,
       updatedAssignment
     );
     return updatedAssignment;

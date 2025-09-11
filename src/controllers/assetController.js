@@ -310,9 +310,10 @@ const rejectAsset = catchAsync(async (req, res) => {
   const { id } = req.params;
   const userId = req.user?.id;
   const sendMail = req?.body?.sendMail === true;
+  const rejectionReason = req?.body?.rejectionReason || '';
   const team = req.user.team;
 
-  const assetAssignment = await assetsService.rejectAsset(id, userId);
+  const assetAssignment = await assetsService.rejectAsset(id, userId, rejectionReason);
 
   if (!assetAssignment) {
     return res.status(httpStatus.BAD_REQUEST).json({
@@ -349,7 +350,8 @@ const rejectAsset = catchAsync(async (req, res) => {
       process.env.HRMS_FRONTEND_URL,
       employee?.jobTitle,
       employee?.department?.name,
-      teamLeadName
+      teamLeadName,
+      rejectionReason
     );
 
     const configEmails = getTeamEmailConfig(team);
