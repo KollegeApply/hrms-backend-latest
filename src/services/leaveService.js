@@ -94,10 +94,22 @@ async updateLeaveStatus({ leaveId, action, editor }) {
   const isTeamLead = ['teamlead', 'subteamlead'].includes(editorRole);
   const isAdminOrHR = ['admin', 'hr', 'subadmin'].includes(editorRole);
   
+  // Helper function to check if user is the Team Lead of the employee
+  const isUserTeamLeadOfEmployee = async (userId, employeeId) => {
+    const employee = await User.findById(employeeId).select('teamLeadId subTeamLeadId');
+    return employee && (
+      employee.teamLeadId?.toString() === userId.toString() ||
+      employee.subTeamLeadId?.toString() === userId.toString()
+    );
+  };
+  
   // 2. State Machine: Determine the next state based on current state, action, and user role
   switch (currentStatus) {
     case 'tl-pending':
-      if (isTeamLead) {
+      // Check if user is Team Lead OR if user is HR/Admin and also the Team Lead of the employee
+      const isActualTeamLead = isTeamLead || (isAdminOrHR && await isUserTeamLeadOfEmployee(editorId, leave.userId));
+      
+      if (isActualTeamLead) {
         if (action === 'approved') {
           leave.status = 'hr-pending';
           leave.tlApprovedBy = editorId;

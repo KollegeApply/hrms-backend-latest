@@ -40,6 +40,7 @@ class Helper {
    * @param {string[]} mailData.receiverEmails - Array of recipient email addresses.
    * @param {string} mailData.subject - Email subject line.
    * @param {string} mailData.message - Email body (HTML).
+   * @param {Array} mailData.attachments - Array of attachment objects.
    * @returns {Promise<void>}
    */
   static async sendEmail({
@@ -50,6 +51,7 @@ class Helper {
     fromIT = false,
     cc = [],
     team,
+    attachments = [],
   }) {
     if (!team) {
       logger.error('Team must be provided to send email.');
@@ -97,6 +99,7 @@ class Helper {
       cc: cc.length > 0 ? cc.join(',') : undefined,
       subject,
       html: message,
+      ...(attachments.length > 0 && { attachments }),
     };
 
     try {
@@ -1186,7 +1189,7 @@ class Helper {
     return `
       <p>Dear ${candidate?.firstName},</p>
   
-      <p>Welcome aboard! We're excited to have you as part of the Sportsdunia family.</p>
+      <p>Welcome aboard! We're excited to have you as part of the ${displayTeam?.TEAM_NAME} family.</p>
   
       <p>
         Please complete your Candidate Information Form (CIF) by clicking the button below.
@@ -1286,6 +1289,24 @@ class Helper {
 
   static getOnboardingPolicyEmail(candidate, policies, team) {
     const displayTeam = getTeamEmailConfig(team);
+    
+    // Check if this is specifically a BYOD request
+    const isBYOD = policies.some(policy => policy.includes('BYOD'));
+    
+    if (isBYOD) {
+      return `
+        <p>Dear ${candidate.firstName},</p>
+        <p>Greeting from ${displayTeam?.TEAM_NAME}</p>
+        <p>Please find attached the <strong>Bring Your Own Device (BYOD) Policy</strong> for your review.</p>
+        <p>Kindly go through it thoroughly and ensure compliance with the outlined terms.</p>
+        <p>We request you to sign the acknowledgment section and share the signed copy with us within the next <strong>24 hours</strong> to proceed further.</p>
+        <p>If you have any questions or require clarification regarding the policy, please feel free to reach out.</p>
+        <p>Thank you for your cooperation!</p>
+        <p>Regards,<br/>HR Team - ${displayTeam?.TEAM_NAME}</p>
+      `;
+    }
+    
+    // Fallback to original template for other policies
     const policyList = policies.map(policy => `<li><strong>${policy}</strong></li>`).join('');
 
     return `
@@ -1300,8 +1321,39 @@ class Helper {
     `;
   }
 
+  static getCandidateApprovalEmail(candidate, team) {
+    const displayTeam = getTeamEmailConfig(team);
+    const approvalDate = new Date().toLocaleString('en-US', {
+      dateStyle: 'long',
+      timeStyle: 'short',
+    });
 
-  static getEmployeeDataRequestEmail(employee, formLink, team) {
+    return `
+      <p>Dear ${candidate?.firstName},</p>
+      
+      <p>Congratulations! We are pleased to inform you that your Candidate Information Form (CIF) has been <strong>approved</strong> by our HR team.</p>
+      
+      <p><strong>Approval Details:</strong></p>
+      <ul>
+        <li><strong>Name:</strong> ${candidate?.firstName || 'N/A'} ${candidate?.lastName || ''}</li>
+        <li><strong>Email:</strong> ${candidate?.personalEmail || 'N/A'}</li>
+        <li><strong>Approval Date:</strong> ${approvalDate}</li>
+        <li><strong>Status:</strong> Approved</li>
+      </ul>
+      
+      <p>Your information has been successfully verified and is now part of our official records. You can expect to hear from us soon regarding the next steps in your onboarding process.</p>
+      
+      <p>If you have any questions or need further assistance, please don't hesitate to contact our HR team.</p>
+      
+      <p>Welcome to the ${displayTeam?.TEAM_NAME} family!</p>
+      
+      <p>Best regards,<br/>HR Team - ${displayTeam?.TEAM_NAME}</p>
+    `;
+  }
+
+
+
+  static getEmployeeDataRequestEmail(employee, formLink, team, comments = null) {
     const displayTeam = getTeamEmailConfig(team);
 
     return `
@@ -1310,6 +1362,11 @@ class Helper {
     <p>Hope you're doing well!</p>
 
     <p>As part of our initiative to streamline and update our records in the HRMS, we kindly request you to complete or verify your employee information by accessing the form below.</p>
+    
+    ${comments ? `
+    <p><strong>Comments from HR:</strong></p>
+    <p>${comments}</p>
+    ` : ''}
 
     <p>
       <a href="${formLink}" target="_blank" rel="noopener noreferrer" style="display: inline-block; background-color: #007bff; color: #fff; padding: 12px 20px; border-radius: 6px; text-decoration: none; font-weight: bold;">
@@ -1340,16 +1397,21 @@ class Helper {
   `;
   }
 
-  static getEmployeeDataReminderEmail(employee, formLink, team) {
+  static getEmployeeDataReminderEmail(employee, formLink, team, comments = null) {
     const displayTeam = getTeamEmailConfig(team);
 
     return `
     <p>Dear ${employee?.firstName},</p>
 
-    <p>We hope you’re doing well.</p>
+    <p>We hope you're doing well.</p>
 
     <p>This is a gentle reminder to complete your <strong>Candidate Information Form</strong>. 
-    It looks like we haven’t received your updated details yet, and we’d like to make sure your records are accurate.</p>
+    It looks like we haven't received your updated details yet, and we'd like to make sure your records are accurate.</p>
+    
+    ${comments ? `
+    <p><strong>Comments from HR:</strong></p>
+    <p>${comments}</p>
+    ` : ''}
 
     <p>
       <a href="${formLink}" target="_blank" rel="noopener noreferrer" 
@@ -1361,9 +1423,44 @@ class Helper {
 
     <p>It only takes a few minutes, and it will help us ensure smooth HR and payroll processes.</p>
 
-    <p>If you’ve already completed the form, you can ignore this email. Otherwise, we’d appreciate it if you could update your details at your earliest convenience.</p>
+    <p>If you've already completed the form, you can ignore this email. Otherwise, we'd appreciate it if you could update your details at your earliest convenience.</p>
 
     <p>Thank you for your time and cooperation.</p>
+
+    <p>Warm regards,<br/>HR Team - ${displayTeam?.TEAM_NAME}</p>
+  `;
+  }
+
+  static getEmployeeDataUpdateRequestEmail(employee, formLink, team, comments = null) {
+    const displayTeam = getTeamEmailConfig(team);
+
+    return `
+    <p>Dear ${employee?.firstName},</p>
+
+    <p>We hope you're doing well!</p>
+
+    <p>Thank you for submitting your Candidate Information Form. After reviewing your submitted information, we need you to make some updates to ensure accuracy and completeness.</p>
+    
+    ${comments ? `
+    <p><strong>Comments from HR:</strong></p>
+    <p>${comments}</p>
+    ` : ''}
+
+    <p>Please access the form below to review and update the necessary information:</p>
+
+    <p>
+      <a href="${formLink}" target="_blank" rel="noopener noreferrer" 
+         style="display: inline-block; background-color: #28a745; color: #fff; padding: 12px 20px; 
+                border-radius: 6px; text-decoration: none; font-weight: bold;">
+        Update Your Information
+      </a>
+    </p>
+
+    <p><strong>Important:</strong> Please review all sections carefully and make the necessary corrections. Once you've updated the information, please resubmit the form.</p>
+
+    <p>If you have any questions about the required updates or need assistance, please don't hesitate to contact our HR team.</p>
+
+    <p>Thank you for your attention to this matter!</p>
 
     <p>Warm regards,<br/>HR Team - ${displayTeam?.TEAM_NAME}</p>
   `;

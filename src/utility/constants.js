@@ -105,6 +105,8 @@ function getTeamEmailConfig(team) {
     IT_MAIL_USER: process.env[`IT_SMTP_USER_${normalizedTeam}`],
     IT_MAIL_PASS: process.env[`IT_SMTP_PASS_${normalizedTeam}`],
 
+    FINANCE_EMAIL: process.env[`FINANCE_EMAIL_${normalizedTeam}`],
+
     ADMIN_EMAILS: (process.env[`ADMIN_EMAILS_${normalizedTeam}`] || '')
       .split(',')
       .map(e => e.trim())
