@@ -95,6 +95,10 @@ router.post('/forgot-password', userController?.forgotPassword); // Request OTP 
 // Update the handler for this route
 router.post('/reset-password', userController?.verifyOtp);
 
+// Section approvals
+router.post('/section-approval/request', authenticateUser, userController?.requestSectionApproval);
+router.get('/section-approval/status', authenticateUser, userController?.getSectionApprovalStatus);
+router.post('/section-approval/token/:token', userController?.sectionApprovalByToken);
 
 router.get('/:id/history', authenticateUser, userController?.getUserHistory);
 

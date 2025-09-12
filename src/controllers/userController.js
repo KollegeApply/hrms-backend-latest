@@ -12,6 +12,7 @@ const User = require('../models/userModel');
 const UserDetails = require('../models/userDetailsModel');
 const candidateValidator = require('../validators/candidateValidator');
 const { uploadToAzure } = require('../utility/azureBlob');
+const crypto = require('crypto');
 
 // Helper function to validate URLs
 function isValidUrl(string) {
@@ -316,6 +317,80 @@ const verifyOtp = catchAsync(async (req, res) => {
   });
 });
 
+// === Section approvals ===
+const requestSectionApproval = catchAsync(async (req, res) => {
+  const userId = req.user.id;
+  const { section } = req.body;
+  if (!['bankDetails', 'documents'].includes(section)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid section');
+  }
+
+  const user = await User.findById(userId).populate('userDetails');
+  if (!user) throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
+  if (!user.userDetails) {
+    user.userDetails = await new UserDetails({}).save();
+    await user.save();
+  }
+
+  const ud = user.userDetails;
+  const statusKey = section === 'bankDetails' ? 'bankApprovalStatus' : 'documentsApprovalStatus';
+  const requestedAtKey = section === 'bankDetails' ? 'bankApprovalRequestedAt' : 'documentsApprovalRequestedAt';
+  ud[statusKey] = 'pending';
+  ud[requestedAtKey] = new Date();
+  await ud.save();
+
+  // email
+  const token = jwt.sign({ uid: userId, section }, process.env.SECRET_KEY, { expiresIn: '7d' });
+  const base = process.env.HRMS_FRONTEND_URL || '';
+  const approveUrl = `${base}/api/v1/users/section-approval/token/${token}?action=approve`;
+  const rejectUrl = `${base}/api/v1/users/section-approval/token/${token}?action=reject`;
+  const teamCode = req.user.team || 'SD';
+  const emailConfig = getTeamEmailConfig(teamCode);
+  const emails = [emailConfig.HR_EMAIL];
+  if (emails.length) {
+    const message = Helper.getSectionApprovalRequestEmail({
+      employeeName: `${user.firstName} ${user.lastName}`,
+      section,
+      approveUrl,
+      rejectUrl,
+      team: teamCode,
+    });
+    await Helper.sendEmail({ receiverEmails: emails, subject: 'Profile Edit Approval Request', message, fromHr: false, team: teamCode })
+      .catch((e)=>logger.error('email failed', e));
+  }
+
+  return res.status(httpStatus.OK).json({ status: true, message: 'Approval requested' });
+});
+
+const getSectionApprovalStatus = catchAsync(async (req, res) => {
+  const userId = req.user.id;
+  const user = await User.findById(userId).populate('userDetails');
+  const ud = user?.userDetails;
+  return res.status(httpStatus.OK).json({ status: true, data: {
+    bank: ud?.bankApprovalStatus || null,
+    documents: ud?.documentsApprovalStatus || null,
+  }});
+});
+
+const sectionApprovalByToken = catchAsync(async (req, res) => {
+  const { token } = req.params;
+  const action = (req.query.action || req.body.action || '').toString();
+  if (!['approve','reject'].includes(action)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid action');
+  }
+  let payload; try { payload = jwt.verify(token, process.env.SECRET_KEY); } catch (e) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid or expired token');
+  }
+  const { uid, section } = payload;
+  const user = await User.findById(uid).populate('userDetails');
+  if (!user || !user.userDetails) throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
+  const statusKey = section === 'bankDetails' ? 'bankApprovalStatus' : 'documentsApprovalStatus';
+  const decidedAtKey = section === 'bankDetails' ? 'bankApprovalDecidedAt' : 'documentsApprovalDecidedAt';
+  user.userDetails[statusKey] = action === 'approve' ? 'approved' : 'rejected';
+  user.userDetails[decidedAtKey] = new Date();
+  await user.userDetails.save();
+  return res.status(httpStatus.OK).json({ status: true, message: `Request ${action}d` });
+});
 const bulkUpload = async (req, res) => {
   const activity = 'Bulk Upload Users |';
   try {
@@ -629,6 +704,9 @@ module.exports = {
   getUserByTlId,
   approveUser,
   updateUserCifForm,
+  requestSectionApproval,
+  getSectionApprovalStatus,
+  sectionApprovalByToken,
 };
 
 // --- Utility: catchAsync (Place in src/utility/catchAsync.js) ---
