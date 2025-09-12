@@ -1117,6 +1117,58 @@ class Helper {
   `;
   }
 
+  /**
+   * Section approval request email to HR with Approve/Reject buttons
+   */
+  static getSectionApprovalRequestEmail({
+    employeeName,
+    section,
+    approveUrl,
+    rejectUrl,
+    team,
+  }) {
+    const displayTeam = getTeamEmailConfig(team);
+    const sectionLabel = section === 'bankDetails' ? 'Bank Details' : 'Documents';
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 20px auto; padding: 20px; border: 1px solid #eee; border-radius: 8px; background-color: #fff;">
+      <h2 style="margin: 0 0 12px; color:#111827;">Approval Request - ${sectionLabel}</h2>
+      <p style="margin: 0 0 16px; color:#374151;">
+        <strong>${employeeName}</strong> is requesting permission to edit their ${sectionLabel} section.
+      </p>
+      <div style="display:flex; gap:12px; margin: 18px 0;">
+        <a href="${approveUrl}" style="background:#16a34a;color:#fff;padding:10px 14px;border-radius:6px;text-decoration:none;">Approve</a>
+        <a href="${rejectUrl}" style="background:#dc2626;color:#fff;padding:10px 14px;border-radius:6px;text-decoration:none;">Reject</a>
+      </div>
+      <p style="font-size: 12px; color:#6b7280;">This link will expire in 7 days.</p>
+      <p style="font-size: 12px; color:#6b7280;">Regards, <strong>Team ${displayTeam?.TEAM_NAME || 'HRMS'}</strong></p>
+    </div>`;
+  }
+
+  /**
+   * Section approval status email to employee
+   */
+  static getSectionApprovalStatusEmail({
+    employeeName,
+    section,
+    status,
+    reason,
+    team,
+  }) {
+    const displayTeam = getTeamEmailConfig(team);
+    const sectionLabel = section === 'bankDetails' ? 'Bank Details' : 'Documents';
+    const approved = status === 'approved';
+    const color = approved ? '#16a34a' : '#dc2626';
+    const verb = approved ? 'Approved' : 'Rejected';
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 20px auto; padding: 20px; border: 1px solid #eee; border-radius: 8px; background-color: #fff;">
+      <h2 style="margin: 0 0 12px; color:${color};">${sectionLabel} ${verb}</h2>
+      <p style="margin: 0 0 12px; color:#374151;">Hello ${employeeName},</p>
+      <p style="margin: 0 0 16px; color:#374151;">Your request to edit ${sectionLabel} has been <strong>${verb.toLowerCase()}</strong>.</p>
+      ${approved ? '' : (reason ? `<p style="margin: 0 0 12px; color:#374151;"><strong>Reason:</strong> ${reason}</p>` : '')}
+      <p style="font-size: 12px; color:#6b7280;">Regards, <strong>Team ${displayTeam?.TEAM_NAME || 'HRMS'}</strong></p>
+    </div>`;
+  }
+
   static getTicketCreatedEmailForTeam(subject, type, raisedByName, baseUrl, ticketId, team) {
     const displayTeam = getTeamEmailConfig(team);
 
