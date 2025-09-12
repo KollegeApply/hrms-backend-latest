@@ -18,6 +18,7 @@ class AssetsService {
       serialNumber,
       specifications,
       status = 'assigned',
+      returnRequestDate,
       assignedBy,
       laptopType,
     } = assignmentData;
@@ -57,6 +58,7 @@ class AssetsService {
       assignee,
       serialNumber,
       specifications,
+      returnRequestDate,
       status: status,
       assignedBy,
       laptopType, 
@@ -223,9 +225,10 @@ async fetchAssignedAssets(page, limit, search, team) {
   }
 
   async returnAsset(assetId, userId) {
+    const returnRequestDate = new Date();
     const updatedAssignment = await Assets.findOneAndUpdate(
       { _id: assetId, assignee: userId },
-      { $set: { status: 'return_requested' } },
+      { $set: { status: 'return_requested', returnRequestDate: returnRequestDate } },
       { new: true }
     );
     if (!updatedAssignment) {
@@ -274,6 +277,7 @@ async fetchAssignedAssets(page, limit, search, team) {
           status: 1,
           assignedBy: 1,
           assignedDate: 1,
+          returnRequestDate: 1,
           createdAt: 1,
           updatedAt: 1,
           assignee: {
