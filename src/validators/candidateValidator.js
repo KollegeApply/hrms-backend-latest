@@ -58,12 +58,14 @@ const candidateDraftSchema = Joi.object({
     }),
 
     // Optional children fields
-    child1Name: Joi.string().optional().allow(''),
-    child1Dob: Joi.string().isoDate().optional().allow(''),
-    child1Gender: Joi.string().valid("male", "female", "other").optional().allow(''),
-    child2Name: Joi.string().optional().allow(''),
-    child2Dob: Joi.string().isoDate().optional().allow(''),
-    child2Gender: Joi.string().valid("male", "female", "other").optional().allow(''),
+    hasChildren: Joi.string().valid("yes", "no").optional().allow(''),
+    children: Joi.array().items(
+      Joi.object({
+        name: Joi.string().min(1).required(),
+        dateOfBirth: Joi.string().isoDate().required(),
+        gender: Joi.string().valid("male", "female", "other").required()
+      })
+    ).optional().allow(null, ''),
 
     nationality: Joi.string().min(1).optional(),
     aadharCard: Joi.string().pattern(AADHAR_REGEX).optional(),
@@ -210,6 +212,24 @@ const finalSubmitSchema = candidateDraftSchema.concat(
         otherwise: Joi.forbidden(),
       }),
 
+      // Child validation for married candidates
+      hasChildren: Joi.when("maritalStatus", {
+        is: "married",
+        then: Joi.string().valid("yes", "no").required(),
+        otherwise: Joi.optional().allow('', null),
+      }),
+      children: Joi.when("hasChildren", {
+        is: "yes",
+        then: Joi.array().items(
+          Joi.object({
+            name: Joi.string().min(1).required(),
+            dateOfBirth: Joi.string().isoDate().required(),
+            gender: Joi.string().valid("male", "female", "other").required()
+          })
+        ).min(1).required(),
+        otherwise: Joi.optional().allow(null, ''),
+      }),
+
       nationality: Joi.string().min(1).required(),
       aadharCard: Joi.string()
         .pattern(AADHAR_REGEX)
@@ -323,23 +343,24 @@ const finalSubmitSchema = candidateDraftSchema.concat(
     }).required(),
 
     employment: Joi.array()
-      .items(
-        Joi.object({
-          organization: Joi.string().min(1).optional(),
-          from: Joi.string().isoDate().optional(),
-          to: Joi.string().isoDate().optional(),
-          address: Joi.string().min(1).optional(),
-          jobTitle: Joi.string().min(1).optional(),
-          reasonForLeaving: Joi.string().min(1).optional(),
-          finalSalary: Joi.string().min(1).optional(),
-          supervisorName: Joi.string().min(1).optional(),
-          supervisorContact: Joi.string().min(1).optional(),
-          employmentType: Joi.string().min(1).optional(),
-          expectedCTC: Joi.string().min(1).optional(),
-          expectedJoiningDate: Joi.string().isoDate().optional(),
-        })
-      )
-      .optional(),
+  .items(
+    Joi.object({
+      organization: Joi.string().allow('', null).optional(),
+      from: Joi.string().isoDate().optional().allow('', null),
+      to: Joi.string().isoDate().optional().allow('', null),
+      address: Joi.string().allow('', null).optional(),
+      jobTitle: Joi.string().allow('', null).optional(),
+      reasonForLeaving: Joi.string().allow('', null).optional(),
+      finalSalary: Joi.string().allow('', null).optional(),
+      supervisorName: Joi.string().allow('', null).optional(),
+      supervisorContact: Joi.string().allow('', null).optional(),
+      employmentType: Joi.string().allow('', null).optional(),
+      expectedCTC: Joi.string().allow('', null).optional(),
+      expectedJoiningDate: Joi.string().isoDate().optional().allow('', null),
+    })
+  )
+  .optional(),
+
 
     medicalInfo: Joi.object({
       bloodGroup: Joi.string().optional(),
@@ -347,7 +368,7 @@ const finalSubmitSchema = candidateDraftSchema.concat(
       medicalHistoryDetails: Joi.when(Joi.ref("hasMedicalHistory"), {
         is: "yes",
         then: Joi.string().min(1).optional(),
-        otherwise: Joi.forbidden(),
+        otherwise: Joi.optional().allow('', null),
       }).optional(),
     }).optional(),
 
@@ -372,7 +393,7 @@ const finalSubmitSchema = candidateDraftSchema.concat(
       branchName: Joi.string().min(1).required(),
       accountNumber: Joi.string().min(8).required(),
       ifscCode: Joi.string().regex(/^[A-Z]{4}0[A-Z0-9]{6}$/i).required(),
-      accountType: Joi.string().valid("savings", "current").required(),
+      accountType: Joi.string().valid("savings", "current", "fixed", "salary").required(),
     }).required(),
 
     documents: Joi.object({
@@ -387,8 +408,8 @@ const finalSubmitSchema = candidateDraftSchema.concat(
       twelfthMarkSheet: Joi.string().required(),
       graduationProof: Joi.string().required(),
       updatedResume: Joi.string().required(),
-      cancelledCheque: Joi.string().required(),
-      form11: Joi.string().required(),
+      cancelledChequeOrPassbook: Joi.string().required(),
+      form11: Joi.string().optional().allow(null, ''),
 
       // --- Optional Documents ---
       postGraduationProof: Joi.string().optional().allow(null, ''),
@@ -398,9 +419,7 @@ const finalSubmitSchema = candidateDraftSchema.concat(
       salarySlipTwo: Joi.string().optional().allow(null, ''),
       salarySlipThree: Joi.string().optional().allow(null, ''),
     }).required(),
-    certification: Joi.boolean().valid(true).required().messages({
-      "any.only": "You must certify the information to submit",
-    }),
+    certification: Joi.optional(),
   })
 );
 

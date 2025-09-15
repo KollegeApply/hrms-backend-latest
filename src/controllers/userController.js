@@ -9,6 +9,19 @@ const catchAsync = require('../utility/catchAsync'); // Ensure this utility exis
 const logger = require('../config/logger');
 const { CSV_TYPES, RANK, TEAM_SD, TEAM_KAP, getTeamEmailConfig } = require('../utility/constants');
 const User = require('../models/userModel');
+const UserDetails = require('../models/userDetailsModel');
+const candidateValidator = require('../validators/candidateValidator');
+const { uploadToAzure } = require('../utility/azureBlob');
+
+// Helper function to validate URLs
+function isValidUrl(string) {
+  try {
+    const url = new URL(string);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch (_) {
+    return false;
+  }
+}
 
 /**
  * Utility to generate JWT token.
@@ -18,7 +31,7 @@ const User = require('../models/userModel');
 const generateToken = (user) => {
   const payload = { id: user?.id, role: user?.role };
   // Use a reasonable expiration time (e.g., '1d', '7d', '1h')
-  return jwt.sign(payload, process?.env?.SECRET_KEY, { expiresIn: '1d' });
+  return jwt.sign(payload, process?.env?.SECRET_KEY, { expiresIn: '7d' });
 };
 
 // Wrap controller methods with catchAsync for cleaner error handling
@@ -390,6 +403,217 @@ const getUserByTlId = async (req, res) => {
   }
 };
 
+const approveUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Get user details
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    
+    // Update user formStatus to approved
+    user.formStatus = 'approved';
+    await user.save();
+    
+    res.json({ status: true, data: user, message: "User approved successfully." });
+  } catch (error) {
+    console.error('Error in approveUser controller:', error);
+    return res
+      .status(500)
+      .json({ message: 'An unexpected server error occurred.' });
+  }
+};
+
+const updateUserCifForm = async (req, res) => {
+  try {
+    console.log('=== updateUserCifForm START ===');
+    console.log('Params:', req.params);
+    console.log('Body keys:', Object.keys(req.body));
+    console.log('Files count:', req.files?.length || 0);
+    
+    const { id } = req.params;
+    const files = req.files || {};
+    
+    // Get user details
+    console.log('Looking for user with ID:', id);
+    const user = await User.findById(id).populate('userDetails');
+    if (!user) {
+      console.log('User not found with ID:', id);
+      return res.status(404).json({ message: "User not found" });
+    }
+    
+    console.log('User found:', {
+      id: user._id,
+      name: `${user.firstName} ${user.lastName}`,
+      hasUserDetails: !!user.userDetails
+    });
+
+    // Handle file uploads similar to candidate form
+    const uploadedPaths = {};
+    console.log('Processing files:', files.length);
+    for (const file of files) {
+      if (file) {
+        console.log('Uploading file:', file.originalname, 'field:', file.fieldname);
+        try {
+          const relativePath = await uploadToAzure(file.buffer, file.originalname, 'hrms-cif-documents/');
+          const simpleField = file.fieldname.replace('documents.', '');
+          uploadedPaths[simpleField] = relativePath;
+          console.log('File uploaded successfully:', relativePath);
+        } catch (uploadError) {
+          console.error('File upload error:', uploadError);
+          throw uploadError;
+        }
+      }
+    }
+
+    // Parse request body
+    const parsedBody = {};
+    console.log('Parsing request body...');
+    for (const key in req.body) {
+      try {
+        parsedBody[key] = JSON.parse(req.body[key]);
+        console.log(`Parsed ${key}:`, typeof parsedBody[key]);
+      } catch (e) {
+        parsedBody[key] = req.body[key];
+        console.log(`Using raw value for ${key}:`, typeof parsedBody[key]);
+      }
+    }
+
+    // Filter uploaded paths
+    const filteredUploadedPaths = {};
+    Object.entries(uploadedPaths).forEach(([key, value]) => {
+      if (value && value.trim() !== '') {
+        filteredUploadedPaths[key] = value;
+      }
+    });
+
+    // Prepare data for validation
+    console.log('Original documents from body:', parsedBody.documents);
+    console.log('Newly uploaded paths:', filteredUploadedPaths);
+    
+    // Filter out invalid URLs from existing documents
+    const validExistingDocuments = {};
+    if (parsedBody.documents) {
+      Object.entries(parsedBody.documents).forEach(([key, value]) => {
+        if (value && typeof value === 'string' && value.trim() !== '') {
+          // Check if it's a valid URL (starts with http and is properly formatted)
+          if (value.startsWith('http') && isValidUrl(value)) {
+            validExistingDocuments[key] = value;
+            console.log(`Preserving existing document ${key}:`, value);
+          } else {
+            console.log(`Skipping invalid document ${key}:`, value);
+          }
+        }
+      });
+    }
+    
+    // Clean personalInfo to remove fields not allowed by candidate schema
+    const cleanedPersonalInfo = { ...parsedBody.personalInfo };
+    
+    // Remove individual child fields that might still be present (fallback cleanup)
+    // The frontend should transform these into children array, but clean up any remaining ones
+    const childFieldsToRemove = ['child1Name', 'child1Dob', 'child1Gender', 'child2Name', 'child2Dob', 'child2Gender', 'child3Name', 'child3Dob', 'child3Gender', 'child4Name', 'child4Dob', 'child4Gender', 'child5Name', 'child5Dob', 'child5Gender'];
+    childFieldsToRemove.forEach(field => {
+      if (cleanedPersonalInfo.hasOwnProperty(field)) {
+        console.log(`Removing field ${field} from personalInfo`);
+        delete cleanedPersonalInfo[field];
+      }
+    });
+    
+    // Also clean other fields that might not be allowed
+    const otherFieldsToRemove = ['_id', 'isDeleted', 'createdAt', 'updatedAt', '__v', 'lockedFields', 'hrValidation'];
+    otherFieldsToRemove.forEach(field => {
+      if (parsedBody.hasOwnProperty(field)) {
+        console.log(`Removing field ${field} from parsedBody`);
+        delete parsedBody[field];
+      }
+    });
+    
+    const dataToValidate = {
+      ...parsedBody,
+      personalInfo: cleanedPersonalInfo,
+      documents: {
+        ...validExistingDocuments,
+        ...filteredUploadedPaths,
+      },
+    };
+    
+    console.log('Final documents for validation:', dataToValidate.documents);
+    console.log('Cleaned personalInfo:', dataToValidate.personalInfo);
+
+    // Validate the data using candidate validator (same structure)
+    console.log('Validating data with candidateValidator...');
+    console.log('Data to validate keys:', Object.keys(dataToValidate));
+    let validatedData;
+    try {
+      validatedData = await candidateValidator.finalSubmitSchema.validateAsync(dataToValidate);
+      console.log('Validation successful');
+    } catch (validationError) {
+      console.error('Validation error:', validationError);
+      throw validationError;
+    }
+
+    // Update userDetails
+    console.log('Updating userDetails...');
+    console.log('User has userDetails:', !!user.userDetails);
+    if (user.userDetails) {
+      // Update existing userDetails
+      console.log('Updating existing userDetails');
+      Object.assign(user.userDetails, validatedData);
+      await user.userDetails.save();
+      console.log('Existing userDetails updated successfully');
+    } else {
+      // Create new userDetails if doesn't exist
+      console.log('Creating new userDetails');
+      const newUserDetails = new UserDetails(validatedData);
+      await newUserDetails.save();
+      user.userDetails = newUserDetails._id;
+      await user.save();
+      console.log('New userDetails created and linked successfully');
+    }
+    
+    // Clean up any invalid document references in the database
+    if (user.userDetails && user.userDetails.documents) {
+      let hasInvalidDocs = false;
+      const cleanedDocuments = {};
+      
+      Object.entries(user.userDetails.documents).forEach(([key, value]) => {
+        if (value && typeof value === 'string' && value.trim() !== '') {
+          if (value.startsWith('http') && isValidUrl(value)) {
+            cleanedDocuments[key] = value;
+          } else {
+            console.log(`Removing invalid document reference ${key}:`, value);
+            hasInvalidDocs = true;
+          }
+        }
+      });
+      
+      if (hasInvalidDocs) {
+        user.userDetails.documents = cleanedDocuments;
+        await user.userDetails.save();
+        console.log('Cleaned up invalid document references');
+      }
+    }
+
+    // Update user formStatus to "underReview" when HR edits the form
+    user.formStatus = 'underReview';
+    await user.save();
+    console.log('User formStatus updated to underReview');
+
+    // Populate the updated userDetails for response
+    await user.populate('userDetails');
+    
+    res.json({ status: true, data: user, message: "User CIF form updated successfully and status changed to under review." });
+  } catch (error) {
+    console.error('Error in updateUserCifForm controller:', error);
+    return res
+      .status(500)
+      .json({ message: 'An unexpected server error occurred.' });
+  }
+};
+
 module.exports = {
   createUser,
   getAllUsers,
@@ -403,6 +627,8 @@ module.exports = {
   bulkUpload,
   getUserHistory,
   getUserByTlId,
+  approveUser,
+  updateUserCifForm,
 };
 
 // --- Utility: catchAsync (Place in src/utility/catchAsync.js) ---

@@ -4,6 +4,7 @@ const { bulkCreateUserRowSchema } = require('../validators/userValidator');
 const { format } = require('date-fns-tz');
 const jwt = require('jsonwebtoken');
 const candidateModel = require('../models/candidateModel');
+const User = require('../models/userModel');
 /**
  * Paginates Mongoose query results.
  * @param {mongoose.Model} model - The Mongoose model to query.
@@ -182,17 +183,34 @@ function generateCIFToken(email) {
   return token;
 }
 
-async function validateCIFToken (token) {
+async function validateCIFToken(token) {
   try {
+    if (!token) throw new Error('Token is missing.');
+
     const payload = jwt.verify(token, process.env.CIF_TOKEN_SECRET);
-    const candidate = await candidateModel.findOne({ personalEmail: payload.email });
-    if (!candidate) throw new Error('Invalid or expired link.');
-    return { isValid: true, email: payload.email };
+    const email = payload.email;
+
+    const candidate = await candidateModel.findOne({
+      personalEmail: email,
+      isDeleted: false,
+      status: { $nin: ['backout','underReview','approved','submitted','resubmitted','completed'] }
+    }).sort({ 
+      status: 1, 
+      createdAt: -1 
+    });
+
+    const user = candidate ? null : await User.findOne({ email: email, isDeleted: false, formStatus: { $ne: "submitted"} });
+
+    if (!candidate && !user) {
+      throw new Error('No matching user found.');
+    }
+    
+    return { isValid: true, email };
   } catch (err) {
-    console.log(err);
+    console.error('Token validation failed:', err.message || err);
     return { isValid: false, message: 'Invalid or expired link.' };
   }
-};
+}
 
 function cleanEmptyFields(obj) {
   if (Array.isArray(obj)) {
@@ -234,7 +252,6 @@ const transformDocumentPaths = (documents) => {
   const documentsWithUrls = {};
 
   for (const [key, relativePath] of Object.entries(documents)) {
-      console.log('transformDocumentPaths:', key, relativePath);
     if (
       typeof relativePath === 'string' &&
       (

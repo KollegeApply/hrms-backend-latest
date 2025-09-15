@@ -73,6 +73,12 @@ const EmergencyContactSchema = new Schema({
   phoneNumber: String
 }, { _id: false });
 
+const ChildSchema = new Schema({
+  name: String,
+  dateOfBirth: Date,
+  gender: String
+}, { _id: false });
+
 const BloodRelationSchema = new Schema({
   hasRelation: Boolean,
   details: String
@@ -89,7 +95,7 @@ const DocumentsSchema = new Schema({
   twelfthMarkSheet: String,
   graduationProof: String,
   updatedResume: String,
-  cancelledCheque: String,
+  cancelledChequeOrPassbook: String,
   form11: String,
   //optional docs
   postGraduationProof: String,
@@ -113,12 +119,8 @@ const PersonalInfoSchema = new Schema({
   marriageDate: Date,
   spouseName: String,
   spouseDob: Date,
-  child1Name: String,
-  child1Dob: Date,
-  child1Gender: String,
-  child2Name: String,
-  child2Dob: Date,
-  child2Gender: String,
+  hasChildren: String,
+  children: [ChildSchema],
   nationality: String,
   aadharCard: String,
   panCard: String,

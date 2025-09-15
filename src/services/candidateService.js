@@ -5,6 +5,21 @@ const _ = require('lodash');
 const jwt = require('jsonwebtoken');
 const User = require('../models/userModel');
 
+
+const cleanDataForUpdate = (data) => {
+  const cleanData = JSON.parse(JSON.stringify(data));
+  delete cleanData._id;
+  
+  const nestedFields = ['personalInfo', 'addressDetails', 'educationDetails', 'medicalInfo', 'backgroundInfo', 'bankDetails', 'documents'];
+  nestedFields.forEach(field => {
+    if (cleanData[field] && cleanData[field]._id) {
+      delete cleanData[field]._id;
+    }
+  });
+  
+  return cleanData;
+};
+
 class CandidateService {
   async createCandidate(data, userId) {
     try {
@@ -21,54 +36,62 @@ class CandidateService {
     }
   }
 
- async getCandidates({ page = 1, limit = 10, status, search }, team) {
-  const query = { isDeleted: false };
+  async getCandidates({ page = 1, limit = 10, status, search }, team) {
+    const query = { isDeleted: false };
 
-  if (status) {
-    query.status = status;
+    if (status) {
+      query.status = status;
+    }
+
+    if (search) {
+      query.$or = [
+        { firstName: { $regex: search, $options: 'i' } },
+        { lastName: { $regex: search, $options: 'i' } },
+        { personalEmail: { $regex: search, $options: 'i' } },
+        { phoneNumber: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const teamUsers = await User.find({ team }, '_id');
+    const teamUserIds = teamUsers.map(user => user._id);
+
+    query.pointOfContact = { $in: teamUserIds };
+
+    const pageInt = parseInt(page);
+    const limitInt = parseInt(limit);
+    const skip = (pageInt - 1) * limitInt;
+
+    const [candidates, total] = await Promise.all([
+      Candidate.find(query)
+        .populate('pointOfContact', 'firstName lastName email team')
+        .populate('department', 'name')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitInt),
+      Candidate.countDocuments(query),
+    ]);
+
+    return {
+      candidates,
+      total,
+      page: pageInt,
+      pageSize: limitInt,
+      totalPages: Math.ceil(total / limitInt),
+    };
   }
-
-  if (search) {
-    query.$or = [
-      { firstName: { $regex: search, $options: 'i' } },
-      { lastName: { $regex: search, $options: 'i' } },
-      { personalEmail: { $regex: search, $options: 'i' } },
-      { phoneNumber: { $regex: search, $options: 'i' } }
-    ];
-  }
-
-  const teamUsers = await User.find({ team }, '_id');
-  const teamUserIds = teamUsers.map(user => user._id);
-
-  query.pointOfContact = { $in: teamUserIds };
-
-  const pageInt = parseInt(page);
-  const limitInt = parseInt(limit);
-  const skip = (pageInt - 1) * limitInt;
-
-  const [candidates, total] = await Promise.all([
-    Candidate.find(query)
-      .populate('pointOfContact', 'firstName lastName email team')
-      .populate('department', 'name')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limitInt),
-    Candidate.countDocuments(query),
-  ]);
-
-  return {
-    candidates,
-    total,
-    page: pageInt,
-    pageSize: limitInt,
-    totalPages: Math.ceil(total / limitInt),
-  };
-}
 
 
 
   async saveDraft(email, data) {
-    const candidate = await Candidate.findOne({ personalEmail: email });
+    const user = await User.findOne({ email: email, isDeleted: false });
+    let candidate;
+
+    if (user) {
+      candidate = await User
+        .findOne({ email: email, isDeleted: false });
+    } else {
+      candidate = await Candidate.findOne({ personalEmail: email, isDeleted: false, status: { $ne: 'backout' } });
+    }
     if (!candidate) {
       throw new Error('Candidate not found');
     }
@@ -82,15 +105,26 @@ class CandidateService {
         candidate.userDetails = newUserDetails._id;
       } else {
         const mergedData = _.merge(existingDetails.toObject(), cleanedData);
-        await UserDetails.findByIdAndUpdate(candidate.userDetails, mergedData);
+        const cleanMergedData = cleanDataForUpdate(mergedData);
+        
+        await UserDetails.findByIdAndUpdate(candidate.userDetails, cleanMergedData);
       }
     } else {
       const userDetails = await UserDetails.create(cleanedData);
       candidate.userDetails = userDetails._id;
     }
+    const isPendingOrDraft = (value) => value === 'pending' || value === 'draft';
 
-    if (candidate.status === 'pending' || candidate.status === 'draft') {
-      candidate.status = 'draft';
+    if (
+      isPendingOrDraft(candidate?.status) ||
+      isPendingOrDraft(candidate?.formStatus)
+    ) {
+      if (isPendingOrDraft(candidate?.status)) {
+        candidate.status = 'draft';
+      }
+      if (isPendingOrDraft(candidate?.formStatus)) {
+        candidate.formStatus = 'draft';
+      }
     }
     if (candidate.status === 'resended' || candidate.status === 'redraft') {
       candidate.status = 'redraft';
@@ -98,32 +132,64 @@ class CandidateService {
 
     await candidate.save();
 
-    return Candidate.findOne({ personalEmail: email }).populate('userDetails');
+    return Candidate.findOne({ personalEmail: email, isDeleted: false }).populate('userDetails');
   }
 
 
-  async finalSubmit(email, data) {
-    const candidate = await Candidate.findOne({ personalEmail: email });
-    if (!candidate) throw new Error('Candidate not found');
-    if (!candidate.userDetails) throw new Error('UserDetails not found');
+async finalSubmit(email, data) {
+  const user = await User.findOne({ email: email, isDeleted: false });
+  let candidate;
+  let existingUser = false;
 
-    if (candidate.status === "backout") {
-      throw new Error('Candidate has already backed out.');
-    }
+  if (user) {
+    candidate = user;
+    existingUser = true;
+  } else {
+    candidate = await Candidate.findOne({ personalEmail: email, isDeleted: false, status: { $ne: 'backout' } });
+  }
 
-    let newStatus;
-    if (candidate.status === "pending" || candidate.status === "draft") {
-      newStatus = "submitted";
-    } else {
-      newStatus = "resubmitted";
-    }
+  if (!candidate) throw new Error('Candidate not found');
+  if (!candidate.userDetails) throw new Error('UserDetails not found');
 
-    await UserDetails.findByIdAndUpdate(candidate.userDetails, { ...data }, { new: true });
+  if (candidate.status === "backout") {
+    throw new Error('Candidate has already backed out.');
+  }
 
+  let newStatus;
+  if (
+    candidate.status === "pending" ||
+    candidate.status === "draft" ||
+    candidate.formStatus === "pending" ||
+    candidate.formStatus === "draft" ||
+    candidate.formStatus === "reminder_sent"
+  ) {
+    newStatus = "submitted";
+  } else {
+    newStatus = "resubmitted";
+  }
+
+
+  const cleanData = cleanDataForUpdate(data);
+
+  const updatedUserDetails = await UserDetails.findByIdAndUpdate(
+    candidate.userDetails,
+    cleanData,
+    { new: true }
+  );
+
+  if (existingUser) {
+    await User.findByIdAndUpdate(candidate._id, {
+      formStatus: newStatus,
+      dateOfBirth: updatedUserDetails?.personalInfo?.dateOfBirth || null
+    });
+  } else {
     await Candidate.findByIdAndUpdate(candidate._id, { status: newStatus });
-
-    return await Candidate.findById(candidate._id).populate('pointOfContact', 'firstName lastName email team');;
   }
+
+  return await Candidate.findById(candidate._id)
+    .populate('pointOfContact', 'firstName lastName email team');
+}
+
 
 
   async editCandidate(id, data) {
@@ -135,8 +201,11 @@ class CandidateService {
     } else {
       status = "underReview";
     }
-    await UserDetails.findByIdAndUpdate(candidate.userDetails, { ...data, status: status }, { new: true });
-    return await Candidate.findOne({ personalEmail: email }).populate('userDetails');
+    
+    const cleanData = cleanDataForUpdate(data);
+    
+    await UserDetails.findByIdAndUpdate(candidate.userDetails, { ...cleanData, status: status }, { new: true });
+    return await Candidate.findOne({ personalEmail: email, isDeleted: false }).populate('userDetails');
   }
 
   async reviewUpdateCandidate(candidateId, updateData) {

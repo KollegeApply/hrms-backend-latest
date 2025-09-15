@@ -1,6 +1,6 @@
 // file: validators/assetValidator.js
 const Joi = require('joi');
-const { VALID_ASSETS_STATUS } = require('../utility/constants');
+const { VALID_ASSETS_STATUS, VALID_LAPTOP_TYPES } = require('../utility/constants');
 
 
 const objectIdSchema = Joi.string()
@@ -42,6 +42,18 @@ const assetAssignmentSchema = Joi.object({
       'any.only': `Status must be one of the following: ${VALID_ASSETS_STATUS.join(', ')}`,
     }),
   sendMail: Joi.boolean().optional(),
+  laptopType: Joi.string().optional().allow('').custom((value, helpers) => {
+    const assetType = helpers.state.ancestors[0]?.assetType;
+    
+    if (assetType === 'laptop') {
+      if (!VALID_LAPTOP_TYPES.includes(value)) {
+        return helpers.error('any.only');
+      }
+    }
+    return value;
+  }).messages({
+    'any.only': `Laptop Type must be one of: ${VALID_LAPTOP_TYPES.join(', ')}`,
+  }),
 }).options({ stripUnknown: true });
 
 

@@ -19,6 +19,7 @@ class AssetsService {
       specifications,
       status = 'assigned',
       assignedBy,
+      laptopType,
     } = assignmentData;
 
     // Validate the asset ID
@@ -58,6 +59,7 @@ class AssetsService {
       specifications,
       status: status,
       assignedBy,
+      laptopType, 
     });
     await newAssignment.save();
     logger.info('Asset assigned successfully:', newAssignment);
@@ -316,6 +318,86 @@ async fetchAssignedAssets(page, limit, search, team) {
         `Error updating asset request ${requestId} to ${newStatus}:`,
         error
       );
+      throw error;
+    }
+  }
+
+async getPCDepartmentSummary(team) {
+    try {
+      const matchStage = {
+        assetType: 'laptop',
+        laptopType: { $exists: true, $ne: null },
+        status: { $nin: ['returned', 'cancelled', 'not_acknowledged'] },
+      };
+
+      const summary = await Assets.aggregate([
+        {
+          $match: matchStage,
+        },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'assignee',
+            foreignField: '_id',
+            as: 'assigneeDetails',
+          },
+        },
+        {
+          $unwind: '$assigneeDetails',
+        },
+        ...(team ? [{
+          $match: {
+            'assigneeDetails.team': team
+          }
+        }] : []),
+        {
+          $lookup: {
+            from: 'departments',
+            localField: 'assigneeDetails.department',
+            foreignField: '_id',
+            as: 'departmentDetails',
+          },
+        },
+        {
+          $unwind: '$departmentDetails',
+        },
+        {
+          $group: {
+            _id: {
+              laptopType: '$laptopType',
+              departmentName: '$departmentDetails.name',
+            },
+            count: { $sum: 1 },
+          },
+        },
+        {
+          $group: {
+            _id: '$_id.laptopType',
+            totalDevices: { $sum: '$count' },
+            departments: {
+              $push: {
+                departmentName: '$_id.departmentName',
+                count: '$count',
+              },
+            },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            pcType: '$_id',
+            totalDevices: 1,
+            departments: 1,
+          },
+        },
+        {
+          $sort: { pcType: 1 },
+        },
+      ]);
+
+      return summary;
+    } catch (error) {
+      logger.error('Error fetching PC department summary:', error);
       throw error;
     }
   }

@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { VALID_ASSETS_STATUS } = require('../utility/constants');
+const { VALID_ASSETS_STATUS, VALID_LAPTOP_TYPES } = require('../utility/constants');
 const { Schema } = mongoose;
 
 const assignedAssetSchema = new Schema(
@@ -21,6 +21,22 @@ const assignedAssetSchema = new Schema(
     serialNumber: {
       type: String,
       required: false,
+    },
+    laptopType: {
+      type: String,
+      required: function() {
+        return this.assetType === 'laptop';
+      },
+      validate: {
+        validator: function(value) {
+          if (this.assetType === 'laptop') {
+            return VALID_LAPTOP_TYPES.includes(value);
+          }
+          return value === '' || value === null || value === undefined;
+        },
+        message: 'Invalid laptop type: {VALUE}',
+      },
+      trim: true,
     },
     specifications: {
       type: Schema.Types.Mixed,
@@ -96,6 +112,7 @@ assignedAssetSchema.index({
   assetName: 'text',
   assetType: 'text',
   serialNumber: 'text',
+  laptopType: 'text', 
 });
 
 const Assets = mongoose.model('Assets', assignedAssetSchema);

@@ -5,7 +5,7 @@ const { safeUpload } = require('../middleware/uploadMiddleware');
 const { authenticateUser, authorizeRole } = require('../middleware/authMiddleware');
 const { USER_ROLES } = require('../utility/constants');
 
-const documentFields = [
+const requiredDocumentFields = [
   { name: 'documents.photograph', maxCount: 1 },
   { name: 'documents.signature', maxCount: 1 },
   { name: 'documents.panCard', maxCount: 1 },
@@ -16,9 +16,11 @@ const documentFields = [
   { name: 'documents.twelfthMarkSheet', maxCount: 1 },
   { name: 'documents.graduationProof', maxCount: 1 },
   { name: 'documents.updatedResume', maxCount: 1 },
-  { name: 'documents.cancelledCheque', maxCount: 1 },
+  { name: 'documents.cancelledChequeOrPassbook', maxCount: 1 },
+];
+
+const optionalDocumentFields = [
   { name: 'documents.form11', maxCount: 1 },
-  //Optional fields
   { name: 'documents.postGraduationProof', maxCount: 1 },
   { name: 'documents.offerLetter', maxCount: 1 },
   { name: 'documents.relievingLetter', maxCount: 1 },
@@ -27,9 +29,14 @@ const documentFields = [
   { name: 'documents.salarySlipThree', maxCount: 1 },
 ];
 
+// Combine required and optional fields
+const documentFields = [...requiredDocumentFields, ...optionalDocumentFields];
+
 router.post('/', authenticateUser, authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]), candidateController.createCandidate);
 router.get('/', authenticateUser, candidateController.getCandidates);
 router.get('/id/:id', candidateController.getCandidateDetailsById);
+
+router.post('/invite-user/:id',authenticateUser, candidateController.inviteOrRemindUser);
 
 router.get('/validate/:token', candidateController.validateToken);
 router.get('/user-details/:token', candidateController.fetchCandidateDetails);
@@ -49,11 +56,11 @@ router.post(
 );
 
 router.post('/submit/:token',
-  safeUpload(documentFields),
+  safeUpload([]), // Allow any file fields
   candidateController.finalSubmit
 );
 router.post('/review-update/:id',
-  safeUpload(documentFields),
+  safeUpload([]), // Allow any file fields
   authenticateUser,
   authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]),
   candidateController.reviewUpdateCandidate

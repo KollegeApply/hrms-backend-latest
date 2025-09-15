@@ -6,6 +6,7 @@ const {
   validateHeaders,
   validateUsersCsvFile,
   autoGenerateEmpId,
+  transformDocumentPaths,
 } = require('../utility/common'); // Ensure common.js is created
 const ApiError = require('../utility/ApiError'); // You might need to create this utility
 const { default: httpStatus } = require('http-status'); // Install http-status: npm install http-status
@@ -184,18 +185,29 @@ class UserService {
    * @param {string} id - The user's MongoDB ObjectId.
    * @returns {Promise<User|null>} - The user document or null if not found.
    */
-  async getUserById(id) {
-    logger.info(`Fetching user by ID: ${id}`);
-    const user = await User.findOne({ _id: id, isDeleted: false })
-      .populate('department', 'name')
-      .populate('teamLeadId', 'firstName lastName')
-      .populate('subTeamLeadId', 'firstName lastName')
-      .populate('hrPocId', 'firstName lastName email');
-    if (!user) {
-      logger.warn(`User not found with ID: ${id}`);
-    }
-    return user;
+async getUserById(id) {
+  logger.info(`Fetching user by ID: ${id}`);
+  
+  const userDoc = await User.findOne({ _id: id, isDeleted: false })
+    .populate('department', 'name')
+    .populate('teamLeadId', 'firstName lastName')
+    .populate('subTeamLeadId', 'firstName lastName')
+    .populate('hrPocId', 'firstName lastName email')
+    .populate('userDetails');
+
+  if (!userDoc) {
+    logger.warn(`User not found with ID: ${id}`);
+    return null;
   }
+
+  const userObject = userDoc.toObject();
+
+  if (userObject.userDetails?.documents) {
+    userDoc.userDetails.documents = transformDocumentPaths(userObject.userDetails.documents);
+  }
+
+  return userDoc;
+}
 
   /**
    * Get a single user by their email.
@@ -273,8 +285,6 @@ class UserService {
       }
     }
 
-    console.log(userData);
-
     // Auto-generate Employee ID
     const lastUser = await User.findOne({
       employeeId: { $regex: new RegExp(`^${userData?.team || 'SD'}_\\d+$`) },
@@ -282,7 +292,6 @@ class UserService {
       .sort({ employeeId: -1 })
       .select('employeeId')
       .lean();
-    console.log(lastUser);
     const nextNumber = autoGenerateEmpId(lastUser);
     const paddedNumber = String(nextNumber).padStart(3, '0');
 
@@ -358,7 +367,9 @@ class UserService {
         throw new ApiError(httpStatus.NOT_FOUND, 'Candidate not found');
       }
       candidate.status = 'completed';
+      user.userDetails = candidate.userDetails;
       await candidate.save();
+      await user.save();
     }
 
     logger.info(`User created successfully with ID: ${savedUser?.id}`);
@@ -374,7 +385,7 @@ class UserService {
    */
   async updateUser(id, updateData, changedByUser) {
     logger.info(`Attempting to update user with ID: ${id}`);
-    const user = await this.getUserById(id); // Use getUserById to ensure user exists and is not deleted
+    const user = await this.getUserById(id);
 
     if (!user) {
       logger.warn(`Update failed: User not found with ID: ${id}`);
@@ -734,6 +745,7 @@ class UserService {
         receiverEmails: [user?.email],
         subject: 'HRMS Password Reset OTP',
         message: Helper.getOTPEmail(otp), // Use the OTP email template
+        team: user?.team,
       });
       logger.info(
         `Password reset OTP email sent successfully to: ${user?.email}`

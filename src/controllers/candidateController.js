@@ -5,10 +5,12 @@ const CandidateService = require('../services/candidateService');
 const candidateValidator = require('../validators/candidateValidator');
 const UserDetails = require('../models/userDetailsModel');
 const Helper = require('../utility/helper');
-const { validateCIFToken, transformDocumentPaths } = require('../utility/common');
+const { validateCIFToken, transformDocumentPaths, generateCIFToken } = require('../utility/common');
 const candidateModel = require('../models/candidateModel');
 const { uploadToAzure } = require('../utility/azureBlob');
 const { HR_EMAIL, getTeamEmailConfig } = require('../utility/constants');
+const logger = require('../config/logger');
+const User = require('../models/userModel');
 
 const createCandidate = catchAsync(async (req, res) => {
   const userId = req?.user?.id;
@@ -27,9 +29,10 @@ const createCandidate = catchAsync(async (req, res) => {
     const currentUser = await UserDetails.findById(userId).select('firstName lastName email');
     const emailSubject = 'Complete Your Candidate Information Form (CIF)';
 
+    const configEmails = getTeamEmailConfig(team);
 
     const emailMessage = Helper.getCandidateInviteEmail(candidate, inviteLink, team);
-    const ccEmails = [currentUser?.email];
+    const ccEmails = [currentUser?.email, configEmails?.HR_EMAIL];
 
     await Helper.sendEmail({
       receiverEmails: [candidate?.personalEmail],
@@ -85,10 +88,20 @@ const fetchCandidateDetails = catchAsync(async (req, res) => {
     return res.status(httpStatus.NOT_FOUND).json({ message: 'Invalid or expired link.' });
   }
 
-  const candidate = await candidateModel
+
+  const user = await User.findOne({ email: email});
+  let candidate;
+
+  if(user){
+    candidate = await User
+    .findOne({ email: email })
+    .populate('userDetails');
+  }else{
+    candidate = await candidateModel
     .findOne({ personalEmail: email })
     .populate('pointOfContact','team')
     .populate('userDetails');
+  }
 
   if (!candidate) {
     return res.status(httpStatus.NOT_FOUND).json({ message: 'Candidate not found.' });
@@ -125,16 +138,22 @@ const finalSubmit = catchAsync(async (req, res) => {
   }
 
   const files = req.files || {};
-  const uploadedPaths = {};
 
-  for (const [field, fileArray] of Object.entries(files)) {
-    if (fileArray && fileArray[0]) {
-      const file = fileArray[0];
-      const relativePath = await uploadToAzure(file.buffer, file.originalname);
-      const simpleField = field.replace('documents.', '');
-      uploadedPaths[simpleField] = relativePath;
+  const uploadedEntries = await Promise.all(
+    files.map(async (file) => {
+    if (file) {
+      const simpleField = file.fieldname.replace('documents.', '');
+      const relativePath = await uploadToAzure(file.buffer, file.originalname, 'hrms-cif-documents/');
+      return [simpleField, relativePath];
     }
-  }
+    return null;
+  })
+);
+
+
+const uploadedPaths = Object.fromEntries(
+  uploadedEntries.filter(Boolean)
+);
 
   const parsedBody = {};
   for (const key in req.body) {
@@ -145,11 +164,20 @@ const finalSubmit = catchAsync(async (req, res) => {
     }
   }
 
+  // Filter out undefined or empty values from uploadedPaths for optional documents
+  const filteredUploadedPaths = {};
+  Object.entries(uploadedPaths).forEach(([key, value]) => {
+    if (value && value.trim() !== '') {
+      filteredUploadedPaths[key] = value;
+    }
+  });
+
+
   const dataToValidate = {
     ...parsedBody,
     documents: {
       ...(parsedBody.documents || {}),
-      ...uploadedPaths,
+      ...filteredUploadedPaths,
     },
   };
 
@@ -179,11 +207,12 @@ const finalSubmit = catchAsync(async (req, res) => {
         team,
       });
 
-      res.json({ status: true, data: result });
+      logger.info("Email sent successfully");
     } catch (error) {
       console.error("Error sending email:", error);
     }
   }
+  res.json({ status: true, data: result });
 });
 
 const reviewUpdateCandidate = catchAsync(async (req, res) => {
@@ -191,11 +220,10 @@ const reviewUpdateCandidate = catchAsync(async (req, res) => {
 
   const files = req.files || {};
   const uploadedPaths = {};
-  for (const [field, fileArray] of Object.entries(files)) {
-    if (fileArray && fileArray[0]) {
-      const file = fileArray[0];
-      const relativePath = await uploadToAzure(file.buffer, file.originalname);
-      const simpleField = field.replace('documents.', '');
+  for (const file of files) {
+    if (file) {
+      const relativePath = await uploadToAzure(file.buffer, file.originalname, 'hrms-cif-documents/');
+      const simpleField = file.fieldname.replace('documents.', '');
       uploadedPaths[simpleField] = relativePath;
     }
   }
@@ -209,11 +237,18 @@ const reviewUpdateCandidate = catchAsync(async (req, res) => {
     }
   }
 
+  const filteredUploadedPaths = {};
+  Object.entries(uploadedPaths).forEach(([key, value]) => {
+    if (value && value.trim() !== '') {
+      filteredUploadedPaths[key] = value;
+    }
+  });
+
   const dataToValidate = {
     ...parsedBody,
     documents: {
       ...(parsedBody.documents || {}),
-      ...uploadedPaths,
+      ...filteredUploadedPaths,
     },
   };
 
@@ -261,8 +296,42 @@ const backoutCandidate = catchAsync(async (req, res) => {
 
 const approveCandidate = catchAsync(async (req, res) => {
   const { id } = req.params;
+  const team = req.user.team;
+  
+  // Get candidate details before approval for email
+  const candidate = await Candidate.findById(id).populate('pointOfContact');
+  if (!candidate) {
+    return res.status(404).json({ message: "Candidate not found" });
+  }
+  
   const result = await CandidateService.approveCandidate(id);
-  res.json({ status: true, data: result, message: "Candidate approved successfully." });
+  
+  // Send approval email to candidate
+  if (process.env.HRMS_FRONTEND_URL && candidate.personalEmail) {
+    try {
+      const emailSubject = 'Congratulations! Your Candidate Information Form (CIF) has been Approved';
+      const emailMessage = Helper.getCandidateApprovalEmail(candidate, team);
+
+      const configEmails = getTeamEmailConfig(team);
+      const ccEmails = candidate.pointOfContact?.email ? [candidate.pointOfContact.email, configEmails?.HR_EMAIL] : [configEmails?.HR_EMAIL];
+      
+      await Helper.sendEmail({
+        receiverEmails: [candidate.personalEmail],
+        subject: emailSubject,
+        message: emailMessage,
+        fromHR: true,
+        cc: ccEmails,
+        team,
+      });
+      
+      logger.info(`Approval email sent successfully to ${candidate.personalEmail}`);
+    } catch (error) {
+      logger.error(`Failed to send approval email to ${candidate.personalEmail}:`, error);
+      // Don't fail the approval if email fails
+    }
+  }
+  
+  res.json({ status: true, data: result, message: "Candidate approved successfully and notification email sent." });
 });
 
 const resendCifInvite = catchAsync(async (req, res) => {
@@ -273,11 +342,12 @@ const resendCifInvite = catchAsync(async (req, res) => {
   const inviteLink = `${process.env.HRMS_FRONTEND_URL}/invite-cif/form/${token}`;
 
   const comments = candidate.userDetails?.comments || 'Please review the feedback provided in the form.';
+  const configEmails = getTeamEmailConfig(team);
 
   const emailSubject = 'Action Required: Updates to Your Candidate Information Form (CIF)';
   const emailMessage = Helper.getCandidateResendEmail(candidate, inviteLink, comments, team);
 
-  const ccEmails = candidate.pointOfContact?.email ? [candidate.pointOfContact.email] : [];
+  const ccEmails = candidate.pointOfContact?.email ? [candidate.pointOfContact.email, configEmails?.HR_EMAIL] : [configEmails?.HR_EMAIL];
 
   await Helper.sendEmail({
     receiverEmails: [candidate.personalEmail],
@@ -301,22 +371,109 @@ const requestDevice = catchAsync(async (req, res) => {
   const policies = [];
   if (requests.byod) policies.push('BYOD (Bring Your Own Device)');
   if (requests.byov) policies.push('BYOV (Bring Your Own Vehicle)');
+  const configEmails = getTeamEmailConfig(team);
 
   if (policies.length > 0) {
     const policyText = policies.join(' & ');
     const emailSubject = `Welcome! Please review the ${policyText} onboarding policies`;
     const emailMessage = Helper.getOnboardingPolicyEmail(candidate, policies, team);
 
+    // Prepare attachments for BYOD policy
+    const attachments = [];
+    if (requests.byod) {
+      const teamName = team?.toUpperCase();
+      const policyFileName = `BYOD_${teamName}.pdf`;
+      const policyPath = `./public/policies/${policyFileName}`;
+      
+      attachments.push({
+        filename: `BYOD_Policy_${teamName}.pdf`,
+        path: policyPath,
+        contentType: 'application/pdf'
+      });
+    }
+
     await Helper.sendEmail({
       receiverEmails: [candidate.personalEmail],
       subject: emailSubject,
       message: emailMessage,
+      cc: [configEmails?.HR_EMAIL, configEmails?.IT_EMAIL, configEmails?.FINANCE_EMAIL],
       team,
+      attachments,
     });
   }
 
   res.json({ status: true, message: 'Request sent successfully.' });
 });
+
+const inviteOrRemindUser = catchAsync(async (req, res) => {
+  const userId = req?.user?.id;
+  const team = req.user.team;
+  const user = await User.findById(req.params.id).populate('userDetails');
+
+  if (!user) {
+    return res.status(httpStatus.NOT_FOUND).json({
+      status: false,
+      message: "User not found",
+    });
+  }
+
+  const token = generateCIFToken(user?.email);
+  const inviteLink = `${process.env.HRMS_FRONTEND_URL}/invite-cif/form/${token}`;
+  const configEmails = getTeamEmailConfig(team);
+
+  const currentUser = await User.findById(userId).select("firstName lastName email");
+  const ccEmails = [currentUser?.email, configEmails?.HR_EMAIL];
+
+  const reminderStatuses = ["pending", "draft", "reminder_sent"];
+  const updateRequestStatuses = ["submitted", "underReview"];
+  
+  // Get comments from userDetails if available
+  const comments = user.userDetails?.comments || null;
+
+  let emailSubject, emailMessage, newStatus;
+
+  if (reminderStatuses.includes(user.formStatus)) {
+    // Scenario 1: User hasn't filled form yet - send reminder
+    emailSubject = "Gentle Reminder: Complete Your Candidate Information Form (CIF)";
+    emailMessage = Helper.getEmployeeDataReminderEmail(user, inviteLink, team, comments);
+    newStatus = "reminder_sent";
+  } else if (updateRequestStatuses.includes(user.formStatus)) {
+    // Scenario 2: User filled form but needs updates - send update request
+    emailSubject = "Update Required: Your Candidate Information Form (CIF)";
+    emailMessage = Helper.getEmployeeDataUpdateRequestEmail(user, inviteLink, team, comments);
+    newStatus = "reminder_sent";
+  } else {
+    // Default: Initial invite
+    emailSubject = "Complete Your Candidate Information Form (CIF)";
+    emailMessage = Helper.getEmployeeDataRequestEmail(user, inviteLink, team, comments);
+    newStatus = "pending";
+  }
+
+  if (process.env.HRMS_FRONTEND_URL) {
+    await Helper.sendEmail({
+      receiverEmails: [user?.email],
+      subject: emailSubject,
+      message: emailMessage,
+      fromHR: true,
+      cc: ccEmails,
+      team,
+    });
+  }
+
+  user.formStatus = newStatus;
+  await user.save();
+
+  res.status(httpStatus.CREATED).json({
+    status: true,
+    message: newStatus === "reminder_sent"
+      ? "Gentle reminder email sent successfully"
+      : "Invite email sent successfully",
+    data: user,
+    inviteLink,
+  });
+});
+
+
 
 module.exports = {
   createCandidate,
@@ -331,4 +488,5 @@ module.exports = {
   approveCandidate,
   resendCifInvite,
   requestDevice,
+  inviteOrRemindUser,
 };
