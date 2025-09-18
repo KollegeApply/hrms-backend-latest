@@ -14,6 +14,8 @@ const feedbackRoutes = require('./routes/feedbackRoute');
 const candidateRoutes = require('./routes/candidateRoute');
 const regularizationRoutes = require('./routes/regularizationRoute');
 const aiTestRoutes = require('./routes/aiTestRoute');
+const personalEventRoutes = require('./routes/personalEventRoute');
+const announcementRoutes = require('./routes/announcementRoute');
 // const otherRoutes = require('./routes/otherRoutes'); // Example for future routes
 
 const router = express.Router();
@@ -76,6 +78,14 @@ const defaultRoutes = [
   {
     path: `/api/${apiVersion}/ai`,
     route: aiTestRoutes,
+  },
+  {
+    path: `/api/${apiVersion}/personal-events`,
+    route: personalEventRoutes,
+  },
+  {
+    path: `/api/${apiVersion}/announcements`,
+    route: announcementRoutes,
   }
   // Add other route configurations here
   // {

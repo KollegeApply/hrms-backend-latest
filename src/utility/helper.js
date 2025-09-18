@@ -2445,6 +2445,132 @@ class Helper {
     </div>
     `;
   }
+
+  /**
+   * Get Birthday Email Template
+   * @param {Object} user - User object with firstName, lastName, employeeId
+   * @param {Object} department - Department object with name
+   * @param {string} team - User team (SD or KAP)
+   * @returns {string} HTML template for birthday email
+   */
+  static getBirthdayEmailTemplate(user, department, team) {
+    const displayTeam = getTeamEmailConfig(team);
+    return `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f5f5f5; padding: 40px 20px;">
+        <div style="text-align: center; margin-bottom: 40px;">
+          <h1 style="color: #333; font-size: 28px; margin-bottom: 30px;">Happy Birthday, ${user.firstName} ${user.lastName} 🎂</h1>
+        </div>
+        
+        <div style="text-align: center; margin-bottom: 40px;">
+          <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 10px;">On this special day, the ${displayTeam?.TEAM_NAME || 'KollegeApply'} family celebrates you</p>
+          <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 10px;">Your energy, your passion, and the strength you bring to the team</p>
+          <p style="color: #333; font-size: 16px; line-height: 1.6;">every single day.</p>
+        </div>
+        
+        <div style="text-align: center; margin-bottom: 40px;">
+          <p style="color: #333; font-size: 16px; margin-bottom: 5px;"><strong>Employee ID : ${user.employeeId}</strong></p>
+          <p style="color: #333; font-size: 16px; margin-bottom: 20px;"><strong>Department : ${department?.name || 'N/A'}</strong></p>
+        </div>
+        
+        <div style="text-align: center; margin-bottom: 40px;">
+          <p style="color: #333; font-size: 16px; margin-bottom: 30px;">Happy Birthday once again from all of us at ${displayTeam?.TEAM_NAME || 'KollegeApply'}!</p>
+        </div>
+        
+        <div style="text-align: center;">
+          <p style="color: #333; font-size: 16px; margin-bottom: 5px;"><strong>With Strength & Warmth,</strong></p>
+          <p style="color: #333; font-size: 16px;"><strong>Team ${displayTeam?.TEAM_NAME || 'KollegeApply'}</strong></p>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Get Work Anniversary Email Template
+   * @param {Object} user - User object with firstName, lastName, employeeId
+   * @param {Object} department - Department object with name
+   * @param {number} yearsOfService - Number of years of service
+   * @param {string} yearText - 'year' or 'years'
+   * @param {Date} today - Today's date
+   * @param {string} team - User team (SD or KAP)
+   * @returns {string} HTML template for work anniversary email
+   */
+  static getWorkAnniversaryEmailTemplate(user, department, yearsOfService, yearText, today, team) {
+    const displayTeam = getTeamEmailConfig(team);
+    return `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f5f5f5; padding: 40px 20px;">
+        <div style="text-align: center; margin-bottom: 30px;">
+          <h1 style="color: #333; font-size: 24px; margin-bottom: 20px;">Another Year of Excellence🏆 with ${displayTeam?.TEAM_NAME || 'KollegeApply'} !</h1>
+          <h2 style="color: #333; font-size: 20px; margin-bottom: 30px;">⭐Congratulations ${user.firstName} ${user.lastName}⭐</h2>
+        </div>
+        
+        <div style="text-align: center; margin-bottom: 30px;">
+          <p style="color: #333; font-size: 18px; margin-bottom: 10px; font-weight: bold;">Today marks a special milestone</p>
+          <p style="color: #333; font-size: 18px; margin-bottom: 30px; font-weight: bold;">Your ${yearsOfService}${yearsOfService === 1 ? 'st' : yearsOfService === 2 ? 'nd' : yearsOfService === 3 ? 'rd' : 'th'} Work Anniversary with ${displayTeam?.TEAM_NAME || 'KollegeApply'} !</p>
+        </div>
+        
+        <div style="text-align: center; margin-bottom: 30px;">
+          <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">Your journey as ${user.jobTitle || 'team member'} has been inspiring. Your dedication, teamwork, &</p>
+          <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">valuable contributions have played an important role in our growth.</p>
+          <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 30px;">We truly appreciate your hard work and commitment.</p>
+        </div>
+        
+        <div style="text-align: center; margin-bottom: 30px;">
+          <p style="color: #333; font-size: 16px; margin-bottom: 5px;"><strong>Employee ID : ${user.employeeId}</strong></p>
+          <p style="color: #333; font-size: 16px; margin-bottom: 5px;"><strong>Employee Name : ${user.firstName} ${user.lastName}</strong></p>
+          <p style="color: #333; font-size: 16px; margin-bottom: 5px;"><strong>Department : ${department?.name || 'N/A'}</strong></p>
+          <p style="color: #333; font-size: 16px; margin-bottom: 30px;"><strong>Workiversary : ${yearsOfService} ${yearText}</strong></p>
+        </div>
+        
+        <div style="text-align: center; margin-bottom: 30px;">
+          <p style="color: #333; font-size: 16px; margin-bottom: 30px;">Thank you for being an integral part of the ${displayTeam?.TEAM_NAME || 'KollegeApply'} family.</p>
+          <p style="color: #333; font-size: 16px;">Here's to many more years of success, growth, & shared achievements together!</p>
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * Get Marriage Anniversary Email Template
+   * @param {Object} user - User object with firstName, lastName, employeeId
+   * @param {string} departmentName - Department name
+   * @param {number} yearsOfMarriage - Number of years married
+   * @param {string} yearText - 'year' or 'years'
+   * @param {string} spouseName - Spouse name (optional)
+   * @param {Date} today - Today's date
+   * @param {string} team - User team (SD or KAP)
+   * @returns {string} HTML template for marriage anniversary email
+   */
+  static getMarriageAnniversaryEmailTemplate(user, departmentName, yearsOfMarriage, yearText, spouseName, today, team) {
+    const displayTeam = getTeamEmailConfig(team);
+    return `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f5f5f5; padding: 40px 20px;">
+        <div style="text-align: center; margin-bottom: 40px;">
+          <h1 style="color: #333; font-size: 24px; margin-bottom: 30px;">Happy Marriage Anniversary, ${user.firstName} ${user.lastName} 💑</h1>
+        </div>
+        
+        <div style="text-align: center; margin-bottom: 40px;">
+          <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">On behalf of the ${displayTeam?.TEAM_NAME || 'KollegeApply'} Team, we warmly congratulate you and</p>
+          <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 30px;">your spouse on completing your ${yearsOfMarriage === 1 ? 'first year' : `${yearsOfMarriage} ${yearText}`} of marriage !</p>
+        </div>
+        
+        <div style="text-align: center; margin-bottom: 40px;">
+          <p style="color: #333; font-size: 16px; margin-bottom: 5px;"><strong>Employee ID : ${user.employeeId}</strong></p>
+          <p style="color: #333; font-size: 16px; margin-bottom: 5px;"><strong>Employee Name : ${user.firstName} ${user.lastName}</strong></p>
+          <p style="color: #333; font-size: 16px; margin-bottom: 30px;"><strong>Department : ${departmentName || 'N/A'}</strong></p>
+        </div>
+        
+        <div style="text-align: center; margin-bottom: 40px;">
+          <p style="color: #333; font-size: 16px; margin-bottom: 30px;">🌹Wishing you a journey of love, strength, and togetherness for many</p>
+          <p style="color: #333; font-size: 16px; margin-bottom: 30px;">more years to come🌹</p>
+        </div>
+        
+        <div style="text-align: center;">
+          <p style="color: #333; font-size: 16px; margin-bottom: 5px;"><strong>With Warm Regards,</strong></p>
+          <p style="color: #333; font-size: 16px;"><strong>Team ${displayTeam?.TEAM_NAME || 'KollegeApply'}</strong></p>
+        </div>
+      </div>
+    `;
+  }
 }
 
 module.exports = Helper;

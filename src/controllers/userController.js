@@ -12,6 +12,7 @@ const User = require('../models/userModel');
 const UserDetails = require('../models/userDetailsModel');
 const candidateValidator = require('../validators/candidateValidator');
 const { uploadToAzure } = require('../utility/azureBlob');
+const { transformDocumentPaths } = require('../utility/common');
 const crypto = require('crypto');
 
 // Helper function to validate URLs
@@ -23,6 +24,7 @@ function isValidUrl(string) {
     return false;
   }
 }
+
 
 /**
  * Utility to generate JWT token.
@@ -102,7 +104,17 @@ const getAllUsers = catchAsync(async (req, res) => {
   // 2. Call service to get users
   const result = await userService?.getAllUsers(validatedQuery, currentUser); // Service handles pagination logic
 
-  // 3. Send response
+  // 3. Transform profile photos to full URLs if needed
+  if (result.data && Array.isArray(result.data)) {
+    result.data.forEach(user => {
+      if (user.profilePhoto && !user.profilePhoto.startsWith('http')) {
+        const transformedPaths = transformDocumentPaths({ profilePhoto: user.profilePhoto });
+        user.profilePhoto = transformedPaths.profilePhoto;
+      }
+    });
+  }
+
+  // 4. Send response
   res?.status(httpStatus.OK).json({
     status: true,
     message: 'Users retrieved successfully.',
@@ -128,7 +140,13 @@ const getUserById = catchAsync(async (req, res) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
   }
 
-  // 4. Send response
+  // 4. Transform profile photo to full URL if needed
+  if (user.profilePhoto && !user.profilePhoto.startsWith('http')) {
+    const transformedPaths = transformDocumentPaths({ profilePhoto: user.profilePhoto });
+    user.profilePhoto = transformedPaths.profilePhoto;
+  }
+
+  // 5. Send response
   res?.status(httpStatus.OK).json({
     status: true,
     message: 'User retrieved successfully.',
@@ -689,6 +707,67 @@ const updateUserCifForm = async (req, res) => {
   }
 };
 
+// Upload profile photo
+const uploadProfilePhoto = catchAsync(async (req, res) => {
+  try {
+    console.log('=== uploadProfilePhoto START ===');
+    console.log('User ID:', req.params.userId);
+    console.log('File:', req.file ? 'Present' : 'Missing');
+
+    const { userId } = req.params;
+    
+    // Validate user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Check if file is provided
+    if (!req.file) {
+      return res.status(400).json({ message: "No photo file provided" });
+    }
+
+    // Validate file type
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+    if (!allowedTypes.includes(req.file.mimetype)) {
+      return res.status(400).json({ message: "Invalid file type. Only JPEG, PNG files are allowed" });
+    }
+
+    // Upload to Azure
+    console.log('Uploading to Azure...');
+    const relativePath = await uploadToAzure(req.file.buffer, req.file.originalname, 'hrms-profile-photos/');
+    console.log('File uploaded to:', relativePath);
+
+    console.log('Relative path:', relativePath);
+
+    // Update user profile photo with relative path only
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { profilePhoto: relativePath },
+      { new: true }
+    ).select('-password');
+
+    console.log('Profile photo updated successfully');
+    console.log('Saved profilePhoto value:', updatedUser.profilePhoto);
+    
+    // Convert to full URL for response only
+    const transformedPaths = transformDocumentPaths({ profilePhoto: relativePath });
+    const fullPhotoUrl = transformedPaths.profilePhoto;
+    
+    res.status(200).json({
+      message: 'Profile photo uploaded successfully',
+      user: updatedUser,
+      photoUrl: fullPhotoUrl
+    });
+  } catch (error) {
+    console.error('Error uploading profile photo:', error);
+    res.status(500).json({ 
+      message: 'Failed to upload profile photo',
+      error: error.message 
+    });
+  }
+});
+
 module.exports = {
   createUser,
   getAllUsers,
@@ -707,6 +786,7 @@ module.exports = {
   requestSectionApproval,
   getSectionApprovalStatus,
   sectionApprovalByToken,
+  uploadProfilePhoto,
 };
 
 // --- Utility: catchAsync (Place in src/utility/catchAsync.js) ---

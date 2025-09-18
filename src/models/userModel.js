@@ -42,6 +42,10 @@ const userSchema = new Schema(
       type: String,
       trim: true,
     },
+    profilePhoto: {
+      type: String,
+      trim: true,
+    },
     department: {
       // type: String,
       type: mongoose.Schema.Types.ObjectId,

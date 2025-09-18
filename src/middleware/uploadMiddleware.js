@@ -64,8 +64,11 @@ const safeUpload = (fields) => {
     if (fields.length === 0) {
       // Allow any file fields
       uploadMiddleware = upload.any();
+    } else if (typeof fields[0] === 'string') {
+      // Single field name - use single file upload
+      uploadMiddleware = upload.single(fields[0]);
     } else {
-      // Use specific fields
+      // Use specific fields with array format
       uploadMiddleware = upload.fields(fields);
     }
     

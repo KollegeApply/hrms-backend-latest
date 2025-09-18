@@ -119,4 +119,12 @@ router.put(
   userController.updateUserCifForm
 );
 
+// Upload Profile Photo: Users can upload their own profile photo
+router.post(
+  '/:userId/profile/photo',
+  authenticateUser,
+  safeUpload(['photo']), // Allow only 'photo' field, single file
+  userController.uploadProfilePhoto
+);
+
 module.exports = router;
