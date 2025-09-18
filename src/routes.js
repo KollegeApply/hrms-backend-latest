@@ -10,6 +10,7 @@ const thirdPartyRoutes = require('./routes/thirdpartyRoute');
 const statsRoutes = require('./routes/statsRoute');
 const assetRoutes = require('./routes/assetRoute');
 const ticketRoutes = require('./routes/ticketRoute')
+const meetingRoutes = require('./routes/meetingRoute');
 const feedbackRoutes = require('./routes/feedbackRoute');
 const candidateRoutes = require('./routes/candidateRoute');
 const regularizationRoutes = require('./routes/regularizationRoute');
@@ -86,6 +87,11 @@ const defaultRoutes = [
   {
     path: `/api/${apiVersion}/announcements`,
     route: announcementRoutes,
+  }
+  ,
+  {
+    path: `/api/${apiVersion}/meetings`,
+    route: meetingRoutes,
   }
   // Add other route configurations here
   // {
