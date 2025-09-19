@@ -128,8 +128,17 @@ class AssetRequestService {
       requestId,
       { $set: updateFields },
       { new: true }
-    ).populate('requestedBy', 'firstName lastName employeeId email')
-     .populate('approvedBy', 'firstName lastName employeeId email');
+    )
+      .populate({
+        path: 'requestedBy',
+        select: 'firstName lastName employeeId email jobTitle department teamLeadId subTeamLeadId',
+        populate: [
+          { path: 'department', select: 'name' },
+          { path: 'teamLeadId', select: 'firstName lastName' },
+          { path: 'subTeamLeadId', select: 'firstName lastName' },
+        ],
+      })
+      .populate('approvedBy', 'firstName lastName employeeId email');
 
     if (!updatedRequest) {
       logger.error(`Asset request not found: ${requestId}`);

@@ -27,7 +27,6 @@ const createBooking = catchAsync(async (req, res) => {
     userId: req.user.id,
     ...body,
   });
-  console.log(created, "createdcreated")
   res.status(httpStatus.StatusCodes.CREATED).json({
     status: true,
     message: 'Booking created successfully',

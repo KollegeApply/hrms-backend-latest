@@ -310,7 +310,16 @@ async fetchAssignedAssets(page, limit, search, team) {
         requestId,
         { status: newStatus },
         { new: true }
-      ).populate('assignee', 'firstName lastName employeeId email');
+      )
+        .populate({
+          path: 'assignee',
+          select: 'firstName lastName employeeId email jobTitle department teamLeadId subTeamLeadId',
+          populate: [
+            { path: 'department', select: 'name' },
+            { path: 'teamLeadId', select: 'firstName lastName' },
+            { path: 'subTeamLeadId', select: 'firstName lastName' },
+          ],
+        });
 
       if (!request) {
         logger.error(`Asset request not found: ${requestId}`);
