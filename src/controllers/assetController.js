@@ -496,19 +496,21 @@ const fetchAssetRequests = catchAsync(async (req, res) => {
 
 const handleAssetRequestUpdate = catchAsync(async (req, res) => {
   const { id } = req.params;
-  const { status } = req.body;
+  const { status, rejectionReason } = req.body;
   const team = req.user.team;
 
   const validatedData =
     await assetValidator.handleAssetRequestUpdateSchema.validateAsync({
       id,
       status,
+      rejectionReason,
     });
 
   const updatedRequest = await assetRequestService.updateAssetRequestStatus(
     validatedData.id,
     validatedData.status,
-    req.user.id
+    req.user.id,
+    validatedData.rejectionReason
   );
 
   const sendMail = req?.body?.sendMail;
@@ -520,6 +522,11 @@ const handleAssetRequestUpdate = catchAsync(async (req, res) => {
     const updStatus = (status === "asset-request-approved") ? "approved" : "rejected";
 
     const emailSubject = `Asset Request ${updStatus.charAt(0).toUpperCase() + updStatus.slice(1)} - ${assetType}`;
+    const teamLeadName = employee?.teamLeadId
+      ? `${employee.teamLeadId.firstName || ''} ${employee.teamLeadId.lastName || ''}`.trim()
+      : (employee?.subTeamLeadId
+        ? `${employee.subTeamLeadId.firstName || ''} ${employee.subTeamLeadId.lastName || ''}`.trim()
+        : '');
     const emailMessage = Helper.getAssetRequestStatusEmail(
       employee.firstName,
       employee.employeeId,
@@ -527,6 +534,7 @@ const handleAssetRequestUpdate = catchAsync(async (req, res) => {
       specifications,
       updStatus,
       process.env.HRMS_FRONTEND_URL,
+      validatedData.rejectionReason,
       employee?.jobTitle,
       employee?.department?.name,
       teamLeadName
@@ -615,8 +623,8 @@ const createAssetRequest = catchAsync(async (req, res) => {
 
     const configEmails = getTeamEmailConfig(team);
 
-    const receiverEmails = [configEmails?.HR_EMAIL, configEmails?.IT_EMAIL];
-    const cc = [employee.email, ...configEmails?.ADMIN_EMAILS];
+    const receiverEmails = [configEmails?.IT_EMAIL];
+    const cc = [configEmails?.HR_EMAIL, ...configEmails?.ADMIN_EMAILS];
 
     logger.info(`Sending asset request email to HR and IT for ${assetType}`);
 
@@ -707,7 +715,8 @@ const updateAssetRequestStatus = catchAsync(async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
 
-  const validatedData = await assetValidator.handleAssetRequestUpdateSchema.validateAsync({
+  // Validate against return request statuses (return_requested, return_approved, return_rejected, returned)
+  const validatedData = await assetValidator.handleReturnRequestUpdateSchema.validateAsync({
     id,
     status,
   });
@@ -716,6 +725,51 @@ const updateAssetRequestStatus = catchAsync(async (req, res) => {
     validatedData.id,
     validatedData.status
   );
+
+  // Send email for return_approved / return_rejected to employee
+  const sendMail = req?.body?.sendMail === true;
+  const shouldNotify = ['return_approved', 'return_rejected'].includes(status) && process.env.HRMS_FRONTEND_URL;
+  if (sendMail && shouldNotify) {
+    const employee = updatedRequest.assignee;
+    const { assetName, assetType } = updatedRequest;
+
+    const updStatus = status === 'return_approved' ? 'approved' : 'rejected';
+    const teamLeadName = employee?.teamLeadId
+      ? `${employee.teamLeadId.firstName || ''} ${employee.teamLeadId.lastName || ''}`.trim()
+      : (employee?.subTeamLeadId
+        ? `${employee.subTeamLeadId.firstName || ''} ${employee.subTeamLeadId.lastName || ''}`.trim()
+        : '');
+
+    const emailSubject = `Asset Return Request ${updStatus.charAt(0).toUpperCase() + updStatus.slice(1)} - ${assetName}`;
+    const emailMessage = Helper.getAssetReturnStatusEmail(
+      employee?.firstName,
+      employee?.employeeId,
+      assetName,
+      assetType,
+      updStatus,
+      process.env.HRMS_FRONTEND_URL,
+      employee?.jobTitle,
+      employee?.department?.name,
+      teamLeadName
+    );
+
+    const receiverEmails = [employee?.email].filter(Boolean);
+    const configEmails = getTeamEmailConfig(req.user.team);
+    const ccEmails = [configEmails?.HR_EMAIL, configEmails?.IT_EMAIL, req.user?.email, ...configEmails?.ADMIN_EMAILS].filter(Boolean);
+
+    logger.info(`Sending asset return ${updStatus} email to ${employee?.email}`);
+    Helper.sendEmail({
+      receiverEmails,
+      subject: emailSubject,
+      message: emailMessage,
+      fromHR: false,
+      fromIT: true,
+      cc: ccEmails,
+      team: req.user.team,
+    }).catch((err) => {
+      logger.error(`Failed to send asset return ${updStatus} email to ${employee?.email}:`, err);
+    });
+  }
 
   res.status(httpStatus.OK).json({
     status: true,

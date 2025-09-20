@@ -35,7 +35,11 @@ const createTicketSchema = Joi.object({
 const updateTicketSchema = Joi.object({
   status: Joi.string().valid('pending', 'in_progress', 'resolved','rejected'),
   actionReason: Joi.string().allow('', null),
-});
+  // Accept legacy/alternative client field and rename it to actionReason
+  resolutionComment: Joi.string().allow('', null),
+})
+  .rename('resolutionComment', 'actionReason', { ignoreUndefined: true, override: true })
+  .options({ stripUnknown: true });
 
 module.exports = {
   createTicketSchema,

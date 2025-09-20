@@ -132,6 +132,34 @@ const handleAssetRequestUpdateSchema = Joi.object({
       'any.required': 'Status is required',
       'any.only': `Status must be one of the following: ${VALID_ASSET_REQUEST_STATUS.join(', ')}`,
     }),
+  rejectionReason: Joi.when('status', {
+    is: 'asset-request-rejected',
+    then: Joi.string().trim().min(1).max(500).required().messages({
+      'string.empty': 'Rejection reason is required when rejecting a request',
+      'any.required': 'Rejection reason is required when rejecting a request',
+      'string.min': 'Rejection reason cannot be empty',
+      'string.max': 'Rejection reason cannot exceed 500 characters',
+    }),
+    otherwise: Joi.string().optional().allow('').max(500).messages({
+      'string.max': 'Rejection reason cannot exceed 500 characters',
+    })
+  }),
+}).options({ stripUnknown: true });
+
+// For updating return request status on assigned assets
+const handleReturnRequestUpdateSchema = Joi.object({
+  id: objectIdSchema.required().messages({
+    'string.empty': 'ID is required',
+    'any.required': 'ID is required',
+  }),
+  status: Joi.string()
+    .required()
+    .valid('return_requested', 'return_approved', 'return_rejected', 'returned')
+    .messages({
+      'string.empty': 'Status is required',
+      'any.required': 'Status is required',
+      'any.only': 'Status must be one of the following: return_requested, return_approved, return_rejected, returned',
+    }),
 }).options({ stripUnknown: true });
 
 const createAssetRequestSchema = Joi.object({
@@ -163,5 +191,6 @@ module.exports = {
   rejectAssetSchema,
   returnAssetSchema,
   handleAssetRequestUpdateSchema,
+  handleReturnRequestUpdateSchema,
   createAssetRequestSchema,
 };

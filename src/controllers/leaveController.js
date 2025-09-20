@@ -71,12 +71,12 @@ const updateLeave = catchAsync(async (req, res) => {
     editor,
   });
 
-  await sendLeaveStatusUpdateEmail(updatedLeave, editor.team);
+  await sendLeaveStatusUpdateEmail(updatedData, team);
 
   res.status(httpStatus.OK).json({
     status: true,
     message: 'Leave status updated successfully.',
-    data: updatedLeave,
+    data: updatedData,
   });
 });
 
@@ -156,11 +156,7 @@ async function sendLeaveStatusUpdateEmail(updatedLeave, team) {
   
   
 
-  res.status(httpStatus.OK).json({
-    status: true,
-    message: 'Leave updated successfully.',
-    data: updatedData,
-  });
+  // email sending handled above; nothing to return here
 };
 
 
@@ -233,6 +229,7 @@ const deleteLeave = catchAsync(async (req, res) => {
     };
 
     // Send email
+    const userFullName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim();
     Helper.sendEmail({
       receiverEmails: [
         configEmails?.HR_EMAIL,
@@ -277,6 +274,13 @@ const applyForLeave = catchAsync(async (req, res) => {
       .populate('department', 'name');
 
     const hasTL = user?.teamLeadId || user?.subTeamLeadId;
+
+  const userFullName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim();
+  const primaryTlName = user?.teamLeadId
+    ? `${user.teamLeadId.firstName || ''} ${user.teamLeadId.lastName || ''}`.trim()
+    : (user?.subTeamLeadId
+      ? `${user.subTeamLeadId.firstName || ''} ${user.subTeamLeadId.lastName || ''}`.trim()
+      : '');
 
     leaveData.status = hasTL ? 'tl-pending' : 'hr-pending';
 

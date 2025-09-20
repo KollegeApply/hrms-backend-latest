@@ -308,9 +308,9 @@ class Helper {
           <div style="background-color: #ffecec; padding: 15px 20px; border-radius: 5px; margin: 25px 0; border-left: 4px solid #ff4c4c;">
             <h2 style="color: #333; font-size: 18px; margin-top: 0; margin-bottom: 15px;">Revocation Details</h2>
             <ul style="list-style: none; padding: 0; margin: 0;">
-              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee:</strong> ${userName} (${employeeId || 'N/A'})</li>
-              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Designation:</strong> ${jobTitle || 'N/A'}</li>
-              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Department:</strong> ${department || 'N/A'}</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee:</strong> ${userName} (${(employeeInfo && employeeInfo.employeeId) || 'N/A'})</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Designation:</strong> ${(employeeInfo && employeeInfo.jobTitle) || 'N/A'}</li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Department:</strong> ${(employeeInfo && employeeInfo.department) || 'N/A'}</li>
               <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Team Lead:</strong> N/A</li>
             </ul>
           </div>
@@ -1692,7 +1692,10 @@ class Helper {
    */
   static leaveTLRejectionNotification(userName, date, leaveType, reason, team, isHalfDay = false, halfDayType = null, employeeInfo = null) {
     const displayTeam = getTeamEmailConfig(team);
-
+    
+    // Extract firstName from full name for greeting
+    const firstName = userName.split(' ')[0];
+    
     // Modify leave type to include half-day information
     let displayLeaveType = leaveType;
     if (isHalfDay) {
@@ -1762,7 +1765,10 @@ class Helper {
    */
   static leaveHRApprovalNotification(userName, date, leaveType, reason, team, isHalfDay = false, halfDayType = null, employeeInfo = null) {
     const displayTeam = getTeamEmailConfig(team);
-
+    
+    // Extract firstName from full name for greeting
+    const firstName = userName.split(' ')[0];
+    
     // Modify leave type to include half-day information
     let displayLeaveType = leaveType;
     if (isHalfDay) {
@@ -1833,7 +1839,10 @@ class Helper {
    */
   static leaveHRRejectionNotification(userName, date, leaveType, reason, team, isHalfDay = false, halfDayType = null, employeeInfo = null) {
     const displayTeam = getTeamEmailConfig(team);
-
+    
+    // Extract firstName from full name for greeting
+    const firstName = userName.split(' ')[0];
+    
     // Modify leave type to include half-day information
     let displayLeaveType = leaveType;
     if (isHalfDay) {
@@ -2317,7 +2326,7 @@ class Helper {
   /**
    * Email template for asset request status update notification
    */
-  static getAssetRequestStatusEmail(firstName, employeeId, assetType, specifications, status, dashboardUrl) {
+  static getAssetRequestStatusEmail(firstName, employeeId, assetType, specifications, status, dashboardUrl, rejectionReason, designation, departmentName, teamLeadName) {
     const statusColor = status === 'approved' ? '#28a745' : '#dc3545';
     const capitalizedStatus = status.charAt(0).toUpperCase() + status.slice(1);
 
@@ -2342,6 +2351,21 @@ class Helper {
             <td style="padding: 8px 0;"><strong>Employee ID:</strong></td>
             <td style="padding: 8px 0;">${employeeId}</td>
           </tr>
+          ${designation ? `
+          <tr>
+            <td style=\"padding: 8px 0;\"><strong>Designation:</strong></td>
+            <td style=\"padding: 8px 0;\">${designation}</td>
+          </tr>` : ''}
+          ${departmentName ? `
+          <tr>
+            <td style=\"padding: 8px 0;\"><strong>Department:</strong></td>
+            <td style=\"padding: 8px 0;\">${departmentName}</td>
+          </tr>` : ''}
+          ${teamLeadName ? `
+          <tr>
+            <td style=\"padding: 8px 0;\"><strong>Team Lead:</strong></td>
+            <td style=\"padding: 8px 0;\">${teamLeadName}</td>
+          </tr>` : ''}
           <tr>
             <td style="padding: 8px 0;"><strong>Asset Type:</strong></td>
             <td style="padding: 8px 0;">${assetType}</td>
@@ -2352,11 +2376,12 @@ class Helper {
           </tr>
         </table>
 
-        <div style="text-align: center; margin: 30px 0;">
-          <a href="${dashboardUrl}" style="background-color: #007bff; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
-            View Request in Dashboard
-          </a>
+        ${rejectionReason ? `
+        <div style="background:#fff3f3; border:1px solid #f5c6cb; padding:12px 16px; border-radius:6px; color:#721c24; margin-bottom:20px;">
+          <strong>Rejection Reason:</strong>
+          <div style="margin-top:6px; white-space:pre-wrap;">${rejectionReason}</div>
         </div>
+        ` : ''}
 
         <p style="font-size: 14px; color: #777; line-height: 1.5; margin-bottom: 24px;">
           If you have any questions or concerns, please feel free to contact the IT department.
@@ -2428,7 +2453,7 @@ class Helper {
         </div>
 
         <div style="text-align: center; margin-top: 30px;">
-          <a href="${dashboardUrl}/assets/requests" style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-size: 16px;">
+          <a href="${dashboardUrl}/assets" style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-size: 16px;">
             Review Asset Request
           </a>
         </div>
