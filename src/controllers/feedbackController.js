@@ -108,7 +108,8 @@ const getAllFeedbacks = catchAsync(async (req, res) => {
     periodFrom: req.query.periodFrom,
     periodTo: req.query.periodTo,
     page: req.query.page,
-    limit: req.query.limit
+    limit: req.query.limit,
+    search: req.query.search
   };
 
   const result = await feedbackService.getAllFeedbacks(userId, userRole, userTeam, filters);
