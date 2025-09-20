@@ -2455,7 +2455,7 @@ class Helper {
         </div>
 
         <div style="text-align: center; margin-top: 30px;">
-          <a href="${dashboardUrl}/assets/requests" style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-size: 16px;">
+          <a href="${dashboardUrl}/assets" style="background-color: #007bff; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; display: inline-block; font-size: 16px;">
             Review Asset Request
           </a>
         </div>

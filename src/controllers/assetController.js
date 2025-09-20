@@ -623,8 +623,8 @@ const createAssetRequest = catchAsync(async (req, res) => {
 
     const configEmails = getTeamEmailConfig(team);
 
-    const receiverEmails = [configEmails?.HR_EMAIL, configEmails?.IT_EMAIL];
-    const cc = [employee.email, ...configEmails?.ADMIN_EMAILS];
+    const receiverEmails = [configEmails?.IT_EMAIL];
+    const cc = [configEmails?.HR_EMAIL, ...configEmails?.ADMIN_EMAILS];
 
     logger.info(`Sending asset request email to HR and IT for ${assetType}`);
 
