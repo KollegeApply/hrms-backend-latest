@@ -1576,7 +1576,7 @@ class Helper {
     const h1Style = "color: #2a2a2a;";
     const pStyle = "font-size: 16px; line-height: 1.5;";
     const tableStyle = "width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 20px;";
-    const thStyle = "border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #9faebeff; font-weight: bold;";
+    const thStyle = "border: 1px solid #ddd; padding: 8px; text-align: left; background-color: #4a90e2; color: white; font-weight: bold;";
 
     const displayTeam = getTeamEmailConfig(team);
 
@@ -1591,14 +1591,12 @@ class Helper {
             <thead>
                 <tr>
                     <th style="${thStyle}">Department</th>
-                    <th style="${thStyle}">Employee ID</th>
-                    <th style="${thStyle}">Employee Name</th>
+                    <th style="${thStyle}">Employee ID - Name</th>
                     <th style="${thStyle}">Late Check-Ins</th>
                     <th style="${thStyle}">Early Check-Outs</th>
+                    <th style="${thStyle}">Late-In-Early-Out</th>
                     <th style="${thStyle}">No Check-Out</th>
                     <th style="${thStyle}">No Attendance</th>
-                    <th style="${thStyle}">Weekly Stats</th>
-                    <th style="${thStyle}">Weekly Total Hours</th>
                 </tr>
             </thead>
             <tbody>

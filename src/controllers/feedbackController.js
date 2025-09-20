@@ -62,7 +62,7 @@ const createFeedback = catchAsync(async (req, res) => {
             team,
           });
 
-          console.log(`📧 STL approval email sent to TL only: ${employeeTL.email}`);
+          (`📧 STL approval email sent to TL only: ${employeeTL.email}`);
         }
       } else {
         // Direct feedback: Email to employee immediately
@@ -89,7 +89,7 @@ const createFeedback = catchAsync(async (req, res) => {
           team,
         });
 
-        console.log(`📧 Direct feedback email sent to employee: ${givenToUser.email}`);
+        (`📧 Direct feedback email sent to employee: ${givenToUser.email}`);
       }
     } catch (error) {
       console.error('Error sending feedback email:', error);
@@ -148,7 +148,7 @@ const approveFeedbackByTL = catchAsync(async (req, res) => {
   );
 
   // 📧 Send email notification after TL approval/rejection
-  console.log('📧 EMAIL CONDITIONS CHECK:', {
+  ('📧 EMAIL CONDITIONS CHECK:', {
     hasHrmsFrontendUrl: !!process.env.HRMS_FRONTEND_URL,
     frontendUrl: process.env.HRMS_FRONTEND_URL,
     action,
@@ -158,7 +158,7 @@ const approveFeedbackByTL = catchAsync(async (req, res) => {
   if (process.env.HRMS_FRONTEND_URL) {
     try {
       const team = req.user.team;
-      console.log('📧 Fetching users for email notification...');
+      ('📧 Fetching users for email notification...');
       
       const [employee, stlUser, tlUser] = await Promise.all([
         User.findById(updatedFeedback.givenTo),
@@ -166,7 +166,7 @@ const approveFeedbackByTL = catchAsync(async (req, res) => {
         User.findById(tlUserId)
       ]);
 
-      console.log('📧 Users fetched:', {
+      ('📧 Users fetched:', {
         employee: employee ? `${employee.firstName} ${employee.lastName}` : 'Not found',
         stlUser: stlUser ? `${stlUser.firstName} ${stlUser.lastName}` : 'Not found',
         tlUser: tlUser ? `${tlUser.firstName} ${tlUser.lastName}` : 'Not found'
@@ -175,7 +175,7 @@ const approveFeedbackByTL = catchAsync(async (req, res) => {
       if (employee && stlUser && tlUser) {
         const configEmails = getTeamEmailConfig(team);
         
-        console.log('📧 EMAIL DEBUG:', {
+        ('📧 EMAIL DEBUG:', {
           action,
           employeeEmail: employee.email,
           stlEmail: stlUser.email,
@@ -211,7 +211,7 @@ const approveFeedbackByTL = catchAsync(async (req, res) => {
             team,
           });
 
-          console.log(`📧 Feedback approved email sent to employee: ${employee.email}`);
+          (`📧 Feedback approved email sent to employee: ${employee.email}`);
         } else if (action === 'reject') {
           // Send email to STL (feedback was rejected) - NO CC
           const emailSubject = `Feedback Rejected - ${employee.firstName} ${employee.lastName}`;
@@ -237,7 +237,7 @@ const approveFeedbackByTL = catchAsync(async (req, res) => {
             team,
           });
 
-          console.log(`📧 Feedback rejected email sent to STL only: ${stlUser.email}`);
+          (`📧 Feedback rejected email sent to STL only: ${stlUser.email}`);
         }
       }
     } catch (error) {

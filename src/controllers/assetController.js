@@ -30,7 +30,6 @@ const assignAsset = catchAsync(async (req, res) => {
     const { assetName, assetType, assignee } = validatedData;
     const employee = await User.findById(assignee)
       .populate('teamLeadId', 'firstName lastName email')
-      .populate('subTeamLeadId', 'firstName lastName email')
       .populate('department', 'name');
     const team = req?.user?.team;
     
@@ -38,9 +37,7 @@ const assignAsset = catchAsync(async (req, res) => {
     const employeeFullName = `${employee?.firstName || ''} ${employee?.lastName || ''}`.trim();
     const teamLeadName = employee?.teamLeadId ? 
       `${employee.teamLeadId.firstName || ''} ${employee.teamLeadId.lastName || ''}`.trim() : 
-      (employee?.subTeamLeadId ? 
-        `${employee.subTeamLeadId.firstName || ''} ${employee.subTeamLeadId.lastName || ''}`.trim() : 
-        'N/A');
+      'N/A';
     
     const emailSubject = `Asset Assignment Notification - ${assetName}`;
     const emailMessage = Helper.getAssetAssignmentEmail(
@@ -59,7 +56,7 @@ const assignAsset = catchAsync(async (req, res) => {
     const configEmails = getTeamEmailConfig(team);
 
     const receiverEmails = [employee.email];
-    const cc = [pocEmail, configEmails?.HR_EMAIL, ...configEmails?.ADMIN_EMAILS];
+    const cc = [pocEmail, configEmails?.HR_EMAIL, configEmails?.FINANCE_EMAIL, employee?.teamLeadId?.email, ...configEmails?.ADMIN_EMAILS].filter(Boolean);
 
     logger.info(`Sending asset assignment email to ${employee.email}`);
 
@@ -134,7 +131,6 @@ const updateAssignedAsset = catchAsync(async (req, res) => {
   ) {
     const employee = await User.findById(updatedRequest.assignee)
       .populate('teamLeadId', 'firstName lastName email')
-      .populate('subTeamLeadId', 'firstName lastName email')
       .populate('department', 'name');
     if (employee) {
       // Construct full names
@@ -167,6 +163,9 @@ const updateAssignedAsset = catchAsync(async (req, res) => {
 
       const ccEmails = [
         req.user.email,
+        configEmails?.HR_EMAIL,
+        configEmails?.FINANCE_EMAIL,
+        employee?.teamLeadId?.email,
         ...configEmails?.ADMIN_EMAILS,
       ].filter(Boolean);
 
@@ -244,7 +243,6 @@ const acknowledgeAsset = catchAsync(async (req, res) => {
     const [employee, poc] = await Promise.all([
       User.findById(assignee)
         .populate('teamLeadId', 'firstName lastName email')
-        .populate('subTeamLeadId', 'firstName lastName email')
         .populate('department', 'name'),
       User.findById(assignedBy),
     ]);
@@ -253,9 +251,7 @@ const acknowledgeAsset = catchAsync(async (req, res) => {
     const employeeFullName = `${employee?.firstName || ''} ${employee?.lastName || ''}`.trim();
     const teamLeadName = employee?.teamLeadId ? 
       `${employee.teamLeadId.firstName || ''} ${employee.teamLeadId.lastName || ''}`.trim() : 
-      (employee?.subTeamLeadId ? 
-        `${employee.subTeamLeadId.firstName || ''} ${employee.subTeamLeadId.lastName || ''}`.trim() : 
-        'N/A');
+      'N/A';
 
     const emailSubject = `Asset Acknowledgment Confirmation - ${assetName}`;
     const emailMessage = Helper.getAssetAcknowledgmentEmail(
@@ -275,6 +271,7 @@ const acknowledgeAsset = catchAsync(async (req, res) => {
 
     const ccEmails = [
       req.user?.email !== employee?.email ? req.user?.email : null,
+      employee?.teamLeadId?.email,
       ...configEmails?.ADMIN_EMAILS,
     ].filter(Boolean);
 
@@ -328,7 +325,6 @@ const rejectAsset = catchAsync(async (req, res) => {
     const [employee, poc] = await Promise.all([
       User.findById(userId)
         .populate('teamLeadId', 'firstName lastName email')
-        .populate('subTeamLeadId', 'firstName lastName email')
         .populate('department', 'name'),
       User.findById(assignedBy),
     ]);
@@ -337,9 +333,7 @@ const rejectAsset = catchAsync(async (req, res) => {
     const employeeFullName = `${employee?.firstName || ''} ${employee?.lastName || ''}`.trim();
     const teamLeadName = employee?.teamLeadId ? 
       `${employee.teamLeadId.firstName || ''} ${employee.teamLeadId.lastName || ''}`.trim() : 
-      (employee?.subTeamLeadId ? 
-        `${employee.subTeamLeadId.firstName || ''} ${employee.subTeamLeadId.lastName || ''}`.trim() : 
-        'N/A');
+      'N/A';
 
     const emailSubject = `Asset Rejection Notification - ${assetName}`;
     const emailMessage = Helper.getAssetRejectionEmail(
@@ -359,6 +353,7 @@ const rejectAsset = catchAsync(async (req, res) => {
 
     const ccEmails = [
       req.user?.email !== employee?.email ? req.user?.email : null,
+      employee?.teamLeadId?.email,
       ...configEmails?.ADMIN_EMAILS,
     ].filter(Boolean);
 
@@ -413,7 +408,6 @@ const returnAsset = catchAsync(async (req, res) => {
     const [employee, poc] = await Promise.all([
       User.findById({ _id: userId })
         .populate('teamLeadId', 'firstName lastName email')
-        .populate('subTeamLeadId', 'firstName lastName email')
         .populate('department', 'name'),
       User.findById(assignedBy),
     ]);
@@ -423,9 +417,7 @@ const returnAsset = catchAsync(async (req, res) => {
     const employeeFullName = `${employee?.firstName || ''} ${employee?.lastName || ''}`.trim();
     const teamLeadName = employee?.teamLeadId ? 
       `${employee.teamLeadId.firstName || ''} ${employee.teamLeadId.lastName || ''}`.trim() : 
-      (employee?.subTeamLeadId ? 
-        `${employee.subTeamLeadId.firstName || ''} ${employee.subTeamLeadId.lastName || ''}`.trim() : 
-        'N/A');
+      'N/A';
 
     const emailSubject = `Asset Return Request - ${assetName}`;
     const emailMessage = Helper.getAssetReturnRequestEmail(
@@ -444,6 +436,7 @@ const returnAsset = catchAsync(async (req, res) => {
     const ccEmails = [
       employee?.email !== req.user?.email ? req.user?.email : null,
       employee?.email,
+      employee?.teamLeadId?.email,
       ...configEmails?.ADMIN_EMAILS
     ].filter(Boolean);
 
@@ -542,7 +535,7 @@ const handleAssetRequestUpdate = catchAsync(async (req, res) => {
    
     const configEmails = getTeamEmailConfig(team);
     const receiverEmails = [employee.email];
-    const ccEmails = [configEmails?.HR_EMAIL, configEmails?.IT_EMAIL, req.user.email, ...configEmails?.ADMIN_EMAILS].filter(Boolean);
+    const ccEmails = [configEmails?.HR_EMAIL, configEmails?.IT_EMAIL, req.user.email, employee?.teamLeadId?.email, ...configEmails?.ADMIN_EMAILS].filter(Boolean);
 
     logger.info(`Sending asset request ${updStatus} email to ${employee.email}`);
 
@@ -608,6 +601,7 @@ const createAssetRequest = catchAsync(async (req, res) => {
   if (sendMail && process.env.HRMS_FRONTEND_URL) {
     const { assetType, specifications, neededBy, description } = validatedData;
     const employee = await User.findById(requestedById);
+    const employeeTL = await User.findById(employee?.teamLeadId);
     const team = req?.user?.team;
     const emailSubject = `New Asset Request - ${assetType}`;
     const emailMessage = Helper.getAssetRequestEmail(
@@ -624,7 +618,7 @@ const createAssetRequest = catchAsync(async (req, res) => {
     const configEmails = getTeamEmailConfig(team);
 
     const receiverEmails = [configEmails?.IT_EMAIL];
-    const cc = [configEmails?.HR_EMAIL, ...configEmails?.ADMIN_EMAILS];
+    const cc = [configEmails?.HR_EMAIL, configEmails?.IT_EMAIL, employeeTL?.email, ...configEmails?.ADMIN_EMAILS];
 
     logger.info(`Sending asset request email to HR and IT for ${assetType}`);
 

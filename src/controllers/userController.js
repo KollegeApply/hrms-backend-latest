@@ -523,23 +523,23 @@ const approveUser = async (req, res) => {
 
 const updateUserCifForm = async (req, res) => {
   try {
-    console.log('=== updateUserCifForm START ===');
-    console.log('Params:', req.params);
-    console.log('Body keys:', Object.keys(req.body));
-    console.log('Files count:', req.files?.length || 0);
+    ('=== updateUserCifForm START ===');
+    ('Params:', req.params);
+    ('Body keys:', Object.keys(req.body));
+    ('Files count:', req.files?.length || 0);
 
     const { id } = req.params;
     const files = req.files || {};
 
     // Get user details
-    console.log('Looking for user with ID:', id);
+    ('Looking for user with ID:', id);
     const user = await User.findById(id).populate('userDetails');
     if (!user) {
-      console.log('User not found with ID:', id);
+      ('User not found with ID:', id);
       return res.status(404).json({ message: "User not found" });
     }
 
-    console.log('User found:', {
+    ('User found:', {
       id: user._id,
       name: `${user.firstName} ${user.lastName}`,
       hasUserDetails: !!user.userDetails
@@ -547,15 +547,15 @@ const updateUserCifForm = async (req, res) => {
 
     // Handle file uploads similar to candidate form
     const uploadedPaths = {};
-    console.log('Processing files:', files.length);
+    ('Processing files:', files.length);
     for (const file of files) {
       if (file) {
-        console.log('Uploading file:', file.originalname, 'field:', file.fieldname);
+        ('Uploading file:', file.originalname, 'field:', file.fieldname);
         try {
           const relativePath = await uploadToAzure(file.buffer, file.originalname, 'hrms-cif-documents/');
           const simpleField = file.fieldname.replace('documents.', '');
           uploadedPaths[simpleField] = relativePath;
-          console.log('File uploaded successfully:', relativePath);
+          ('File uploaded successfully:', relativePath);
         } catch (uploadError) {
           console.error('File upload error:', uploadError);
           throw uploadError;
@@ -565,14 +565,14 @@ const updateUserCifForm = async (req, res) => {
 
     // Parse request body
     const parsedBody = {};
-    console.log('Parsing request body...');
+    ('Parsing request body...');
     for (const key in req.body) {
       try {
         parsedBody[key] = JSON.parse(req.body[key]);
-        console.log(`Parsed ${key}:`, typeof parsedBody[key]);
+        (`Parsed ${key}:`, typeof parsedBody[key]);
       } catch (e) {
         parsedBody[key] = req.body[key];
-        console.log(`Using raw value for ${key}:`, typeof parsedBody[key]);
+        (`Using raw value for ${key}:`, typeof parsedBody[key]);
       }
     }
 
@@ -585,8 +585,8 @@ const updateUserCifForm = async (req, res) => {
     });
 
     // Prepare data for validation
-    console.log('Original documents from body:', parsedBody.documents);
-    console.log('Newly uploaded paths:', filteredUploadedPaths);
+    ('Original documents from body:', parsedBody.documents);
+    ('Newly uploaded paths:', filteredUploadedPaths);
 
     // Filter out invalid URLs from existing documents
     const validExistingDocuments = {};
@@ -596,9 +596,9 @@ const updateUserCifForm = async (req, res) => {
           // Check if it's a valid URL (starts with http and is properly formatted)
           if (value.startsWith('http') && isValidUrl(value)) {
             validExistingDocuments[key] = value;
-            console.log(`Preserving existing document ${key}:`, value);
+            (`Preserving existing document ${key}:`, value);
           } else {
-            console.log(`Skipping invalid document ${key}:`, value);
+            (`Skipping invalid document ${key}:`, value);
           }
         }
       });
@@ -612,7 +612,7 @@ const updateUserCifForm = async (req, res) => {
     const childFieldsToRemove = ['child1Name', 'child1Dob', 'child1Gender', 'child2Name', 'child2Dob', 'child2Gender', 'child3Name', 'child3Dob', 'child3Gender', 'child4Name', 'child4Dob', 'child4Gender', 'child5Name', 'child5Dob', 'child5Gender'];
     childFieldsToRemove.forEach(field => {
       if (cleanedPersonalInfo.hasOwnProperty(field)) {
-        console.log(`Removing field ${field} from personalInfo`);
+        (`Removing field ${field} from personalInfo`);
         delete cleanedPersonalInfo[field];
       }
     });
@@ -621,7 +621,7 @@ const updateUserCifForm = async (req, res) => {
     const otherFieldsToRemove = ['_id', 'isDeleted', 'createdAt', 'updatedAt', '__v', 'lockedFields', 'hrValidation'];
     otherFieldsToRemove.forEach(field => {
       if (parsedBody.hasOwnProperty(field)) {
-        console.log(`Removing field ${field} from parsedBody`);
+        (`Removing field ${field} from parsedBody`);
         delete parsedBody[field];
       }
     });
@@ -635,38 +635,38 @@ const updateUserCifForm = async (req, res) => {
       },
     };
 
-    console.log('Final documents for validation:', dataToValidate.documents);
-    console.log('Cleaned personalInfo:', dataToValidate.personalInfo);
+    ('Final documents for validation:', dataToValidate.documents);
+    ('Cleaned personalInfo:', dataToValidate.personalInfo);
 
     // Validate the data using candidate validator (same structure)
-    console.log('Validating data with candidateValidator...');
-    console.log('Data to validate keys:', Object.keys(dataToValidate));
+    ('Validating data with candidateValidator...');
+    ('Data to validate keys:', Object.keys(dataToValidate));
     let validatedData;
     try {
       validatedData = await candidateValidator.finalSubmitSchema.validateAsync(dataToValidate);
-      console.log('Validation successful');
+      ('Validation successful');
     } catch (validationError) {
       console.error('Validation error:', validationError);
       throw validationError;
     }
 
     // Update userDetails
-    console.log('Updating userDetails...');
-    console.log('User has userDetails:', !!user.userDetails);
+    ('Updating userDetails...');
+    ('User has userDetails:', !!user.userDetails);
     if (user.userDetails) {
       // Update existing userDetails
-      console.log('Updating existing userDetails');
+      ('Updating existing userDetails');
       Object.assign(user.userDetails, validatedData);
       await user.userDetails.save();
-      console.log('Existing userDetails updated successfully');
+      ('Existing userDetails updated successfully');
     } else {
       // Create new userDetails if doesn't exist
-      console.log('Creating new userDetails');
+      ('Creating new userDetails');
       const newUserDetails = new UserDetails(validatedData);
       await newUserDetails.save();
       user.userDetails = newUserDetails._id;
       await user.save();
-      console.log('New userDetails created and linked successfully');
+      ('New userDetails created and linked successfully');
     }
 
     // Clean up any invalid document references in the database
@@ -679,7 +679,7 @@ const updateUserCifForm = async (req, res) => {
           if (value.startsWith('http') && isValidUrl(value)) {
             cleanedDocuments[key] = value;
           } else {
-            console.log(`Removing invalid document reference ${key}:`, value);
+            (`Removing invalid document reference ${key}:`, value);
             hasInvalidDocs = true;
           }
         }
@@ -688,7 +688,7 @@ const updateUserCifForm = async (req, res) => {
       if (hasInvalidDocs) {
         user.userDetails.documents = cleanedDocuments;
         await user.userDetails.save();
-        console.log('Cleaned up invalid document references');
+        ('Cleaned up invalid document references');
       }
     }
 
@@ -697,7 +697,7 @@ const updateUserCifForm = async (req, res) => {
       user.formStatus = 'underReview';
     }
     await user.save();
-    console.log('User formStatus updated to underReview');                         
+    ('User formStatus updated to underReview');                         
 
     // Populate the updated userDetails for response
     await user.populate('userDetails');
@@ -714,9 +714,9 @@ const updateUserCifForm = async (req, res) => {
 // Upload profile photo
 const uploadProfilePhoto = catchAsync(async (req, res) => {
   try {
-    console.log('=== uploadProfilePhoto START ===');
-    console.log('User ID:', req.params.userId);
-    console.log('File:', req.file ? 'Present' : 'Missing');
+    ('=== uploadProfilePhoto START ===');
+    ('User ID:', req.params.userId);
+    ('File:', req.file ? 'Present' : 'Missing');
 
     const { userId } = req.params;
 
@@ -738,11 +738,11 @@ const uploadProfilePhoto = catchAsync(async (req, res) => {
     }
 
     // Upload to Azure
-    console.log('Uploading to Azure...');
+    ('Uploading to Azure...');
     const relativePath = await uploadToAzure(req.file.buffer, req.file.originalname, 'hrms-profile-photos/');
-    console.log('File uploaded to:', relativePath);
+    ('File uploaded to:', relativePath);
 
-    console.log('Relative path:', relativePath);
+    ('Relative path:', relativePath);
 
     // Update user profile photo with relative path only
     const updatedUser = await User.findByIdAndUpdate(
@@ -751,8 +751,8 @@ const uploadProfilePhoto = catchAsync(async (req, res) => {
       { new: true }
     ).select('-password');
 
-    console.log('Profile photo updated successfully');
-    console.log('Saved profilePhoto value:', updatedUser.profilePhoto);
+    ('Profile photo updated successfully');
+    ('Saved profilePhoto value:', updatedUser.profilePhoto);
 
     // Convert to full URL for response only
     const transformedPaths = transformDocumentPaths({ profilePhoto: relativePath });

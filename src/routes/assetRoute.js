@@ -42,6 +42,8 @@ router.get(
     USER_ROLES?.HR,
     USER_ROLES?.SUBADMIN,
     USER_ROLES?.ADMIN,
+    USER_ROLES?.TEAMLEAD,
+    USER_ROLES?.SUBTEAMLEAD,
   ]),
   assetController.fetchAssignedAssets
 );
@@ -127,12 +129,13 @@ router.get(
   assetController.fetchAssetRequestsByUserId
 );
 
-// Route to fetch team assets (for Team Lead, HR, Admin, Subadmin)
+// Route to fetch team assets (for Team Lead, Sub Team Lead, HR, Admin, Subadmin)
 router.get(
   '/team-assets',
   authenticateUser,
   authorizeRole([
     USER_ROLES?.TEAMLEAD,
+    USER_ROLES?.SUBTEAMLEAD,
     USER_ROLES?.HR,
     USER_ROLES?.SUBADMIN,
     USER_ROLES?.ADMIN,

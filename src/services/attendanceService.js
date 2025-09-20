@@ -396,7 +396,7 @@ async getTeamMembers(leaderId) {
       }
 
       const attendance = await Attendance.find(query)
-        .populate('user', 'firstName lastName employeeId workType')
+        .populate('user', 'firstName lastName employeeId workType hireDate')
         .populate('leaveId')
         .populate('wfhId')
         .sort({ date: -1, checkInTime: -1 })
@@ -486,13 +486,13 @@ async getTeamMembers(leaderId) {
     }
   },
 
-  async bulkCreateOrUpdateLeaveAttendance(userId, leaveId, dates, isHalfDay = false, halfDayType = null) {
+  async bulkCreateOrUpdateLeaveAttendance(userId, leaveId, dates, isHalfDay = false, halfDayType = null, leaveTypeCode = null) {
     try {
       if (!Array.isArray(dates) || dates.length === 0) {
         throw new Error('No dates provided for bulk leave attendance.');
       }
 
-      // Determine the attendance status based on half-day information
+      // Determine the attendance status based on half-day information (same for all leave types)
       let attendanceStatus = 'leave_applied_full';
       if (isHalfDay) {
         if (halfDayType === 'first') {

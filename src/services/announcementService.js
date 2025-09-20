@@ -35,7 +35,7 @@ const getAnnouncements = async (filters = {}, userId = null) => {
     if (userId) {
       const User = require('../models/userModel');
       user = await User.findById(userId).select('role department team');
-      console.log('User found:', user);
+      ('User found:', user);
     }
 
     // Add category filter only if category is specified
@@ -54,10 +54,10 @@ const getAnnouncements = async (filters = {}, userId = null) => {
 
     // Role-based filtering for regular users
     const isAdminUser = user && ['hr', 'admin', 'subadmin', 'teamlead'].includes(user.role);
-    console.log('Is admin user:', isAdminUser, 'User role:', user?.role);
+    ('Is admin user:', isAdminUser, 'User role:', user?.role);
     
     if (user && !isAdminUser) {
-      console.log('Applying role-based filtering for regular user');
+      ('Applying role-based filtering for regular user');
       // Regular users - show only relevant announcements
       const userDepartments = user?.department ? [user.department] : [];
       
@@ -80,19 +80,19 @@ const getAnnouncements = async (filters = {}, userId = null) => {
         ];
       }
     } else {
-      console.log('Skipping role-based filtering for admin user');
+      ('Skipping role-based filtering for admin user');
     }
 
     // Team-based filtering: Only show announcements from creators of the same team
     if (user && user.team) {
-      console.log('Applying team-based filtering for team:', user.team);
+      ('Applying team-based filtering for team:', user.team);
       
       // Get all users from the same team as the current user
       const User = require('../models/userModel');
       const sameTeamUsers = await User.find({ team: user.team }).select('_id');
       const sameTeamUserIds = sameTeamUsers.map(u => u._id);
       
-      console.log('Same team user IDs:', sameTeamUserIds.length);
+      ('Same team user IDs:', sameTeamUserIds.length);
       
       // Add team filter to existing query
       if (query.$or) {
@@ -122,14 +122,14 @@ const getAnnouncements = async (filters = {}, userId = null) => {
     }
 
     // Debug logging
-    console.log('Announcement query:', JSON.stringify(query, null, 2));
-    console.log('User role:', user?.role);
-    console.log('Category filter:', category);
-    console.log('Sort criteria:', sort);
+    ('Announcement query:', JSON.stringify(query, null, 2));
+    ('User role:', user?.role);
+    ('Category filter:', category);
+    ('Sort criteria:', sort);
     
     // Check total announcements in database
     const allAnnouncementsInDB = await Announcement.find({}).select('title category isDeleted isActive');
-    console.log('All announcements in DB:', allAnnouncementsInDB);
+    ('All announcements in DB:', allAnnouncementsInDB);
 
     let announcements = await Announcement.find(query)
       .populate([
@@ -168,7 +168,7 @@ const getAnnouncements = async (filters = {}, userId = null) => {
     let anniversaryAnnouncements = [];
     if (!category || category === 'general') {
       anniversaryAnnouncements = await anniversaryAnnouncementService.getTodayAnniversaryAnnouncements(user?.team);
-      console.log('Adding anniversary announcements:', anniversaryAnnouncements.length);
+      ('Adding anniversary announcements:', anniversaryAnnouncements.length);
     }
     
     // Combine regular announcements with anniversary announcements
@@ -191,9 +191,9 @@ const getAnnouncements = async (filters = {}, userId = null) => {
     const total = await Announcement.countDocuments(query);
     const totalWithAnniversaries = total + anniversaryAnnouncements.length;
     
-    console.log('Found announcements:', announcements.length);
-    console.log('Anniversary announcements:', anniversaryAnnouncements.length);
-    console.log('Total count:', totalWithAnniversaries);
+    ('Found announcements:', announcements.length);
+    ('Anniversary announcements:', anniversaryAnnouncements.length);
+    ('Total count:', totalWithAnniversaries);
 
     return {
       announcements: allAnnouncements,
@@ -377,7 +377,7 @@ const getAnnouncementsByUser = async (userId, filters = {}) => {
     let anniversaryAnnouncements = [];
     if (category === 'general') {
       anniversaryAnnouncements = await anniversaryAnnouncementService.getTodayAnniversaryAnnouncements(user?.team);
-      console.log('Adding anniversary announcements for user view:', anniversaryAnnouncements.length);
+      ('Adding anniversary announcements for user view:', anniversaryAnnouncements.length);
     }
     
     // Combine regular announcements with anniversary announcements

@@ -11,8 +11,8 @@ class BookingService {
   }
 
   async getBookings({ roomId, date, startTime, endTime, status, userType, userId }) {
-    console.log('=== getBookings called ===');
-    console.log('Parameters:', { roomId, date, startTime, endTime, status, userType, userId });
+    ('=== getBookings called ===');
+    ('Parameters:', { roomId, date, startTime, endTime, status, userType, userId });
     
     const query = { isDeleted: false };
     if (roomId) query.roomId = roomId;
@@ -25,7 +25,7 @@ class BookingService {
         { userId: userId },
         { attendees: { $in: [userId] } }
       ];
-      console.log('Applied user filter:', query.$or);
+      ('Applied user filter:', query.$or);
     }
 
     // Time range filtering
@@ -42,7 +42,7 @@ class BookingService {
       query.endTime = { $gt: new Date(startTime) };
     }
 
-    console.log('Final query:', JSON.stringify(query, null, 2));
+    ('Final query:', JSON.stringify(query, null, 2));
     
     const result = await Booking.find(query)
       .populate('roomId')
@@ -50,8 +50,8 @@ class BookingService {
       .populate('attendees', 'firstName lastName email')
       .sort({ startTime: 1 });
     
-    console.log('Query result count:', result.length);
-    console.log('Query results:', result.map(r => ({ 
+    ('Query result count:', result.length);
+    ('Query results:', result.map(r => ({ 
       id: r._id, 
       title: r.title, 
       userId: r.userId, 

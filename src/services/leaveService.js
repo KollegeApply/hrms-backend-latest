@@ -158,16 +158,15 @@ async updateLeaveStatus({ leaveId, action, editor }) {
             }
           }
 
-          // B. Create attendance records (skip for LOP leaves)
-          if (leave.leaveTypeId.code !== 'LOP') {
-            await attendanceService.bulkCreateOrUpdateLeaveAttendance(
-              leave.userId, 
-              leave._id, 
-              leave.dates, 
-              leave.isHalfDay, 
-              leave.halfDayType
-            );
-          }
+          // B. Create attendance records (now including LOP leaves)
+          await attendanceService.bulkCreateOrUpdateLeaveAttendance(
+            leave.userId, 
+            leave._id, 
+            leave.dates, 
+            leave.isHalfDay, 
+            leave.halfDayType,
+            leave.leaveTypeId.code
+          );
           
           // C. Update the leave status
           leave.status = 'approved';
@@ -396,10 +395,10 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
         }),
       ]);
       
-      console.log('=== EXISTING LEAVES DEBUG ===');
-      console.log('Found existing leaves:', existingLeaves.length);
+      ('=== EXISTING LEAVES DEBUG ===');
+      ('Found existing leaves:', existingLeaves.length);
       existingLeaves.forEach((leave, index) => {
-        console.log(`Leave ${index + 1}:`, {
+        (`Leave ${index + 1}:`, {
           id: leave._id,
           dates: leave.dates,
           status: leave.status,
@@ -413,8 +412,8 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
       const existingHalfDayLeaves = new Map(); // Map to store half-day leave info by date
       const existingAttendanceDates = new Set();
       
-      console.log('=== HALF-DAY LEAVES DEBUG ===');
-      console.log('existingHalfDayLeaves:', existingHalfDayLeaves);
+      ('=== HALF-DAY LEAVES DEBUG ===');
+      ('existingHalfDayLeaves:', existingHalfDayLeaves);
 
       existingLeaves.forEach((leave) => {
         leave.dates.forEach((date) => {
@@ -458,13 +457,13 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
       while (pointer.isSameOrBefore(endMoment, 'day')) {
         const dateStr = pointer.format('YYYY-MM-DD');
         const istDay = pointer.day(); // 0 = Sunday, 1 = Monday...
-        console.log(`Processing date: ${dateStr}, existingLeaveDates has: ${existingLeaveDates.has(dateStr)}`);
+        (`Processing date: ${dateStr}, existingLeaveDates has: ${existingLeaveDates.has(dateStr)}`);
         
         if (istDay === 0) {
           // addReason('Sunday', dateStr);
         } else if (existingLeaveDates.has(dateStr)) {
           // Check if it's a half-day leave conflict
-          console.log(`Date ${dateStr} has existing leave. isHalfDay: ${isHalfDay}, existingHalfDayLeaves.has: ${existingHalfDayLeaves.has(dateStr)}`);
+          (`Date ${dateStr} has existing leave. isHalfDay: ${isHalfDay}, existingHalfDayLeaves.has: ${existingHalfDayLeaves.has(dateStr)}`);
           if (isHalfDay && existingHalfDayLeaves.has(dateStr)) {
             const existingHalfDays = existingHalfDayLeaves.get(dateStr);
             const hasSameHalfDay = existingHalfDays.some(existing => existing.halfDayType === halfDayType);
@@ -937,12 +936,12 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
 
 
       // Validate dates
-      console.log('=== LEAVE VALIDATION DEBUG ===');
-      console.log('userId:', userId);
-      console.log('startDate:', startDate);
-      console.log('endDate:', endDate);
-      console.log('leaveType:', leaveType);
-      console.log('isHalfDay:', isHalfDay);
+      ('=== LEAVE VALIDATION DEBUG ===');
+      ('userId:', userId);
+      ('startDate:', startDate);
+      ('endDate:', endDate);
+      ('leaveType:', leaveType);
+      ('isHalfDay:', isHalfDay);
       
       const validationResult = await this.validateLeaveDates(
         userId,
@@ -952,7 +951,7 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
         isHalfDay
       );
       
-      console.log('validationResult:', validationResult);
+      ('validationResult:', validationResult);
 
 
       if (!validationResult.isValid) {

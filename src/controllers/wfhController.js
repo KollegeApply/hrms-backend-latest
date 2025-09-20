@@ -19,7 +19,7 @@ const createWfh = catchAsync(async (req, res) => {
     wfhReason: wfhReason,
     userId: userId,
   });
-  // console.log(validatedData);
+  // (validatedData);
 
   const data = await wfhService?.createWfh(validatedData);
 
@@ -130,7 +130,7 @@ const updateWfh = catchAsync(async (req, res) => {
   
   // Construct full name
   const mailRecieverFullName = `${mailReciever?.firstName || ''} ${mailReciever?.lastName || ''}`.trim();
-  // console.log(userDetail);
+  // (userDetail);
   if (updated?.status === 'approved') {
     const sendMail = req?.body?.sendMail === true;
     if (sendMail && process?.env?.HRMS_FRONTEND_URL) {

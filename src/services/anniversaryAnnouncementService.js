@@ -13,7 +13,7 @@ class AnniversaryAnnouncementService {
       const todayMonth = today.getMonth() + 1; // 1-12
       const todayDay = today.getDate();
       
-      console.log(`Checking anniversaries for today: ${todayDay}/${todayMonth}/${today.getFullYear()}`);
+      (`Checking anniversaries for today: ${todayDay}/${todayMonth}/${today.getFullYear()}`);
       
       const announcements = [];
       
@@ -22,13 +22,13 @@ class AnniversaryAnnouncementService {
       yesterday.setDate(yesterday.getDate() - 1);
       const yesterdayMonth = yesterday.getMonth() + 1;
       const yesterdayDay = yesterday.getDate();
-      console.log(`Also checking yesterday: ${yesterdayDay}/${yesterdayMonth}/${yesterday.getFullYear()}`);
+      (`Also checking yesterday: ${yesterdayDay}/${yesterdayMonth}/${yesterday.getFullYear()}`);
       
       // Check both today and yesterday for work anniversaries
       const todayWorkAnniv = await this.getWorkAnniversaryAnnouncements(todayMonth, todayDay, userTeam);
       const yesterdayWorkAnniv = await this.getWorkAnniversaryAnnouncements(yesterdayMonth, yesterdayDay, userTeam);
-      console.log(`Today work anniversaries: ${todayWorkAnniv.length}`);
-      console.log(`Yesterday work anniversaries: ${yesterdayWorkAnniv.length}`);
+      (`Today work anniversaries: ${todayWorkAnniv.length}`);
+      (`Yesterday work anniversaries: ${yesterdayWorkAnniv.length}`);
       
       // 1. Get Birthday Announcements
       const birthdayAnnouncements = await this.getBirthdayAnnouncements(todayMonth, todayDay, userTeam);
@@ -120,7 +120,7 @@ class AnniversaryAnnouncementService {
    */
   async getWorkAnniversaryAnnouncements(month, day, userTeam = null) {
     try {
-      console.log(`Looking for work anniversaries on ${day}/${month}`);
+      (`Looking for work anniversaries on ${day}/${month}`);
       
       // Get all users with hire dates for debugging
       const query = {
@@ -137,7 +137,7 @@ class AnniversaryAnnouncementService {
         .select('firstName lastName employeeId hireDate department team')
         .populate('department', 'name');
       
-      console.log(`Found ${allUsersWithHireDate.length} users with hire dates`);
+      (`Found ${allUsersWithHireDate.length} users with hire dates`);
       
       // Filter users with work anniversaries today (handle timezone issues)
       const workAnniversaryUsers = allUsersWithHireDate.filter(user => {
@@ -150,21 +150,21 @@ class AnniversaryAnnouncementService {
         const hireYear = hireDate.getFullYear();
         const currentYear = new Date().getFullYear();
         
-        console.log(`User ${user.firstName} ${user.lastName}:`);
-        console.log(`  Original hire date: ${user.hireDate}`);
-        console.log(`  Parsed as local: ${hireDate}`);
-        console.log(`  Local date components: ${hireDateDay}/${hireDateMonth}/${hireYear}`);
-        console.log(`  Looking for: ${day}/${month}`);
+        (`User ${user.firstName} ${user.lastName}:`);
+        (`  Original hire date: ${user.hireDate}`);
+        (`  Parsed as local: ${hireDate}`);
+        (`  Local date components: ${hireDateDay}/${hireDateMonth}/${hireYear}`);
+        (`  Looking for: ${day}/${month}`);
         
         // Check if hire date month/day matches today and they've been here at least 1 year
         const isAnniversary = hireDateMonth === month && 
                              hireDateDay === day && 
                              hireYear < currentYear;
         
-        console.log(`  Is anniversary? ${isAnniversary}`);
+        (`  Is anniversary? ${isAnniversary}`);
         
         if (isAnniversary) {
-          console.log(`✅ Work anniversary found for ${user.firstName} ${user.lastName}!`);
+          (`✅ Work anniversary found for ${user.firstName} ${user.lastName}!`);
         }
         
         return isAnniversary;
