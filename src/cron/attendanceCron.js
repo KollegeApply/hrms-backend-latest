@@ -51,10 +51,6 @@ const dailyAttendanceCheck = async () => {
     const todayStartIST = getKolkataStartOfDay();
     const todayEndIST = moment(todayStartIST).add(1, 'day').toDate();
 
-    const cutoffTime = moment(todayStartIST).add(10, 'hours').add(15, 'minutes').toDate();
-
-    const minWorkDurationMs = 9 * 60 * 60 * 1000;
-
     const todayHoliday = await Holiday.findOne({
         date: {
             $gte: todayStartIST,
@@ -81,73 +77,90 @@ const dailyAttendanceCheck = async () => {
             user.team = "SD";
             const attendance = await Attendance.findOne({
                 user: user._id,
-                checkInTime: {
+                date: {
                     $gte: todayStartIST,
                     $lt: todayEndIST
                 }
             }).sort({ createdAt: -1 });
 
             const emailReasons = [];
-            const isLeave = attendance?.status === 'leave_applied';
+            
+            // Check if user is on leave or WFH - skip if so
+            const isLeaveOrWFH = attendance?.status && [
+                'leave_applied_full',
+                'leave_applied_first_half', 
+                'leave_applied_second_half',
+                'wfh_applied'
+            ].includes(attendance.status);
 
-            if (isLeave) {
-                logger.info(`User ${user.email} is on leave/WFH, skipping daily attendance check.`);
+            if (isLeaveOrWFH) {
+                logger.info(`User ${user.email} is on leave/WFH (${attendance.status}), skipping daily attendance check.`);
                 continue;
             }
 
-            // Late check-in
-            if (
-                attendance?.checkInTime &&
-                moment(attendance.checkInTime).tz('Asia/Kolkata').isAfter(moment(cutoffTime).tz('Asia/Kolkata'))
-            ) {
-                const actualCheckInTime = moment(attendance.checkInTime).tz('Asia/Kolkata').format('hh:mm A');
-
-                emailReasons.push(`
-    <h3 style="color: #d9534f; margin-top: 0;">Late Check-in</h3>
-    <p style="margin: 0; font-size: 15px;">
-      Our records indicate that your check-in today was at <strong>${actualCheckInTime}</strong>, 
-      which is later than the expected time. 
-      We kindly remind you to adhere to the standard check-in schedule moving forward.
-    </p>
-  `);
-            }
-
-
-            // Incomplete Attendance (Checked in, no check-out)
-            if (attendance?.checkInTime && !attendance?.checkOutTime) {
-                emailReasons.push(`
-    <h3 style="color: #f0ad4e; margin-top: 0;">Incomplete Attendance</h3>
-    <p style="margin: 0; font-size: 15px;">
-      It appears you checked in today but didn’t complete your check-out.
-      If this was an oversight, please ensure to complete both check-in and check-out in the future.
-    </p>
-  `);
-            }
-
-
-            // Early check-out
-            if (attendance?.checkInTime && attendance?.checkOutTime) {
-                const duration = moment(attendance.checkOutTime).diff(moment(attendance.checkInTime));
-                if (duration < minWorkDurationMs) {
-                    emailReasons.push(`
-            <h3 style="color: #d9534f; margin-top: 0;">Early Check-out</h3>
-            <p style="margin: 0; font-size: 15px;"> Based on our records, your total work duration today was less than the expected 9 hours.
-        We kindly remind you to complete your full working hours to ensure compliance with company guidelines.</p>
-          `);
+            // Status-based attendance analysis
+            if (attendance) {
+                switch (attendance.status) {
+                    case 'late_in':
+                        const checkInTime = attendance.checkInTime ? 
+                            moment(attendance.checkInTime).tz('Asia/Kolkata').format('hh:mm A') : 'Unknown time';
+                        emailReasons.push(`
+                            <h3 style="color: #d9534f; margin-top: 0;">Late Check-in</h3>
+                            <p style="margin: 0; font-size: 15px;">
+                                Our records indicate that your check-in today was at <strong>${checkInTime}</strong>, 
+                                which is later than the expected time. 
+                                We kindly remind you to adhere to the standard check-in schedule moving forward.
+                            </p>
+                        `);
+                        break;
+                    
+                    case 'early_out':
+                        emailReasons.push(`
+                            <h3 style="color: #d9534f; margin-top: 0;">Early Check-out</h3>
+                            <p style="margin: 0; font-size: 15px;">
+                                Our records indicate that your check-out today was earlier than the expected time. 
+                                We kindly remind you to complete your full working hours to ensure compliance with company guidelines.
+                            </p>
+                        `);
+                        break;
+                    
+                    case 'late_in_early_out':
+                        const lateCheckInTime = attendance.checkInTime ? 
+                            moment(attendance.checkInTime).tz('Asia/Kolkata').format('hh:mm A') : 'Unknown time';
+                        emailReasons.push(`
+                            <h3 style="color: #d9534f; margin-top: 0;">Late Check-in and Early Check-out</h3>
+                            <p style="margin: 0; font-size: 15px;">
+                                Our records indicate that you checked in late at <strong>${lateCheckInTime}</strong> 
+                                and also checked out earlier than expected. 
+                                Please ensure to maintain proper working hours as per company guidelines.
+                            </p>
+                        `);
+                        break;
+                    
+                    case 'present':
+                        // Check for incomplete attendance (checked in but no check-out)
+                        if (attendance.checkInTime && !attendance.checkOutTime) {
+                            emailReasons.push(`
+                                <h3 style="color: #f0ad4e; margin-top: 0;">Incomplete Attendance</h3>
+                                <p style="margin: 0; font-size: 15px;">
+                                    It appears you checked in today but didn't complete your check-out.
+                                    If this was an oversight, please ensure to complete both check-in and check-out in the future.
+                                </p>
+                            `);
+                        }
+                        break;
                 }
-            }
-
-            // Missed attendance
-            if (!attendance) {
+            } else {
+                // No attendance record found - user is absent
                 emailReasons.push(`
-          <h3 style="color: #d9534f; margin-top: 0;">Missed Attendance</h3>
-          <p style="margin: 0; font-size: 15px;">
-            We did not find any attendance records (check-in or check-out) for you today, 
-            and no official leave was recorded in the HRMS. 
-            If you have informed your manager or HR through other means (e.g., email), 
-            please note that leave must be applied through the HRMS to be considered valid.
-          </p>
-        `);
+                    <h3 style="color: #d9534f; margin-top: 0;">Missed Attendance</h3>
+                    <p style="margin: 0; font-size: 15px;">
+                        We did not find any attendance records (check-in or check-out) for you today, 
+                        and no official leave was recorded in the HRMS. 
+                        If you have informed your manager or HR through other means (e.g., email), 
+                        please note that leave must be applied through the HRMS to be considered valid.
+                    </p>
+                `);
             }
 
             // Send email if issues exist
@@ -164,15 +177,16 @@ const dailyAttendanceCheck = async () => {
                 const ccEmails = [user?.teamLeadId?.email, user?.subTeamLeadId?.email, configEmails?.HR_EMAIL].filter(Boolean);
 
                 await Helper.sendEmail({
-                    receiverEmails: [user.email],
+                    // receiverEmails: [user.email],
+                    receiverEmails: ["lokesh.kumar@sportsdunia.com"],
                     subject: `Action Required: Attendance Discrepancy Detected for ${formatDateYMD(todayStartIST)}`,
                     message: mailMessage,
                     fromHR: false,
-                    cc: ccEmails,
+                    // cc: ccEmails,
                     team: user?.team
                 });
 
-                logger.info(`Daily attendance email sent to ${user.email}`);
+                logger.info(`Daily attendance email sent to ${user.email} for status: ${attendance?.status || 'absent'}`);
             }
         }
     } catch (error) {
@@ -192,10 +206,7 @@ const weeklyReport = async () => {
     const startDate = startMoment.toDate();
     const endDate = endMoment.toDate();
 
-    const LATE_CHECKIN_CUTOFF_HOUR = 10;
-    const LATE_CHECKIN_CUTOFF_MINUTE = 15;
-    const MIN_WORK_DURATION_MS = 9 * 60 * 60 * 1000;
-    const HOURS_PER_DAY = 9;
+        const HOURS_PER_DAY = 9;
 
     logger.info(`Starting weekly report generation for all teams: ${formatDateYMD(startDate)} to ${formatDateYMD(endDate)}`);
 
@@ -281,23 +292,43 @@ const weeklyReport = async () => {
                 const dateKey = formatDateYMD(record.checkInTime || record.date);
                 const dayName = moment(dateKey).format('dddd');
 
-                if (record.status === 'leave_applied') {
+                // Handle leave and WFH statuses
+                if (['leave_applied_full', 'leave_applied_first_half', 'leave_applied_second_half', 'wfh_applied'].includes(record.status)) {
                     if (!data.attendanceByDate.has(dateKey)) {
                         data.leaveCount++;
-                        data.attendanceByDate.set(dateKey, { status: 'leave_applied' });
+                        data.attendanceByDate.set(dateKey, { status: record.status });
                     }
                 } else if (record.checkInTime) {
+                    // Handle attendance statuses
                     data.attendanceByDate.set(dateKey, record);
-                    const checkInTime = moment(record.checkInTime).tz('Asia/Kolkata');
-                    const cutoffTime = checkInTime.clone().hour(LATE_CHECKIN_CUTOFF_HOUR).minute(LATE_CHECKIN_CUTOFF_MINUTE).second(0);
-
-                    if (checkInTime.isAfter(cutoffTime)) data.lateCheckIns.push(dayName);
-                    if (!record.checkOutTime) data.noCheckOuts.push(dayName);
-
+                    
+                    // Calculate duration for present days
                     if (record.checkInTime && record.checkOutTime) {
                         const duration = moment(record.checkOutTime).diff(moment(record.checkInTime));
                         data.totalDurationMs += duration;
-                        if (duration < MIN_WORK_DURATION_MS) data.earlyCheckOuts.push(dayName);
+                    }
+
+                    // Track issues based on status
+                    switch (record.status) {
+                        case 'late_in':
+                            data.lateCheckIns.push(dayName);
+                            break;
+                        case 'early_out':
+                            data.earlyCheckOuts.push(dayName);
+                            break;
+                        case 'late_in_early_out':
+                            data.lateCheckIns.push(dayName);
+                            data.earlyCheckOuts.push(dayName);
+                            break;
+                        case 'present':
+                            // Check for incomplete attendance (checked in but no check-out)
+                            if (record.checkInTime && !record.checkOutTime) {
+                                data.noCheckOuts.push(dayName);
+                            }
+                            break;
+                        case 'absent':
+                            data.noAttendances.push(dayName);
+                            break;
                     }
                 }
             }
@@ -322,11 +353,18 @@ const weeklyReport = async () => {
                 data.presentCount = presentOrLeaveDays - data.leaveCount;
                 data.absentCount = workingDaysCount - presentOrLeaveDays;
 
-                //  RED FLAG LOGIC 
-                const requiredHours = (6 - holidayDates.size - data.leaveCount) * HOURS_PER_DAY;
-                const totalHours = data.totalDurationMs / (1000 * 60 * 60);
-
-                if (totalHours < requiredHours) {
+                //  RED FLAG LOGIC - Based on attendance status patterns
+                const totalWorkingDays = 6 - holidayDates.size;
+                const expectedPresentDays = totalWorkingDays - data.leaveCount;
+                const actualPresentDays = data.presentCount;
+                
+                // Red flag if:
+                // 1. Too many absences (more than 20% of working days)
+                // 2. Too many late check-ins (more than 3 days)
+                // 3. Too many early check-outs (more than 3 days)
+                const absenceRate = data.absentCount / totalWorkingDays;
+                
+                if (absenceRate > 0.2 || data.lateCheckIns.length > 3 || data.earlyCheckOuts.length > 3) {
                     data.isRedFlagged = true;
                 }
             }
@@ -384,12 +422,13 @@ const weeklyReport = async () => {
                     teamName
                 );
                 await Helper.sendEmail({
-                    receiverEmails: recipients,
+                    // receiverEmails: recipients,
+                    receiverEmails: ["lokesh.kumar@sportsdunia.com"],
                     subject: `Your Team's Weekly Attendance Report (${formatDateWithDay(startDate)} - ${formatDateWithDay(endDate)})`,
                     message: mailMessage,
                     fromHR: false,
                     team: teamName,
-                    cc: ccEmails,
+                    // cc: ccEmails,
                 });
                 logger.info(`Weekly report for team '${lead.firstName}' sent successfully to: ${recipients[0]}`);
             } else {
@@ -436,6 +475,7 @@ const updateIncompleteAttendance = async () => {
         logger.info(`Starting incomplete attendance update for ${formatDateYMD(yesterday.toDate())}`);
 
         // Find all attendance records from yesterday that have check-in but no check-out
+        // and are not already marked as leave/WFH
         const incompleteAttendances = await Attendance.find({
             date: {
                 $gte: yesterday.toDate(),
@@ -444,7 +484,7 @@ const updateIncompleteAttendance = async () => {
             checkInTime: { $exists: true, $ne: null },
             checkOutTime: null,
             status: { 
-                $in: ['present', 'late_in'] 
+                $in: ['present', 'late_in', 'early_out', 'late_in_early_out'] 
             }
         });
 
@@ -456,20 +496,27 @@ const updateIncompleteAttendance = async () => {
                 user: attendance.user,
                 date: attendance.date,
                 status: { 
-                    $in: ['leave_applied_first_half', 'leave_applied_second_half', 'leave_applied_full'] 
+                    $in: ['leave_applied_first_half', 'leave_applied_second_half', 'leave_applied_full', 'wfh_applied'] 
                 }
             });
 
             if (!leaveAttendance) {
-                // No leave applied, mark as absent
-                attendance.status = 'absent';
+                // No leave applied, update status based on current status
+                let newStatus = 'absent';
+                
+                // If they were late_in, keep it as late_in (since they did check in late)
+                if (attendance.status === 'late_in') {
+                    newStatus = 'late_in';
+                }
+                
+                attendance.status = newStatus;
                 await attendance.save();
                 updatedCount++;
 
-                logger.info(`Updated attendance for user ${attendance.user} on ${formatDateYMD(attendance.date)} to absent`);
+                logger.info(`Updated attendance for user ${attendance.user} on ${formatDateYMD(attendance.date)} to ${newStatus}`);
             } else {
                 // Leave was applied, keep the original status
-                logger.info(`Skipping attendance update for user ${attendance.user} on ${formatDateYMD(attendance.date)} - leave was applied`);
+                logger.info(`Skipping attendance update for user ${attendance.user} on ${formatDateYMD(attendance.date)} - leave/WFH was applied`);
             }
         }
 
@@ -477,7 +524,7 @@ const updateIncompleteAttendance = async () => {
         
         return {
             status: 'success',
-            message: `Updated ${updatedCount} incomplete attendance records to absent`,
+            message: `Updated ${updatedCount} incomplete attendance records`,
             updatedCount
         };
 

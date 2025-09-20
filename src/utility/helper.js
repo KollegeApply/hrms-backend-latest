@@ -200,7 +200,7 @@ class Helper {
 
   static leaveWFHApproval(userName, requestType, date, leaveType = '', reason, team, jobTitle, employeeId, department) {
     const displayTeam = getTeamEmailConfig(team);
-    
+
     // Extract firstName from full name for greeting
     const firstName = userName.split(' ')[0];
 
@@ -276,10 +276,10 @@ class Helper {
   ) {
 
     const displayTeam = getTeamEmailConfig(team);
-    
+
     // Extract firstName from full name for greeting
     const firstName = userName.split(' ')[0];
-    
+
     return `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
         <div style="text-align: center; margin-bottom: 20px;">
@@ -491,7 +491,7 @@ class Helper {
   static leaveWFHReject(userName, requestType, date, leaveType, reason) {
     // Extract firstName from full name for greeting
     const firstName = userName.split(' ')[0];
-    
+
     return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
       <div style="text-align: center; margin-bottom: 20px;">
@@ -1229,7 +1229,7 @@ class Helper {
 
         ${reason && reason.trim() !== '' ? `
         <div style="background-color:#f8f9fa; padding:14px 16px; border-left:4px solid #6c757d; border-radius:6px; margin: 18px 0;">
-          <p style="margin:0; font-size:14px; color:#495057;"><strong>Closure Remark:</strong> ${reason.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</p>
+          <p style="margin:0; font-size:14px; color:#495057;"><strong>Closure Remark:</strong> ${reason.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
         </div>
         ` : ''}
 
@@ -1264,7 +1264,7 @@ class Helper {
     return `
       <p>Dear ${candidate?.firstName},</p>
   
-      <p>Welcome aboard! We're excited to have you as part of the ${displayTeam?.TEAM_NAME} family.</p>
+      <p>Welcome On-Board! We're excited to have you as part of the ${displayTeam?.TEAM_NAME} family.</p>
   
       <p>
         Please complete your Candidate Information Form (CIF) by clicking the button below.
@@ -1342,7 +1342,7 @@ class Helper {
   
       <p>Our HR team has reviewed your Candidate Information Form (CIF) and has requested some updates. Please access the form using the button below to review the comments and make the necessary changes.</p>
       
-      <p><strong>Comments from HR:</strong></p>
+      <p><strong>Feedback from HR Team:</strong></p>
       <p>${comments ? comments : "N/A"}</p>
 
 
@@ -1364,10 +1364,10 @@ class Helper {
 
   static getOnboardingPolicyEmail(candidate, policies, team) {
     const displayTeam = getTeamEmailConfig(team);
-    
+
     // Check if this is specifically a BYOD request
     const isBYOD = policies.some(policy => policy.includes('BYOD'));
-    
+
     if (isBYOD) {
       return `
         <p>Dear ${candidate.firstName},</p>
@@ -1380,7 +1380,7 @@ class Helper {
         <p>Regards,<br/>HR Team - ${displayTeam?.TEAM_NAME}</p>
       `;
     }
-    
+
     // Fallback to original template for other policies
     const policyList = policies.map(policy => `<li><strong>${policy}</strong></li>`).join('');
 
@@ -1439,7 +1439,7 @@ class Helper {
     <p>As part of our initiative to streamline and update our records in the HRMS, we kindly request you to complete or verify your employee information by accessing the form below.</p>
     
     ${comments ? `
-    <p><strong>Comments from HR:</strong></p>
+    <p><strong>Feedback from HR Team:</strong></p>
     <p>${comments}</p>
     ` : ''}
 
@@ -1480,11 +1480,11 @@ class Helper {
 
     <p>We hope you're doing well.</p>
 
-    <p>This is a gentle reminder to complete your <strong>Candidate Information Form</strong>. 
-    It looks like we haven't received your updated details yet, and we'd like to make sure your records are accurate.</p>
+    <p>This is a reminder to complete your <strong>Candidate Information Form</strong>, as we have not yet received your updated details. Accurate information helps ensure smooth HR and payroll processes.
+</p>
     
     ${comments ? `
-    <p><strong>Comments from HR:</strong></p>
+    <p><strong>Feedback from HR Team:</strong></p>
     <p>${comments}</p>
     ` : ''}
 
@@ -1496,9 +1496,7 @@ class Helper {
       </a>
     </p>
 
-    <p>It only takes a few minutes, and it will help us ensure smooth HR and payroll processes.</p>
-
-    <p>If you've already completed the form, you can ignore this email. Otherwise, we'd appreciate it if you could update your details at your earliest convenience.</p>
+    <p>The form takes just a few minutes to complete. If you have already submitted it, please disregard this message. Otherwise, we would appreciate it if you could update your information at the earliest.</p>
 
     <p>Thank you for your time and cooperation.</p>
 
@@ -1517,7 +1515,7 @@ class Helper {
     <p>Thank you for submitting your Candidate Information Form. After reviewing your submitted information, we need you to make some updates to ensure accuracy and completeness.</p>
     
     ${comments ? `
-    <p><strong>Comments from HR:</strong></p>
+    <p><strong>Feedback from HR Team:</strong></p>
     <p>${comments}</p>
     ` : ''}
 
@@ -1622,7 +1620,7 @@ class Helper {
    */
   static leaveTLApprovalNotification(userName, date, leaveType, reason, team, jobTitle = 'N/A', employeeId = 'N/A', department = 'N/A', teamLeadName = 'N/A') {
     const displayTeam = getTeamEmailConfig(team);
-    
+
     // Extract firstName from full name for greeting
     const firstName = userName.split(' ')[0];
 
@@ -1694,14 +1692,14 @@ class Helper {
    */
   static leaveTLRejectionNotification(userName, date, leaveType, reason, team, isHalfDay = false, halfDayType = null, employeeInfo = null) {
     const displayTeam = getTeamEmailConfig(team);
-    
+
     // Modify leave type to include half-day information
     let displayLeaveType = leaveType;
     if (isHalfDay) {
       const halfDayText = halfDayType === 'first' ? 'First Half' : 'Second Half';
       displayLeaveType = `${leaveType} (${halfDayText})`;
     }
-    
+
     return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
       <div style="text-align: center; margin-bottom: 20px;">
@@ -1764,14 +1762,14 @@ class Helper {
    */
   static leaveHRApprovalNotification(userName, date, leaveType, reason, team, isHalfDay = false, halfDayType = null, employeeInfo = null) {
     const displayTeam = getTeamEmailConfig(team);
-    
+
     // Modify leave type to include half-day information
     let displayLeaveType = leaveType;
     if (isHalfDay) {
       const halfDayText = halfDayType === 'first' ? 'First Half' : 'Second Half';
       displayLeaveType = `${leaveType} (${halfDayText})`;
     }
-    
+
     return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
       <div style="text-align: center; margin-bottom: 20px;">
@@ -1835,14 +1833,14 @@ class Helper {
    */
   static leaveHRRejectionNotification(userName, date, leaveType, reason, team, isHalfDay = false, halfDayType = null, employeeInfo = null) {
     const displayTeam = getTeamEmailConfig(team);
-    
+
     // Modify leave type to include half-day information
     let displayLeaveType = leaveType;
     if (isHalfDay) {
       const halfDayText = halfDayType === 'first' ? 'First Half' : 'Second Half';
       displayLeaveType = `${leaveType} (${halfDayText})`;
     }
-    
+
     return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
       <div style="text-align: center; margin-bottom: 20px;">
@@ -1906,14 +1904,14 @@ class Helper {
    */
   static leaveHRPendingNotification(employeeName, date, leaveType, reason, team, dashboardUrl, isHalfDay = false, halfDayType = null, employeeInfo = null) {
     const displayTeam = getTeamEmailConfig(team);
-    
+
     // Modify leave type to include half-day information
     let displayLeaveType = leaveType;
     if (isHalfDay) {
       const halfDayText = halfDayType === 'first' ? 'First Half' : 'Second Half';
       displayLeaveType = `${leaveType} (${halfDayText})`;
     }
-    
+
     return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
       <div style="text-align: center; margin-bottom: 20px;">
@@ -1987,7 +1985,7 @@ class Helper {
    */
   static regularizationNotificationEmail(teamLeadName, employeeFirstName, employeeLastName, date, checkInTime, checkOutTime, reason, type, regularizationId, team = 'SD', employeeId = '', jobTitle = '', department = '') {
     const displayTeam = getTeamEmailConfig(team);
-    
+
     return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
       <div style="text-align: center; margin-bottom: 20px;">
@@ -2061,7 +2059,7 @@ class Helper {
    */
   static regularizationHRPendingNotification(employeeFirstName, employeeLastName, date, checkInTime, checkOutTime, reason, type, team = 'SD', employeeId = '', jobTitle = '', department = '') {
     const displayTeam = getTeamEmailConfig(team);
-    
+
     return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
       <div style="text-align: center; margin-bottom: 20px;">
@@ -2125,12 +2123,12 @@ class Helper {
   static regularizationDecisionEmail(employeeFirstName, reviewerFirstName, reviewerLastName, action, date, checkInTime, checkOutTime, originalReason, rejectionReason = '', team = 'SD', employeeId = '', jobTitle = '', department = '') {
     const displayTeam = getTeamEmailConfig(team);
     const isApproved = action === 'approved';
-    
+
     // Determine status message based on action
     let statusMessage = '';
     let statusColor = '';
-    
-    switch(action) {
+
+    switch (action) {
       case 'approved':
         statusMessage = 'Fully Approved & Active';
         statusColor = '#28a745';
@@ -2159,10 +2157,10 @@ class Helper {
         statusMessage = action.charAt(0).toUpperCase() + action.slice(1);
         statusColor = isApproved ? '#28a745' : '#dc3545';
     }
-    
+
     // Format action for heading
     const formatActionForHeading = (action) => {
-      switch(action) {
+      switch (action) {
         case 'tl-rejected':
           return 'Rejected by Team Lead';
         case 'hr-rejected':
@@ -2267,7 +2265,7 @@ class Helper {
    */
   static regularizationRevokedEmail(employeeFirstName, date, checkInTime, checkOutTime, reason, team = 'SD') {
     const displayTeam = getTeamEmailConfig(team);
-    
+
     return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
       <div style="text-align: center; margin-bottom: 20px;">
@@ -2569,6 +2567,146 @@ class Helper {
           <p style="color: #333; font-size: 16px;"><strong>Team ${displayTeam?.TEAM_NAME || 'KollegeApply'}</strong></p>
         </div>
       </div>
+    `;
+  }
+
+  // 📧 STL APPROVAL EMAIL TEMPLATES
+
+  /**
+   * Email template for TL when STL feedback needs approval
+   */
+  static getSTLApprovalEmail({ stlUser, employee, tlUser, dashboardUrl, feedbackId, team }) {
+    const displayTeam = getTeamEmailConfig(team);
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h2 style="color: #333;">STL Feedback Pending Your Approval</h2>
+      </div>
+
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Hello <strong>${tlUser?.firstName} ${tlUser?.lastName}</strong>,
+        </p>
+        
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          <strong>${stlUser?.firstName} ${stlUser?.lastName}</strong> (Sub Team Lead) has submitted feedback for 
+          <strong>${employee?.firstName} ${employee?.lastName}</strong> (${employee?.employeeId}) that requires your approval.
+        </p>
+
+        <div style="background-color: #f8f9fa; padding: 20px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #fbbf24;">
+          <h3 style="color: #333; margin: 0 0 10px 0;">Action Required</h3>
+          <p style="color: #555; margin: 0; font-size: 14px;">
+            Please review and approve/reject this feedback before it's delivered to the employee.
+          </p>
+        </div>
+
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${dashboardUrl}/feedbacks?tab=stl-approvals" 
+             style="background-color: #101E2F; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+            Review STL Feedback
+          </a>
+        </div>
+
+        <div style="border-top: 1px solid #eee; padding-top: 20px; margin-top: 30px;">
+          <p style="color: #888; font-size: 14px; line-height: 1.5;">
+            Best regards,<br>
+            <strong>${displayTeam?.TEAM_NAME || 'HRMS'} Team</strong>
+          </p>
+        </div>
+      </div>
+    </div>
+    `;
+  }
+
+  /**
+   * Email template for employee when STL feedback is approved
+   */
+  static getFeedbackApprovedEmail({ stlUser, employee, tlUser, feedback, dashboardUrl, feedbackId, team }) {
+    const displayTeam = getTeamEmailConfig(team);
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h2 style="color: #333;">New Feedback Received</h2>
+      </div>
+
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Hello <strong>${employee?.firstName} ${employee?.lastName}</strong>,
+        </p>
+        
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          You have received feedback from <strong>${stlUser?.firstName} ${stlUser?.lastName}</strong> (Sub Team Lead), 
+          which has been reviewed and approved by <strong>${tlUser?.firstName} ${tlUser?.lastName}</strong> (Team Lead).
+        </p>
+
+        <div style="background-color: #f0f9ff; padding: 20px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #3b82f6;">
+          <h3 style="color: #333; margin: 0 0 10px 0;">Feedback Details</h3>
+          <p style="color: #555; margin: 0; font-size: 14px;">
+            Period: ${new Date(feedback.from).toLocaleDateString()} - ${new Date(feedback.to).toLocaleDateString()}
+          </p>
+        </div>
+
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${dashboardUrl}/feedbacks/view/${feedbackId}" 
+             style="background-color: #101E2F; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+            View Your Feedback
+          </a>
+        </div>
+
+        <div style="border-top: 1px solid #eee; padding-top: 20px; margin-top: 30px;">
+          <p style="color: #888; font-size: 14px; line-height: 1.5;">
+            Best regards,<br>
+            <strong>${displayTeam?.TEAM_NAME || 'HRMS'} Team</strong>
+          </p>
+        </div>
+      </div>
+    </div>
+    `;
+  }
+
+  /**
+   * Email template for STL when feedback is rejected
+   */
+  static getFeedbackRejectedEmail({ stlUser, employee, tlUser, comments, dashboardUrl, team }) {
+    const displayTeam = getTeamEmailConfig(team);
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 620px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h2 style="color: #333;">Feedback Rejected</h2>
+      </div>
+
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Hello <strong>${stlUser?.firstName} ${stlUser?.lastName}</strong>,
+        </p>
+        
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Your feedback for <strong>${employee?.firstName} ${employee?.lastName}</strong> (${employee?.employeeId}) 
+          has been reviewed by <strong>${tlUser?.firstName} ${tlUser?.lastName}</strong> (Team Lead) and was not approved.
+        </p>
+
+        <div style="background-color: #fef2f2; padding: 20px; border-radius: 6px; margin: 20px 0; border-left: 4px solid #ef4444;">
+          <h3 style="color: #333; margin: 0 0 10px 0;">Rejection Reason</h3>
+          <p style="color: #555; margin: 0; font-size: 14px;">
+            ${comments}
+          </p>
+        </div>
+
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${dashboardUrl}/feedbacks" 
+             style="background-color: #101E2F; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+            View Feedback Dashboard
+          </a>
+        </div>
+
+        <div style="border-top: 1px solid #eee; padding-top: 20px; margin-top: 30px;">
+          <p style="color: #888; font-size: 14px; line-height: 1.5;">
+            Best regards,<br>
+            <strong>${displayTeam?.TEAM_NAME || 'HRMS'} Team</strong>
+          </p>
+        </div>
+      </div>
+    </div>
     `;
   }
 }

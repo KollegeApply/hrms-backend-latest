@@ -27,4 +27,9 @@ router.patch("/:id/request-status", authenticateUser, authorizeRole([USER_ROLES?
 
 router.patch('/:id', authenticateUser, feedbackController.updateFeedback);
 
+// 🎯 TL Approval Routes for STL Feedback
+router.get('/pending/stl-approval', authenticateUser, authorizeRole(['teamlead']), feedbackController.getPendingSTLFeedback);
+
+router.post('/:feedbackId/tl-approval', authenticateUser, authorizeRole(['teamlead']), feedbackController.approveFeedbackByTL);
+
 module.exports = router;

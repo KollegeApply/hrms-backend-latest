@@ -17,6 +17,7 @@ const regularizationRoutes = require('./routes/regularizationRoute');
 const aiTestRoutes = require('./routes/aiTestRoute');
 const personalEventRoutes = require('./routes/personalEventRoute');
 const announcementRoutes = require('./routes/announcementRoute');
+const kpiRoutes = require('./routes/kpiRoute');
 // const otherRoutes = require('./routes/otherRoutes'); // Example for future routes
 
 const router = express.Router();
@@ -92,6 +93,10 @@ const defaultRoutes = [
   {
     path: `/api/${apiVersion}/meetings`,
     route: meetingRoutes,
+  },
+  {
+    path: `/api/${apiVersion}/kpis`,
+    route: kpiRoutes,
   }
   // Add other route configurations here
   // {

@@ -6,6 +6,7 @@ const USER_ROLES = {
   SUBADMIN: 'subadmin',
   HR: 'hr',
   EMPLOYEE: 'employee',
+  INTERN: 'intern',
   TEAMLEAD: 'teamlead',
   SUBTEAMLEAD: 'subteamlead',
   IT: 'IT',

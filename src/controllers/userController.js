@@ -57,8 +57,8 @@ const createUser = catchAsync(async (req, res) => {
     // sending mail
     const sendMail = req?.body?.sendMail === true;
     if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
-       const teamCode = req?.user?.team || 'SD';
-       const emailConfig = getTeamEmailConfig(teamCode);
+      const teamCode = req?.user?.team || 'SD';
+      const emailConfig = getTeamEmailConfig(teamCode);
       logger.info(`Sending welcome email to ${user.email}`);
       Helper.sendEmail({
         receiverEmails: [user?.email],
@@ -71,7 +71,7 @@ const createUser = catchAsync(async (req, res) => {
           emailConfig?.TEAM_NAME,
         ),
         fromHr: true,
-        team:teamCode,
+        team: teamCode,
       }).catch((err) =>
         logger.error(`Failed to send welcome email to ${user?.email}:`, err)
       );
@@ -174,54 +174,54 @@ const updateUser = catchAsync(async (req, res) => {
   const currentUserId = req?.user?.id;
   const clickedUserId = userId;
 
-    const updatedUser = await userService?.updateUser(userId, validatedData, {
-      _id: req.user.id,
-      name: req.user.name,
-      role: req.user.role,
-    });
+  const updatedUser = await userService?.updateUser(userId, validatedData, {
+    _id: req.user.id,
+    name: req.user.name,
+    role: req.user.role,
+  });
 
-    if (!updatedUser) {
-      throw new ApiError(
-        httpStatus.NOT_FOUND,
-        'User not found or update failed.'
+  if (!updatedUser) {
+    throw new ApiError(
+      httpStatus.NOT_FOUND,
+      'User not found or update failed.'
+    );
+  }
+
+  // sending mail
+  if (oldUser?.status === 'probation' && updatedUser?.status === 'onroll') {
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+    const sendMail = req?.body?.sendMail === true;
+    if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
+      logger.info(
+        `Conversion from probation to onroll ${updatedUser?.email}`
+      );
+      Helper.sendEmail({
+        receiverEmails: [updatedUser?.email],
+        subject: `You’ve Earned Full-Time Status! Congratulations !!`,
+        message: Helper.fullTimeConversion(
+          updatedUser?.firstName,
+          tomorrow.toISOString(),
+          updatedUser?.jobTitle,
+          updatedUser?.team,
+        ),
+        fromHr: true,
+        team: updatedUser?.team,
+      }).catch((err) =>
+        logger.error(
+          `Failed to send conversion from probation to full-time email ${updatedUser?.email}:`,
+          err
+        )
       );
     }
+  }
 
-    // sending mail
-    if (oldUser?.status === 'probation' && updatedUser?.status === 'onroll') {
-      const today = new Date();
-      const tomorrow = new Date(today);
-      tomorrow.setDate(today.getDate() + 1);
-      const sendMail = req?.body?.sendMail === true;
-      if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
-        logger.info(
-          `Conversion from probation to onroll ${updatedUser?.email}`
-        );
-        Helper.sendEmail({
-          receiverEmails: [updatedUser?.email],
-          subject: `You’ve Earned Full-Time Status! Congratulations !!`,
-          message: Helper.fullTimeConversion(
-            updatedUser?.firstName,
-            tomorrow.toISOString(),
-            updatedUser?.jobTitle,
-            updatedUser?.team,
-          ),
-          fromHr: true,
-          team: updatedUser?.team,
-        }).catch((err) =>
-          logger.error(
-            `Failed to send conversion from probation to full-time email ${updatedUser?.email}:`,
-            err
-          )
-        );
-      }
-    }
-
-    res.status(httpStatus.OK).json({
-      status: true,
-      message: 'User updated successfully.',
-      data: updatedUser, // User object already cleaned by toJSON
-    });
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'User updated successfully.',
+    data: updatedUser, // User object already cleaned by toJSON
+  });
 });
 
 const deleteUser = catchAsync(async (req, res) => {
@@ -239,7 +239,7 @@ const deleteUser = catchAsync(async (req, res) => {
   // check for hierarchy
   if (currentUserRank < targetedUserRank) {
     // 2. Call service to delete user (soft delete)
-    const success = await userService.deleteUser(userId,team);
+    const success = await userService.deleteUser(userId, team);
 
     // 3. Handle not found
     if (!success) {
@@ -374,7 +374,7 @@ const requestSectionApproval = catchAsync(async (req, res) => {
       team: teamCode,
     });
     await Helper.sendEmail({ receiverEmails: emails, subject: 'Profile Edit Approval Request', message, fromHr: false, team: teamCode })
-      .catch((e)=>logger.error('email failed', e));
+      .catch((e) => logger.error('email failed', e));
   }
 
   return res.status(httpStatus.OK).json({ status: true, message: 'Approval requested' });
@@ -384,16 +384,18 @@ const getSectionApprovalStatus = catchAsync(async (req, res) => {
   const userId = req.user.id;
   const user = await User.findById(userId).populate('userDetails');
   const ud = user?.userDetails;
-  return res.status(httpStatus.OK).json({ status: true, data: {
-    bank: ud?.bankApprovalStatus || null,
-    documents: ud?.documentsApprovalStatus || null,
-  }});
+  return res.status(httpStatus.OK).json({
+    status: true, data: {
+      bank: ud?.bankApprovalStatus || null,
+      documents: ud?.documentsApprovalStatus || null,
+    }
+  });
 });
 
 const sectionApprovalByToken = catchAsync(async (req, res) => {
   const { token } = req.params;
   const action = (req.query.action || req.body.action || '').toString();
-  if (!['approve','reject'].includes(action)) {
+  if (!['approve', 'reject'].includes(action)) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid action');
   }
   let payload; try { payload = jwt.verify(token, process.env.SECRET_KEY); } catch (e) {
@@ -480,9 +482,9 @@ const getUserHistory = async (req, res) => {
 
 const getUserByTlId = async (req, res) => {
   try {
-   const userId = req?.query?.userId;
-   const userRole = req?.query?.userRole;
-   const userTeam = req?.user?.team;
+    const userId = req?.query?.userId;
+    const userRole = req?.query?.userRole;
+    const userTeam = req?.user?.team;
 
     const validateData =
       await userValidator?.getUserByTlIdSchema?.validateAsync({ userId, userRole });
@@ -499,17 +501,17 @@ const getUserByTlId = async (req, res) => {
 const approveUser = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     // Get user details
     const user = await User.findById(id);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-    
+
     // Update user formStatus to approved
     user.formStatus = 'approved';
     await user.save();
-    
+
     res.json({ status: true, data: user, message: "User approved successfully." });
   } catch (error) {
     console.error('Error in approveUser controller:', error);
@@ -525,10 +527,10 @@ const updateUserCifForm = async (req, res) => {
     console.log('Params:', req.params);
     console.log('Body keys:', Object.keys(req.body));
     console.log('Files count:', req.files?.length || 0);
-    
+
     const { id } = req.params;
     const files = req.files || {};
-    
+
     // Get user details
     console.log('Looking for user with ID:', id);
     const user = await User.findById(id).populate('userDetails');
@@ -536,7 +538,7 @@ const updateUserCifForm = async (req, res) => {
       console.log('User not found with ID:', id);
       return res.status(404).json({ message: "User not found" });
     }
-    
+
     console.log('User found:', {
       id: user._id,
       name: `${user.firstName} ${user.lastName}`,
@@ -585,7 +587,7 @@ const updateUserCifForm = async (req, res) => {
     // Prepare data for validation
     console.log('Original documents from body:', parsedBody.documents);
     console.log('Newly uploaded paths:', filteredUploadedPaths);
-    
+
     // Filter out invalid URLs from existing documents
     const validExistingDocuments = {};
     if (parsedBody.documents) {
@@ -601,10 +603,10 @@ const updateUserCifForm = async (req, res) => {
         }
       });
     }
-    
+
     // Clean personalInfo to remove fields not allowed by candidate schema
     const cleanedPersonalInfo = { ...parsedBody.personalInfo };
-    
+
     // Remove individual child fields that might still be present (fallback cleanup)
     // The frontend should transform these into children array, but clean up any remaining ones
     const childFieldsToRemove = ['child1Name', 'child1Dob', 'child1Gender', 'child2Name', 'child2Dob', 'child2Gender', 'child3Name', 'child3Dob', 'child3Gender', 'child4Name', 'child4Dob', 'child4Gender', 'child5Name', 'child5Dob', 'child5Gender'];
@@ -614,7 +616,7 @@ const updateUserCifForm = async (req, res) => {
         delete cleanedPersonalInfo[field];
       }
     });
-    
+
     // Also clean other fields that might not be allowed
     const otherFieldsToRemove = ['_id', 'isDeleted', 'createdAt', 'updatedAt', '__v', 'lockedFields', 'hrValidation'];
     otherFieldsToRemove.forEach(field => {
@@ -623,7 +625,7 @@ const updateUserCifForm = async (req, res) => {
         delete parsedBody[field];
       }
     });
-    
+
     const dataToValidate = {
       ...parsedBody,
       personalInfo: cleanedPersonalInfo,
@@ -632,7 +634,7 @@ const updateUserCifForm = async (req, res) => {
         ...filteredUploadedPaths,
       },
     };
-    
+
     console.log('Final documents for validation:', dataToValidate.documents);
     console.log('Cleaned personalInfo:', dataToValidate.personalInfo);
 
@@ -666,12 +668,12 @@ const updateUserCifForm = async (req, res) => {
       await user.save();
       console.log('New userDetails created and linked successfully');
     }
-    
+
     // Clean up any invalid document references in the database
     if (user.userDetails && user.userDetails.documents) {
       let hasInvalidDocs = false;
       const cleanedDocuments = {};
-      
+
       Object.entries(user.userDetails.documents).forEach(([key, value]) => {
         if (value && typeof value === 'string' && value.trim() !== '') {
           if (value.startsWith('http') && isValidUrl(value)) {
@@ -682,7 +684,7 @@ const updateUserCifForm = async (req, res) => {
           }
         }
       });
-      
+
       if (hasInvalidDocs) {
         user.userDetails.documents = cleanedDocuments;
         await user.userDetails.save();
@@ -691,13 +693,15 @@ const updateUserCifForm = async (req, res) => {
     }
 
     // Update user formStatus to "underReview" when HR edits the form
-    user.formStatus = 'underReview';
+    if (user.formStatus !== 'approved') {
+      user.formStatus = 'underReview';
+    }
     await user.save();
-    console.log('User formStatus updated to underReview');
+    console.log('User formStatus updated to underReview');                         
 
     // Populate the updated userDetails for response
     await user.populate('userDetails');
-    
+
     res.json({ status: true, data: user, message: "User CIF form updated successfully and status changed to under review." });
   } catch (error) {
     console.error('Error in updateUserCifForm controller:', error);
@@ -715,7 +719,7 @@ const uploadProfilePhoto = catchAsync(async (req, res) => {
     console.log('File:', req.file ? 'Present' : 'Missing');
 
     const { userId } = req.params;
-    
+
     // Validate user exists
     const user = await User.findById(userId);
     if (!user) {
@@ -749,11 +753,11 @@ const uploadProfilePhoto = catchAsync(async (req, res) => {
 
     console.log('Profile photo updated successfully');
     console.log('Saved profilePhoto value:', updatedUser.profilePhoto);
-    
+
     // Convert to full URL for response only
     const transformedPaths = transformDocumentPaths({ profilePhoto: relativePath });
     const fullPhotoUrl = transformedPaths.profilePhoto;
-    
+
     res.status(200).json({
       message: 'Profile photo uploaded successfully',
       user: updatedUser,
@@ -761,9 +765,9 @@ const uploadProfilePhoto = catchAsync(async (req, res) => {
     });
   } catch (error) {
     console.error('Error uploading profile photo:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Failed to upload profile photo',
-      error: error.message 
+      error: error.message
     });
   }
 });

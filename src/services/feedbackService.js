@@ -1,7 +1,19 @@
 const Feedback = require("../models/feedbackModel");
 const User = require("../models/userModel");
+const Department = require("../models/departmentModel");
 const aiService = require("./aiService");
+const kpiService = require("./kpiService");
+const { getPeriodById, validatePeriod } = require("../utility/periodUtils");
 const logger = require("../config/logger");
+
+// Helper function to format date as dd/MM/yyyy
+const formatDateDDMMYYYY = (date) => {
+  const d = new Date(date);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+};
 
 
 class FeedbacksService {
@@ -10,8 +22,145 @@ class FeedbacksService {
             throw new Error("Invalid or missing data payload");
         }
 
-        const ratingValues = Object.values(data.rating || {}).filter(val => typeof val === 'number');
-        const overallRating = ratingValues.reduce((sum, val) => sum + val, 0) / ratingValues.length;
+        // Handle period-based feedback (prioritize periodId over from/to dates)
+        let fromDate, toDate, periodId, periodType;
+
+        if (data.periodId) {
+            // Modern period-based feedback - derive dates from periodId
+            const periodValidation = validatePeriod(data.periodId);
+            if (!periodValidation.valid) {
+                throw new Error(periodValidation.message);
+            }
+            
+            const period = periodValidation.period;
+            fromDate = period.from;
+            toDate = period.to;
+            periodId = period.id;
+            periodType = period.type;
+        } else if (data.from && data.to) {
+            // Legacy date-based feedback (for backward compatibility)
+            fromDate = new Date(data.from);
+            toDate = new Date(data.to);
+            periodId = null;
+            periodType = null;
+        } else {
+            throw new Error("Either periodId or from/to dates must be provided");
+        }
+        
+        // Check for existing feedback
+        if (periodId) {
+            // For modern period-based feedback, check by periodId first
+            const existingFeedback = await Feedback.findOne({
+                givenBy: user.id,
+                givenTo: data.givenTo,
+                periodId: periodId,
+                isDeleted: false
+            });
+
+            if (existingFeedback) {
+                const period = getPeriodById(periodId);
+                throw new Error(`Feedback already exists for this ${periodType} period: ${period?.displayName || periodId}`);
+            }
+        }
+
+        // Check for overlapping date ranges (for both period-based and legacy feedback)
+        const overlappingFeedback = await Feedback.findOne({
+            givenBy: user.id,
+            givenTo: data.givenTo,
+            isDeleted: false,
+            $or: [
+                { from: { $lte: fromDate }, to: { $gte: fromDate } },
+                { from: { $lte: toDate }, to: { $gte: toDate } },
+                { from: { $gte: fromDate }, to: { $lte: toDate } },
+                { from: { $lte: fromDate }, to: { $gte: toDate } }
+            ]
+        });
+
+        if (overlappingFeedback) {
+            const existingPeriodDisplay = overlappingFeedback.periodId 
+                ? `${overlappingFeedback.periodType} period (${overlappingFeedback.periodId})`
+                : `${formatDateDDMMYYYY(overlappingFeedback.from)} to ${formatDateDDMMYYYY(overlappingFeedback.to)}`;
+            
+            throw new Error(`Feedback already exists for overlapping time range: ${existingPeriodDisplay}. Cannot create ${periodType || 'custom'} feedback that overlaps with existing feedback.`);
+        }
+
+        // Get employee details to determine department
+        const employee = await User.findById(data.givenTo).populate('department', 'name description');
+        if (!employee) {
+            throw new Error("Employee not found");
+        }
+
+        // Get appropriate KPIs for the department
+        let kpis;
+        if (employee.department && employee.department._id) {
+            kpis = await kpiService.getKPIsByDepartmentId(employee.department._id);
+        }
+        
+        if (!kpis) {
+            kpis = kpiService.getGenericKPIs();
+        }
+
+        // Process ratings - support both legacy and new KPI format
+        let ratingObject = {};
+        let legacyRating = {};
+        let overallRating = 0;
+        let ratingCount = 0;
+
+        logger.info('🔍 SERVICE DEBUG: Processing ratings', {
+            hasRating: !!data.rating,
+            ratingType: typeof data.rating,
+            ratingKeys: data.rating ? Object.keys(data.rating) : 'no rating',
+            ratingValues: data.rating
+        });
+
+        if (data.rating) {
+            // Handle object format (both legacy and new)
+            if (typeof data.rating === 'object' && !data.rating instanceof Map) {
+                Object.entries(data.rating).forEach(([key, value]) => {
+                    if (typeof value === 'number') {
+                        ratingObject[key] = value;
+                        legacyRating[key] = value;
+                        logger.info(`🔍 SERVICE DEBUG: Added rating ${key} = ${value}`);
+                        // Only count non-zero ratings for overall calculation (excluding zeros and overall field)
+                        if (key !== 'overall' && value > 0) {
+                            overallRating += value;
+                            ratingCount++;
+                        }
+                    }
+                });
+            }
+            // Handle Map format (convert to object)
+            else if (data.rating instanceof Map) {
+                data.rating.forEach((value, key) => {
+                    ratingObject[key] = value;
+                    // Only count non-zero ratings for overall calculation (excluding zeros and overall field)
+                    if (key !== 'overall' && value > 0) {
+                        overallRating += value;
+                        ratingCount++;
+                    }
+                });
+            }
+        }
+
+        logger.info('🔍 SERVICE DEBUG: Final rating processing', {
+            ratingObjectKeys: Object.keys(ratingObject),
+            ratingObjectValues: ratingObject,
+            ratingCount: ratingCount,
+            overallRating: overallRating
+        });
+
+        // Always calculate overall rating from non-zero individual ratings
+        if (ratingCount > 0) {
+            const calculatedOverall = parseFloat((overallRating / ratingCount).toFixed(1));
+            ratingObject.overall = calculatedOverall;
+            legacyRating.overall = calculatedOverall;
+            logger.info(`🔍 SERVICE DEBUG: Calculated overall rating: ${calculatedOverall} from ${ratingCount} non-zero ratings`);
+        } else if (Object.keys(ratingObject).length > 0) {
+            // If we have ratings but all are zero, set overall to 0
+            ratingObject.overall = 0;
+            legacyRating.overall = 0;
+            logger.info('🔍 SERVICE DEBUG: All ratings are zero, setting overall to 0');
+        }
 
         // AI Analysis - extract AI fields if present from middleware
         const aiFields = {
@@ -36,27 +185,160 @@ class FeedbacksService {
             }
         }
 
-        const feedback = new Feedback({
+        // Use processed rating object, but fallback to original data.rating if processing failed
+        const finalRating = Object.keys(ratingObject).length > 0 ? ratingObject : data.rating || {};
+        
+        logger.info('🔍 SERVICE DEBUG: Final rating decision', {
+            processedRatingKeys: Object.keys(ratingObject),
+            originalRatingKeys: data.rating ? Object.keys(data.rating) : 'no original rating',
+            finalRatingKeys: Object.keys(finalRating),
+            finalRatingValues: finalRating
+        });
+
+        // 🎯 Determine approval status based on user role and feedback target
+        let approvalStatus = 'direct'; // Default: no approval needed
+        let needsTLApproval = false;
+        
+        logger.info('🔍 APPROVAL DEBUG: Checking approval workflow', {
+            giverRole: user.role,
+            receiverRole: employee.role,
+            giverId: user.id,
+            receiverId: employee._id
+        });
+        
+        if (user.role === 'subteamlead') {
+            if (employee.role === 'employee' || employee.role === 'intern') {
+                // STL → Employee: Direct feedback but needs TL approval first
+                approvalStatus = 'pending_tl_approval';
+                needsTLApproval = true;
+                logger.info('🔄 STL → Employee/Intern: REQUIRES TL APPROVAL', {
+                    stlId: user.id,
+                    employeeId: employee._id,
+                    approvalStatus: approvalStatus
+                });
+            } else if (employee.role === 'teamlead') {
+                // STL → TL: Direct feedback (no approval needed)
+                approvalStatus = 'direct';
+                logger.info('✅ STL → TL: DIRECT (no approval needed)', {
+                    stlId: user.id,
+                    tlId: employee._id,
+                    approvalStatus: approvalStatus
+                });
+            }
+        } else {
+            logger.info('✅ Non-STL feedback: DIRECT (no approval needed)', {
+                giverRole: user.role,
+                receiverRole: employee.role,
+                approvalStatus: approvalStatus
+            });
+        }
+
+        // Prepare feedback document
+        const feedbackDoc = {
             ...data,
             givenBy: user.id,
-            rating: {
-                ...data.rating,
-                overall: parseFloat(overallRating.toFixed(1)),
-            },
+            periodId: periodId,
+            periodType: periodType,
+            rating: finalRating,
+            legacyRating: legacyRating, // For backward compatibility
+            kpiRecordId: kpis._id || null, // Reference to KPI record (contains all KPI definitions)
+            departmentId: employee.department ? employee.department._id : null,
+            // Add approval workflow fields
+            approvalStatus: approvalStatus,
             // Add AI analysis fields
             ...aiFields
-        });
+        };
+
+        // Only store from/to dates if no periodId (legacy support)
+        if (!periodId) {
+            feedbackDoc.from = fromDate;
+            feedbackDoc.to = toDate;
+        }
+
+        // For STL → Employee feedback, store original content for TL to edit
+        if (needsTLApproval) {
+            feedbackDoc.originalFeedback = data.feedback;
+            feedbackDoc.originalRating = finalRating;
+        }
+
+        const feedback = new Feedback(feedbackDoc);
 
         await feedback.save();
         
-        logger.info('Feedback created with AI analysis', {
+        logger.info('Feedback created with AI analysis and KPIs', {
             feedbackId: feedback._id,
+            employeeId: data.givenTo,
+            periodId: periodId,
+            periodType: periodType,
+            kpisCount: kpis.kpis.length,
             sentiment: aiFields.sentiment,
             sentimentScore: aiFields.sentimentScore,
             keywordsCount: aiFields.keywords.length
         });
 
         return feedback;
+    }
+
+    // 🎯 TL Approve/Edit STL Feedback
+    async approveFeedbackByTL(feedbackId, tlUserId, approvalData) {
+        try {
+            const feedback = await Feedback.findById(feedbackId)
+                .populate('givenBy', 'role teamLeadId')
+                .populate('givenTo', 'role teamLeadId');
+
+            if (!feedback) {
+                throw new Error('Feedback not found');
+            }
+
+            // Verify this is STL feedback pending TL approval
+            if (feedback.approvalStatus !== 'pending_tl_approval') {
+                throw new Error('This feedback is not pending TL approval');
+            }
+
+            // Verify the TL is authorized to approve this feedback
+            // The Employee's TL should approve, not the STL's TL
+            const employee = feedback.givenTo;
+            if (!employee.teamLeadId || employee.teamLeadId.toString() !== tlUserId.toString()) {
+                throw new Error('You are not authorized to approve this feedback. Only the employee\'s Team Lead can approve.');
+            }
+
+            // Update feedback with TL's edits/approval
+            const updates = {
+                approvalStatus: approvalData.action === 'approve' ? 'approved' : 'rejected',
+                approvedBy: tlUserId,
+                approvalComments: approvalData.comments || ''
+            };
+
+            // If TL edited the feedback content
+            if (approvalData.editedFeedback && approvalData.editedFeedback !== feedback.feedback) {
+                updates.feedback = approvalData.editedFeedback;
+                updates.editedByTL = true;
+            }
+
+            // If TL edited the ratings
+            if (approvalData.editedRating) {
+                updates.rating = approvalData.editedRating;
+                updates.editedByTL = true;
+            }
+
+            const updatedFeedback = await Feedback.findByIdAndUpdate(
+                feedbackId,
+                updates,
+                { new: true }
+            ).populate('givenBy givenTo approvedBy', 'firstName lastName email role');
+
+            logger.info('STL feedback approved/edited by TL', {
+                feedbackId: feedbackId,
+                action: approvalData.action,
+                editedByTL: updates.editedByTL,
+                tlId: tlUserId
+            });
+
+            return updatedFeedback;
+        } catch (error) {
+            logger.error('Error in TL feedback approval:', error);
+            throw error;
+        }
     }
 
    getAllFeedbacks = async (userId, userRole, userTeam, filters = {}) => {
@@ -67,14 +349,52 @@ class FeedbacksService {
 
     // Base filter for admin/HR users
     let baseFilter = isAdmin
-        ? { givenBy: { $in: teamUserIds } }
+        ? {
+            $or: [
+                { givenBy: { $in: teamUserIds } }, // Feedback given by team members
+                { 
+                    givenTo: { $in: teamUserIds }, // Feedback given to team members
+                    $or: [
+                        { approvalStatus: { $ne: 'pending_tl_approval' } }, // Not pending approval
+                        { approvalStatus: { $exists: false } }, // Legacy feedback without approval status
+                        { approvalStatus: 'approved' }, // TL-approved STL feedback
+                        { approvalStatus: 'direct' } // Direct feedback
+                    ]
+                }
+            ]
+        }
         : {
             $or: [
                 { givenBy: userId },          
-                { givenTo: userId },   
+                // For received feedback, exclude pending TL approval unless user is TL
+                { 
+                    givenTo: userId,
+                    $or: [
+                        { approvalStatus: { $ne: 'pending_tl_approval' } }, // Not pending approval
+                        { approvalStatus: { $exists: false } }, // Legacy feedback without approval status
+                        { approvalStatus: 'approved' }, // Already approved
+                        { approvalStatus: 'direct' } // Direct feedback
+                    ]
+                },   
                 { givenBy: { $in: teamUserIds } }
             ]
         };
+
+    // Special case: TL can see all feedback including pending approval
+    if (userRole === 'teamlead') {
+        baseFilter = {
+            $or: [
+                { givenBy: userId },          
+                { givenTo: userId }, // TL can see all feedback given to them
+                { givenBy: { $in: teamUserIds } },
+                // TL can see STL feedback pending their approval
+                { 
+                    approvalStatus: 'pending_tl_approval',
+                    givenBy: { $in: teamUserIds } // From their team STLs
+                }
+            ]
+        };
+    }
 
     // Build additional filters
     let additionalFilters = {};
@@ -87,16 +407,55 @@ class FeedbacksService {
     }
 
 
-    // Period range filter (feedback period)
+    // Enhanced period filtering
+    if (filters.periodType || filters.periodId || filters.periodFrom || filters.periodTo) {
+        const periodFilters = [];
+
+        // Period type filter (monthly or biweekly)
+        if (filters.periodType) {
+            periodFilters.push({ periodType: filters.periodType });
+        }
+
+        // Specific period ID filter
+        if (filters.periodId) {
+            periodFilters.push({ periodId: filters.periodId });
+        }
+
+        // Date range filter (for custom ranges or fallback)
     if (filters.periodFrom || filters.periodTo) {
-        const periodFilter = {};
+            const dateRangeFilter = {};
         if (filters.periodFrom) {
-            periodFilter.from = { $gte: new Date(filters.periodFrom) };
+                // Feedback period overlaps with filter range
+                dateRangeFilter.$or = [
+                    { from: { $gte: new Date(filters.periodFrom) } },
+                    { to: { $gte: new Date(filters.periodFrom) } }
+                ];
         }
         if (filters.periodTo) {
-            periodFilter.to = { $lte: new Date(filters.periodTo) };
+                const toFilter = { to: { $lte: new Date(filters.periodTo) } };
+                if (dateRangeFilter.$or) {
+                    dateRangeFilter.$and = [
+                        { $or: dateRangeFilter.$or },
+                        toFilter
+                    ];
+                    delete dateRangeFilter.$or;
+                } else {
+                    Object.assign(dateRangeFilter, toFilter);
+                }
+            }
+            if (Object.keys(dateRangeFilter).length > 0) {
+                periodFilters.push(dateRangeFilter);
+            }
         }
-        additionalFilters = { ...additionalFilters, ...periodFilter };
+
+        // Apply period filters with AND logic
+        if (periodFilters.length > 0) {
+            if (periodFilters.length === 1) {
+                additionalFilters = { ...additionalFilters, ...periodFilters[0] };
+            } else {
+                additionalFilters = { ...additionalFilters, $and: periodFilters };
+            }
+        }
     }
 
     // Combine base filter with additional filters
@@ -294,44 +653,54 @@ class FeedbacksService {
                 name: `${currentFeedback.givenTo.firstName} ${currentFeedback.givenTo.lastName}`,
                 employeeId: currentFeedback.givenTo.employeeId
             },
-            periods: historicalFeedbacks.map(feedback => ({
+            periods: historicalFeedbacks.map(feedback => {
+                // Calculate overall rating from individual KPI ratings
+                const ratings = feedback.rating || {};
+                const ratingValues = Object.entries(ratings)
+                    .filter(([key, value]) => key !== 'overall' && typeof value === 'number' && value > 0)
+                    .map(([_, value]) => value);
+                
+                const calculatedOverall = ratingValues.length > 0 
+                    ? parseFloat((ratingValues.reduce((sum, val) => sum + val, 0) / ratingValues.length).toFixed(1))
+                    : (ratings.overall || 0);
+
+                return {
                 id: feedback._id,
-                period: `${feedback.from.toISOString().split('T')[0]} to ${feedback.to.toISOString().split('T')[0]}`,
-                from: feedback.from,
-                to: feedback.to,
-                overall: feedback.rating.overall,
-                ratings: {
-                    discipline: feedback.rating.discipline,
-                    initiative: feedback.rating.initiative,
-                    teamwork: feedback.rating.teamwork,
-                    ownership: feedback.rating.ownership,
-                    skillDevelopment: feedback.rating.skillDevelopment,
-                    techSkills: feedback.rating.techSkills
-                },
+                period: `${formatDateDDMMYYYY(feedback.effectiveFrom)} to ${formatDateDDMMYYYY(feedback.effectiveTo)}`,
+                from: feedback.effectiveFrom,
+                to: feedback.effectiveTo,
+                    overall: calculatedOverall,
+                    ratings: ratings, // Use actual rating object (dynamic KPI names)
                 sentiment: feedback.sentiment,
                 sentimentScore: feedback.sentimentScore,
                 givenBy: feedback.givenBy ? `${feedback.givenBy.firstName} ${feedback.givenBy.lastName}` : 'Unknown User',
                 createdAt: feedback.createdAt
-            })),
-            currentPeriod: {
+                };
+            }),
+            currentPeriod: (() => {
+                // Calculate overall rating for current period
+                const ratings = currentFeedback.rating || {};
+                const ratingValues = Object.entries(ratings)
+                    .filter(([key, value]) => key !== 'overall' && typeof value === 'number' && value > 0)
+                    .map(([_, value]) => value);
+                
+                const calculatedOverall = ratingValues.length > 0 
+                    ? parseFloat((ratingValues.reduce((sum, val) => sum + val, 0) / ratingValues.length).toFixed(1))
+                    : (ratings.overall || 0);
+
+                return {
                 id: currentFeedback._id,
-                period: `${currentFeedback.from.toISOString().split('T')[0]} to ${currentFeedback.to.toISOString().split('T')[0]}`,
-                from: currentFeedback.from,
-                to: currentFeedback.to,
-                overall: currentFeedback.rating.overall,
-                ratings: {
-                    discipline: currentFeedback.rating.discipline,
-                    initiative: currentFeedback.rating.initiative,
-                    teamwork: currentFeedback.rating.teamwork,
-                    ownership: currentFeedback.rating.ownership,
-                    skillDevelopment: currentFeedback.rating.skillDevelopment,
-                    techSkills: currentFeedback.rating.techSkills
-                },
+                period: `${formatDateDDMMYYYY(currentFeedback.effectiveFrom)} to ${formatDateDDMMYYYY(currentFeedback.effectiveTo)}`,
+                from: currentFeedback.effectiveFrom,
+                to: currentFeedback.effectiveTo,
+                    overall: calculatedOverall,
+                    ratings: ratings, // Use actual rating object (dynamic KPI names)
                 sentiment: currentFeedback.sentiment,
                 sentimentScore: currentFeedback.sentimentScore,
                 givenBy: `${currentFeedback.givenBy.firstName} ${currentFeedback.givenBy.lastName}`,
                 createdAt: currentFeedback.createdAt
-            }
+                };
+            })()
         };
 
         // Calculate trend insights

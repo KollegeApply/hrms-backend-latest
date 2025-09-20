@@ -20,7 +20,9 @@ class AIPreprocessingMiddleware {
         hasData: !!req.body.data,
         hasDirectFeedback: !!req.body.feedback,
         isWrapped,
-        feedbackLength: feedbackData?.feedback?.length 
+        feedbackLength: feedbackData?.feedback?.length,
+        hasRating: !!feedbackData?.rating,
+        ratingKeys: feedbackData?.rating ? Object.keys(feedbackData.rating) : 'no rating'
       });
       
       if (!feedbackData || !feedbackData.feedback) {
@@ -56,7 +58,10 @@ class AIPreprocessingMiddleware {
         sentiment: aiAnalysis.sentiment,
         sentimentScore: aiAnalysis.sentimentScore,
         keywordsCount: aiAnalysis.keywords.length,
-        hasRecommendation: !!aiAnalysis.recommendation
+        hasRecommendation: !!aiAnalysis.recommendation,
+        finalHasRating: !!(isWrapped ? req.body.data.rating : req.body.rating),
+        finalRatingKeys: (isWrapped ? req.body.data.rating : req.body.rating) ? 
+          Object.keys(isWrapped ? req.body.data.rating : req.body.rating) : 'no rating'
       });
 
       next();
