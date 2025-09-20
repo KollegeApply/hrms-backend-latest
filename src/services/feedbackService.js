@@ -406,6 +406,39 @@ class FeedbacksService {
         additionalFilters.givenTo = { $in: departmentUserIds };
     }
 
+    // Search filter
+    if (filters.search) {
+        const searchTerm = filters.search.trim();
+        if (searchTerm) {
+            console.log(`🔍 Searching for: "${searchTerm}"`);
+            
+            // Find users that match the search term
+            const searchUsers = await User.find({
+                $or: [
+                    { firstName: { $regex: searchTerm, $options: 'i' } },
+                    { lastName: { $regex: searchTerm, $options: 'i' } },
+                    { employeeId: { $regex: searchTerm, $options: 'i' } }
+                ]
+            }, '_id firstName lastName employeeId');
+            
+            console.log(`🔍 Found ${searchUsers.length} matching users:`, searchUsers.map(u => `${u.firstName} ${u.lastName} (${u.employeeId})`));
+            
+            const searchUserIds = searchUsers.map(user => user._id);
+            
+            if (searchUserIds.length > 0) {
+                additionalFilters.searchFilter = {
+                    $or: [
+                        { givenBy: { $in: searchUserIds } },
+                        { givenTo: { $in: searchUserIds } }
+                    ]
+                };
+            } else {
+                // If no users found, return empty result
+                additionalFilters._id = { $in: [] };
+            }
+        }
+    }
+
 
     // Enhanced period filtering
     if (filters.periodType || filters.periodId || filters.periodFrom || filters.periodTo) {
@@ -459,16 +492,25 @@ class FeedbacksService {
     }
 
     // Combine base filter with additional filters
-    let finalFilter = { ...baseFilter, ...additionalFilters };
+    let finalFilter = { ...baseFilter };
 
     // Handle complex queries with $and if needed
     if (Object.keys(additionalFilters).length > 0) {
-        finalFilter = {
-            $and: [
-                baseFilter,
-                additionalFilters
-            ]
-        };
+        const andConditions = [baseFilter];
+        
+        // Add search filter if it exists
+        if (additionalFilters.searchFilter) {
+            andConditions.push(additionalFilters.searchFilter);
+        }
+        
+        // Add other filters
+        const otherFilters = { ...additionalFilters };
+        delete otherFilters.searchFilter;
+        if (Object.keys(otherFilters).length > 0) {
+            andConditions.push(otherFilters);
+        }
+        
+        finalFilter = { $and: andConditions };
     }
 
     // Pagination
