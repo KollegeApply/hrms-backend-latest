@@ -12,6 +12,8 @@ const User = require('../models/userModel');
 const UserDetails = require('../models/userDetailsModel');
 const candidateValidator = require('../validators/candidateValidator');
 const { uploadToAzure } = require('../utility/azureBlob');
+const { transformDocumentPaths } = require('../utility/common');
+const crypto = require('crypto');
 
 // Helper function to validate URLs
 function isValidUrl(string) {
@@ -22,6 +24,7 @@ function isValidUrl(string) {
     return false;
   }
 }
+
 
 /**
  * Utility to generate JWT token.
@@ -54,8 +57,8 @@ const createUser = catchAsync(async (req, res) => {
     // sending mail
     const sendMail = req?.body?.sendMail === true;
     if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
-       const teamCode = req?.user?.team || 'SD';
-       const emailConfig = getTeamEmailConfig(teamCode);
+      const teamCode = req?.user?.team || 'SD';
+      const emailConfig = getTeamEmailConfig(teamCode);
       logger.info(`Sending welcome email to ${user.email}`);
       Helper.sendEmail({
         receiverEmails: [user?.email],
@@ -68,7 +71,7 @@ const createUser = catchAsync(async (req, res) => {
           emailConfig?.TEAM_NAME,
         ),
         fromHr: true,
-        team:teamCode,
+        team: teamCode,
       }).catch((err) =>
         logger.error(`Failed to send welcome email to ${user?.email}:`, err)
       );
@@ -101,7 +104,17 @@ const getAllUsers = catchAsync(async (req, res) => {
   // 2. Call service to get users
   const result = await userService?.getAllUsers(validatedQuery, currentUser); // Service handles pagination logic
 
-  // 3. Send response
+  // 3. Transform profile photos to full URLs if needed
+  if (result.data && Array.isArray(result.data)) {
+    result.data.forEach(user => {
+      if (user.profilePhoto && !user.profilePhoto.startsWith('http')) {
+        const transformedPaths = transformDocumentPaths({ profilePhoto: user.profilePhoto });
+        user.profilePhoto = transformedPaths.profilePhoto;
+      }
+    });
+  }
+
+  // 4. Send response
   res?.status(httpStatus.OK).json({
     status: true,
     message: 'Users retrieved successfully.',
@@ -127,7 +140,13 @@ const getUserById = catchAsync(async (req, res) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
   }
 
-  // 4. Send response
+  // 4. Transform profile photo to full URL if needed
+  if (user.profilePhoto && !user.profilePhoto.startsWith('http')) {
+    const transformedPaths = transformDocumentPaths({ profilePhoto: user.profilePhoto });
+    user.profilePhoto = transformedPaths.profilePhoto;
+  }
+
+  // 5. Send response
   res?.status(httpStatus.OK).json({
     status: true,
     message: 'User retrieved successfully.',
@@ -155,54 +174,54 @@ const updateUser = catchAsync(async (req, res) => {
   const currentUserId = req?.user?.id;
   const clickedUserId = userId;
 
-    const updatedUser = await userService?.updateUser(userId, validatedData, {
-      _id: req.user.id,
-      name: req.user.name,
-      role: req.user.role,
-    });
+  const updatedUser = await userService?.updateUser(userId, validatedData, {
+    _id: req.user.id,
+    name: req.user.name,
+    role: req.user.role,
+  });
 
-    if (!updatedUser) {
-      throw new ApiError(
-        httpStatus.NOT_FOUND,
-        'User not found or update failed.'
+  if (!updatedUser) {
+    throw new ApiError(
+      httpStatus.NOT_FOUND,
+      'User not found or update failed.'
+    );
+  }
+
+  // sending mail
+  if (oldUser?.status === 'probation' && updatedUser?.status === 'onroll') {
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+    const sendMail = req?.body?.sendMail === true;
+    if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
+      logger.info(
+        `Conversion from probation to onroll ${updatedUser?.email}`
+      );
+      Helper.sendEmail({
+        receiverEmails: [updatedUser?.email],
+        subject: `You’ve Earned Full-Time Status! Congratulations !!`,
+        message: Helper.fullTimeConversion(
+          updatedUser?.firstName,
+          tomorrow.toISOString(),
+          updatedUser?.jobTitle,
+          updatedUser?.team,
+        ),
+        fromHr: true,
+        team: updatedUser?.team,
+      }).catch((err) =>
+        logger.error(
+          `Failed to send conversion from probation to full-time email ${updatedUser?.email}:`,
+          err
+        )
       );
     }
+  }
 
-    // sending mail
-    if (oldUser?.status === 'probation' && updatedUser?.status === 'onroll') {
-      const today = new Date();
-      const tomorrow = new Date(today);
-      tomorrow.setDate(today.getDate() + 1);
-      const sendMail = req?.body?.sendMail === true;
-      if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
-        logger.info(
-          `Conversion from probation to onroll ${updatedUser?.email}`
-        );
-        Helper.sendEmail({
-          receiverEmails: [updatedUser?.email],
-          subject: `You’ve Earned Full-Time Status! Congratulations !!`,
-          message: Helper.fullTimeConversion(
-            updatedUser?.firstName,
-            tomorrow.toISOString(),
-            updatedUser?.jobTitle,
-            updatedUser?.team,
-          ),
-          fromHr: true,
-          team: updatedUser?.team,
-        }).catch((err) =>
-          logger.error(
-            `Failed to send conversion from probation to full-time email ${updatedUser?.email}:`,
-            err
-          )
-        );
-      }
-    }
-
-    res.status(httpStatus.OK).json({
-      status: true,
-      message: 'User updated successfully.',
-      data: updatedUser, // User object already cleaned by toJSON
-    });
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'User updated successfully.',
+    data: updatedUser, // User object already cleaned by toJSON
+  });
 });
 
 const deleteUser = catchAsync(async (req, res) => {
@@ -220,7 +239,7 @@ const deleteUser = catchAsync(async (req, res) => {
   // check for hierarchy
   if (currentUserRank < targetedUserRank) {
     // 2. Call service to delete user (soft delete)
-    const success = await userService.deleteUser(userId,team);
+    const success = await userService.deleteUser(userId, team);
 
     // 3. Handle not found
     if (!success) {
@@ -316,6 +335,82 @@ const verifyOtp = catchAsync(async (req, res) => {
   });
 });
 
+// === Section approvals ===
+const requestSectionApproval = catchAsync(async (req, res) => {
+  const userId = req.user.id;
+  const { section } = req.body;
+  if (!['bankDetails', 'documents'].includes(section)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid section');
+  }
+
+  const user = await User.findById(userId).populate('userDetails');
+  if (!user) throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
+  if (!user.userDetails) {
+    user.userDetails = await new UserDetails({}).save();
+    await user.save();
+  }
+
+  const ud = user.userDetails;
+  const statusKey = section === 'bankDetails' ? 'bankApprovalStatus' : 'documentsApprovalStatus';
+  const requestedAtKey = section === 'bankDetails' ? 'bankApprovalRequestedAt' : 'documentsApprovalRequestedAt';
+  ud[statusKey] = 'pending';
+  ud[requestedAtKey] = new Date();
+  await ud.save();
+
+  // email
+  const token = jwt.sign({ uid: userId, section }, process.env.SECRET_KEY, { expiresIn: '7d' });
+  const base = process.env.HRMS_FRONTEND_URL || '';
+  const approveUrl = `${base}/api/v1/users/section-approval/token/${token}?action=approve`;
+  const rejectUrl = `${base}/api/v1/users/section-approval/token/${token}?action=reject`;
+  const teamCode = req.user.team || 'SD';
+  const emailConfig = getTeamEmailConfig(teamCode);
+  const emails = [emailConfig.HR_EMAIL];
+  if (emails.length) {
+    const message = Helper.getSectionApprovalRequestEmail({
+      employeeName: `${user.firstName} ${user.lastName}`,
+      section,
+      approveUrl,
+      rejectUrl,
+      team: teamCode,
+    });
+    await Helper.sendEmail({ receiverEmails: emails, subject: 'Profile Edit Approval Request', message, fromHr: false, team: teamCode })
+      .catch((e) => logger.error('email failed', e));
+  }
+
+  return res.status(httpStatus.OK).json({ status: true, message: 'Approval requested' });
+});
+
+const getSectionApprovalStatus = catchAsync(async (req, res) => {
+  const userId = req.user.id;
+  const user = await User.findById(userId).populate('userDetails');
+  const ud = user?.userDetails;
+  return res.status(httpStatus.OK).json({
+    status: true, data: {
+      bank: ud?.bankApprovalStatus || null,
+      documents: ud?.documentsApprovalStatus || null,
+    }
+  });
+});
+
+const sectionApprovalByToken = catchAsync(async (req, res) => {
+  const { token } = req.params;
+  const action = (req.query.action || req.body.action || '').toString();
+  if (!['approve', 'reject'].includes(action)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid action');
+  }
+  let payload; try { payload = jwt.verify(token, process.env.SECRET_KEY); } catch (e) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid or expired token');
+  }
+  const { uid, section } = payload;
+  const user = await User.findById(uid).populate('userDetails');
+  if (!user || !user.userDetails) throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
+  const statusKey = section === 'bankDetails' ? 'bankApprovalStatus' : 'documentsApprovalStatus';
+  const decidedAtKey = section === 'bankDetails' ? 'bankApprovalDecidedAt' : 'documentsApprovalDecidedAt';
+  user.userDetails[statusKey] = action === 'approve' ? 'approved' : 'rejected';
+  user.userDetails[decidedAtKey] = new Date();
+  await user.userDetails.save();
+  return res.status(httpStatus.OK).json({ status: true, message: `Request ${action}d` });
+});
 const bulkUpload = async (req, res) => {
   const activity = 'Bulk Upload Users |';
   try {
@@ -387,9 +482,9 @@ const getUserHistory = async (req, res) => {
 
 const getUserByTlId = async (req, res) => {
   try {
-   const userId = req?.query?.userId;
-   const userRole = req?.query?.userRole;
-   const userTeam = req?.user?.team;
+    const userId = req?.query?.userId;
+    const userRole = req?.query?.userRole;
+    const userTeam = req?.user?.team;
 
     const validateData =
       await userValidator?.getUserByTlIdSchema?.validateAsync({ userId, userRole });
@@ -406,17 +501,17 @@ const getUserByTlId = async (req, res) => {
 const approveUser = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     // Get user details
     const user = await User.findById(id);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-    
+
     // Update user formStatus to approved
     user.formStatus = 'approved';
     await user.save();
-    
+
     res.json({ status: true, data: user, message: "User approved successfully." });
   } catch (error) {
     console.error('Error in approveUser controller:', error);
@@ -428,23 +523,23 @@ const approveUser = async (req, res) => {
 
 const updateUserCifForm = async (req, res) => {
   try {
-    console.log('=== updateUserCifForm START ===');
-    console.log('Params:', req.params);
-    console.log('Body keys:', Object.keys(req.body));
-    console.log('Files count:', req.files?.length || 0);
-    
+    ('=== updateUserCifForm START ===');
+    ('Params:', req.params);
+    ('Body keys:', Object.keys(req.body));
+    ('Files count:', req.files?.length || 0);
+
     const { id } = req.params;
     const files = req.files || {};
-    
+
     // Get user details
-    console.log('Looking for user with ID:', id);
+    ('Looking for user with ID:', id);
     const user = await User.findById(id).populate('userDetails');
     if (!user) {
-      console.log('User not found with ID:', id);
+      ('User not found with ID:', id);
       return res.status(404).json({ message: "User not found" });
     }
-    
-    console.log('User found:', {
+
+    ('User found:', {
       id: user._id,
       name: `${user.firstName} ${user.lastName}`,
       hasUserDetails: !!user.userDetails
@@ -452,15 +547,15 @@ const updateUserCifForm = async (req, res) => {
 
     // Handle file uploads similar to candidate form
     const uploadedPaths = {};
-    console.log('Processing files:', files.length);
+    ('Processing files:', files.length);
     for (const file of files) {
       if (file) {
-        console.log('Uploading file:', file.originalname, 'field:', file.fieldname);
+        ('Uploading file:', file.originalname, 'field:', file.fieldname);
         try {
           const relativePath = await uploadToAzure(file.buffer, file.originalname, 'hrms-cif-documents/');
           const simpleField = file.fieldname.replace('documents.', '');
           uploadedPaths[simpleField] = relativePath;
-          console.log('File uploaded successfully:', relativePath);
+          ('File uploaded successfully:', relativePath);
         } catch (uploadError) {
           console.error('File upload error:', uploadError);
           throw uploadError;
@@ -470,14 +565,14 @@ const updateUserCifForm = async (req, res) => {
 
     // Parse request body
     const parsedBody = {};
-    console.log('Parsing request body...');
+    ('Parsing request body...');
     for (const key in req.body) {
       try {
         parsedBody[key] = JSON.parse(req.body[key]);
-        console.log(`Parsed ${key}:`, typeof parsedBody[key]);
+        (`Parsed ${key}:`, typeof parsedBody[key]);
       } catch (e) {
         parsedBody[key] = req.body[key];
-        console.log(`Using raw value for ${key}:`, typeof parsedBody[key]);
+        (`Using raw value for ${key}:`, typeof parsedBody[key]);
       }
     }
 
@@ -490,9 +585,9 @@ const updateUserCifForm = async (req, res) => {
     });
 
     // Prepare data for validation
-    console.log('Original documents from body:', parsedBody.documents);
-    console.log('Newly uploaded paths:', filteredUploadedPaths);
-    
+    ('Original documents from body:', parsedBody.documents);
+    ('Newly uploaded paths:', filteredUploadedPaths);
+
     // Filter out invalid URLs from existing documents
     const validExistingDocuments = {};
     if (parsedBody.documents) {
@@ -501,36 +596,36 @@ const updateUserCifForm = async (req, res) => {
           // Check if it's a valid URL (starts with http and is properly formatted)
           if (value.startsWith('http') && isValidUrl(value)) {
             validExistingDocuments[key] = value;
-            console.log(`Preserving existing document ${key}:`, value);
+            (`Preserving existing document ${key}:`, value);
           } else {
-            console.log(`Skipping invalid document ${key}:`, value);
+            (`Skipping invalid document ${key}:`, value);
           }
         }
       });
     }
-    
+
     // Clean personalInfo to remove fields not allowed by candidate schema
     const cleanedPersonalInfo = { ...parsedBody.personalInfo };
-    
+
     // Remove individual child fields that might still be present (fallback cleanup)
     // The frontend should transform these into children array, but clean up any remaining ones
     const childFieldsToRemove = ['child1Name', 'child1Dob', 'child1Gender', 'child2Name', 'child2Dob', 'child2Gender', 'child3Name', 'child3Dob', 'child3Gender', 'child4Name', 'child4Dob', 'child4Gender', 'child5Name', 'child5Dob', 'child5Gender'];
     childFieldsToRemove.forEach(field => {
       if (cleanedPersonalInfo.hasOwnProperty(field)) {
-        console.log(`Removing field ${field} from personalInfo`);
+        (`Removing field ${field} from personalInfo`);
         delete cleanedPersonalInfo[field];
       }
     });
-    
+
     // Also clean other fields that might not be allowed
     const otherFieldsToRemove = ['_id', 'isDeleted', 'createdAt', 'updatedAt', '__v', 'lockedFields', 'hrValidation'];
     otherFieldsToRemove.forEach(field => {
       if (parsedBody.hasOwnProperty(field)) {
-        console.log(`Removing field ${field} from parsedBody`);
+        (`Removing field ${field} from parsedBody`);
         delete parsedBody[field];
       }
     });
-    
+
     const dataToValidate = {
       ...parsedBody,
       personalInfo: cleanedPersonalInfo,
@@ -539,72 +634,74 @@ const updateUserCifForm = async (req, res) => {
         ...filteredUploadedPaths,
       },
     };
-    
-    console.log('Final documents for validation:', dataToValidate.documents);
-    console.log('Cleaned personalInfo:', dataToValidate.personalInfo);
+
+    ('Final documents for validation:', dataToValidate.documents);
+    ('Cleaned personalInfo:', dataToValidate.personalInfo);
 
     // Validate the data using candidate validator (same structure)
-    console.log('Validating data with candidateValidator...');
-    console.log('Data to validate keys:', Object.keys(dataToValidate));
+    ('Validating data with candidateValidator...');
+    ('Data to validate keys:', Object.keys(dataToValidate));
     let validatedData;
     try {
       validatedData = await candidateValidator.finalSubmitSchema.validateAsync(dataToValidate);
-      console.log('Validation successful');
+      ('Validation successful');
     } catch (validationError) {
       console.error('Validation error:', validationError);
       throw validationError;
     }
 
     // Update userDetails
-    console.log('Updating userDetails...');
-    console.log('User has userDetails:', !!user.userDetails);
+    ('Updating userDetails...');
+    ('User has userDetails:', !!user.userDetails);
     if (user.userDetails) {
       // Update existing userDetails
-      console.log('Updating existing userDetails');
+      ('Updating existing userDetails');
       Object.assign(user.userDetails, validatedData);
       await user.userDetails.save();
-      console.log('Existing userDetails updated successfully');
+      ('Existing userDetails updated successfully');
     } else {
       // Create new userDetails if doesn't exist
-      console.log('Creating new userDetails');
+      ('Creating new userDetails');
       const newUserDetails = new UserDetails(validatedData);
       await newUserDetails.save();
       user.userDetails = newUserDetails._id;
       await user.save();
-      console.log('New userDetails created and linked successfully');
+      ('New userDetails created and linked successfully');
     }
-    
+
     // Clean up any invalid document references in the database
     if (user.userDetails && user.userDetails.documents) {
       let hasInvalidDocs = false;
       const cleanedDocuments = {};
-      
+
       Object.entries(user.userDetails.documents).forEach(([key, value]) => {
         if (value && typeof value === 'string' && value.trim() !== '') {
           if (value.startsWith('http') && isValidUrl(value)) {
             cleanedDocuments[key] = value;
           } else {
-            console.log(`Removing invalid document reference ${key}:`, value);
+            (`Removing invalid document reference ${key}:`, value);
             hasInvalidDocs = true;
           }
         }
       });
-      
+
       if (hasInvalidDocs) {
         user.userDetails.documents = cleanedDocuments;
         await user.userDetails.save();
-        console.log('Cleaned up invalid document references');
+        ('Cleaned up invalid document references');
       }
     }
 
     // Update user formStatus to "underReview" when HR edits the form
-    user.formStatus = 'underReview';
+    if (user.formStatus !== 'approved') {
+      user.formStatus = 'underReview';
+    }
     await user.save();
-    console.log('User formStatus updated to underReview');
+    ('User formStatus updated to underReview');                         
 
     // Populate the updated userDetails for response
     await user.populate('userDetails');
-    
+
     res.json({ status: true, data: user, message: "User CIF form updated successfully and status changed to under review." });
   } catch (error) {
     console.error('Error in updateUserCifForm controller:', error);
@@ -613,6 +710,67 @@ const updateUserCifForm = async (req, res) => {
       .json({ message: 'An unexpected server error occurred.' });
   }
 };
+
+// Upload profile photo
+const uploadProfilePhoto = catchAsync(async (req, res) => {
+  try {
+    ('=== uploadProfilePhoto START ===');
+    ('User ID:', req.params.userId);
+    ('File:', req.file ? 'Present' : 'Missing');
+
+    const { userId } = req.params;
+
+    // Validate user exists
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Check if file is provided
+    if (!req.file) {
+      return res.status(400).json({ message: "No photo file provided" });
+    }
+
+    // Validate file type
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+    if (!allowedTypes.includes(req.file.mimetype)) {
+      return res.status(400).json({ message: "Invalid file type. Only JPEG, PNG files are allowed" });
+    }
+
+    // Upload to Azure
+    ('Uploading to Azure...');
+    const relativePath = await uploadToAzure(req.file.buffer, req.file.originalname, 'hrms-profile-photos/');
+    ('File uploaded to:', relativePath);
+
+    ('Relative path:', relativePath);
+
+    // Update user profile photo with relative path only
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { profilePhoto: relativePath },
+      { new: true }
+    ).select('-password');
+
+    ('Profile photo updated successfully');
+    ('Saved profilePhoto value:', updatedUser.profilePhoto);
+
+    // Convert to full URL for response only
+    const transformedPaths = transformDocumentPaths({ profilePhoto: relativePath });
+    const fullPhotoUrl = transformedPaths.profilePhoto;
+
+    res.status(200).json({
+      message: 'Profile photo uploaded successfully',
+      user: updatedUser,
+      photoUrl: fullPhotoUrl
+    });
+  } catch (error) {
+    console.error('Error uploading profile photo:', error);
+    res.status(500).json({
+      message: 'Failed to upload profile photo',
+      error: error.message
+    });
+  }
+});
 
 module.exports = {
   createUser,
@@ -629,6 +787,10 @@ module.exports = {
   getUserByTlId,
   approveUser,
   updateUserCifForm,
+  requestSectionApproval,
+  getSectionApprovalStatus,
+  sectionApprovalByToken,
+  uploadProfilePhoto,
 };
 
 // --- Utility: catchAsync (Place in src/utility/catchAsync.js) ---

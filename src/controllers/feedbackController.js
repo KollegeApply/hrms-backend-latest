@@ -9,9 +9,12 @@ const { IT_EMAIL, HR_EMAIL, getTeamEmailConfig } = require('../utility/constants
 const feedbackModel = require('../models/feedbackModel');
 
 const createFeedback = catchAsync(async (req, res) => {
-  const data = req?.body?.data;
+  // Handle both formats: { data: { feedback: ... } } and { feedback: ... }
+  const data = req?.body?.data || req.body;
   const team = req.user.team;
+  
   const validateData = await feedbackValidator.createFeedbackValidator.validateAsync(data);
+  
   const feedback = await feedbackService.createFeedback(validateData, req.user);
 
   if (!feedback) {
@@ -28,32 +31,68 @@ const createFeedback = catchAsync(async (req, res) => {
         throw new Error('Users not found');
       }
 
-      const emailSubject = `Feedback Notification - ${givenByUser.firstName} ${givenByUser.lastName} to ${givenToUser.firstName} ${givenToUser.lastName}`;
-
-      const emailMessage = Helper.getFeedbackEmail({
-        givenByUser,
-        givenToUser,
-        dashboardUrl: process.env.HRMS_FRONTEND_URL,
-        feedbackId: feedback._id,
-        team,
-      });
-
       const configEmails = getTeamEmailConfig(team);
 
-      const receiverEmails = [givenToUser.email];
-      const ccEmails = [configEmails?.HR_EMAIL];
+      // 🎯 EMAIL FLOW BASED ON APPROVAL STATUS
+      if (feedback.approvalStatus === 'pending_tl_approval') {
+        // STL → Employee feedback: Email to Employee's TL for approval (NO CC)
+        const employeeTL = await User.findById(givenToUser.teamLeadId);
+        
+        if (employeeTL) {
+          const emailSubject = `STL Feedback Pending Your Approval - ${givenByUser.firstName} ${givenByUser.lastName} to ${givenToUser.firstName} ${givenToUser.lastName}`;
+          
+          const emailMessage = Helper.getSTLApprovalEmail({
+            stlUser: givenByUser,
+            employee: givenToUser,
+            tlUser: employeeTL,
+            dashboardUrl: process.env.HRMS_FRONTEND_URL,
+            feedbackId: feedback._id,
+            team,
+          });
 
-      Helper.sendEmail({
-        receiverEmails,
-        cc: ccEmails,
-        subject: emailSubject,
-        message: emailMessage,
-        fromHR: false,
-        fromIT: false,
-        team,
-      });
+          const receiverEmails = [employeeTL.email];
+          // NO CC for approval request - only TL gets the email
+
+          Helper.sendEmail({
+            receiverEmails,
+            subject: emailSubject,
+            message: emailMessage,
+            fromHR: false,
+            fromIT: false,
+            team,
+          });
+
+          (`📧 STL approval email sent to TL only: ${employeeTL.email}`);
+        }
+      } else {
+        // Direct feedback: Email to employee immediately
+        const emailSubject = `New Feedback Received - ${givenByUser.firstName} ${givenByUser.lastName}`;
+
+        const emailMessage = Helper.getFeedbackEmail({
+          givenByUser,
+          givenToUser,
+          dashboardUrl: process.env.HRMS_FRONTEND_URL,
+          feedbackId: feedback._id,
+          team,
+        });
+
+        const receiverEmails = [givenToUser.email];
+        const ccEmails = [configEmails?.HR_EMAIL];
+
+        Helper.sendEmail({
+          receiverEmails,
+          cc: ccEmails,
+          subject: emailSubject,
+          message: emailMessage,
+          fromHR: false,
+          fromIT: false,
+          team,
+        });
+
+        (`📧 Direct feedback email sent to employee: ${givenToUser.email}`);
+      }
     } catch (error) {
-      console.error('Error sending create feedback email:', error);
+      console.error('Error sending feedback email:', error);
     }
   }
   res.status(201).json({ success: true, data: feedback });
@@ -61,13 +100,190 @@ const createFeedback = catchAsync(async (req, res) => {
 )
 
 const getAllFeedbacks = catchAsync(async (req, res) => {
-  const { id: userId, role: userRole, team:userTeam } = req.user;
+  const { id: userId, role: userRole, team: userTeam } = req.user;
+  
+  // Extract filter parameters from query
+  const filters = {
+    department: req.query.department,
+    periodFrom: req.query.periodFrom,
+    periodTo: req.query.periodTo,
+    page: req.query.page,
+    limit: req.query.limit,
+    search: req.query.search
+  };
 
-  const feedbacks = await feedbackService.getAllFeedbacks(userId, userRole, userTeam);
+  const result = await feedbackService.getAllFeedbacks(userId, userRole, userTeam, filters);
 
   res.status(200).json({
     success: true,
-    data: feedbacks,
+    data: result.feedbacks,
+    pagination: result.pagination
+  });
+});
+
+// 🎯 TL Approve/Edit STL Feedback
+const approveFeedbackByTL = catchAsync(async (req, res) => {
+  const { feedbackId } = req.params;
+  const { action, editedFeedback, editedRating, comments } = req.body;
+  const tlUserId = req.user.id;
+
+  // Validate TL role
+  if (req.user.role !== 'teamlead') {
+    return res.status(httpStatus.FORBIDDEN).json({
+      success: false,
+      message: 'Only Team Leads can approve STL feedback'
+    });
+  }
+
+  const approvalData = {
+    action, // 'approve' or 'reject'
+    editedFeedback,
+    editedRating,
+    comments
+  };
+
+  const updatedFeedback = await feedbackService.approveFeedbackByTL(
+    feedbackId,
+    tlUserId,
+    approvalData
+  );
+
+  // 📧 Send email notification after TL approval/rejection
+  ('📧 EMAIL CONDITIONS CHECK:', {
+    hasHrmsFrontendUrl: !!process.env.HRMS_FRONTEND_URL,
+    frontendUrl: process.env.HRMS_FRONTEND_URL,
+    action,
+    feedbackId: updatedFeedback._id
+  });
+
+  if (process.env.HRMS_FRONTEND_URL) {
+    try {
+      const team = req.user.team;
+      ('📧 Fetching users for email notification...');
+      
+      const [employee, stlUser, tlUser] = await Promise.all([
+        User.findById(updatedFeedback.givenTo),
+        User.findById(updatedFeedback.givenBy),
+        User.findById(tlUserId)
+      ]);
+
+      ('📧 Users fetched:', {
+        employee: employee ? `${employee.firstName} ${employee.lastName}` : 'Not found',
+        stlUser: stlUser ? `${stlUser.firstName} ${stlUser.lastName}` : 'Not found',
+        tlUser: tlUser ? `${tlUser.firstName} ${tlUser.lastName}` : 'Not found'
+      });
+
+      if (employee && stlUser && tlUser) {
+        const configEmails = getTeamEmailConfig(team);
+        
+        ('📧 EMAIL DEBUG:', {
+          action,
+          employeeEmail: employee.email,
+          stlEmail: stlUser.email,
+          tlEmail: tlUser.email,
+          hrEmail: configEmails?.HR_EMAIL,
+          approvalStatus: updatedFeedback.approvalStatus
+        });
+
+        if (action === 'approve') {
+          // Send email to employee (feedback is now approved)
+          const emailSubject = `Feedback Approved - ${stlUser.firstName} ${stlUser.lastName}`;
+          
+          const emailMessage = Helper.getFeedbackApprovedEmail({
+            stlUser,
+            employee,
+            tlUser,
+            feedback: updatedFeedback,
+            dashboardUrl: process.env.HRMS_FRONTEND_URL,
+            feedbackId: updatedFeedback._id,
+            team,
+          });
+
+          const receiverEmails = [employee.email];
+          const ccEmails = [configEmails?.HR_EMAIL];
+
+          Helper.sendEmail({
+            receiverEmails,
+            cc: ccEmails,
+            subject: emailSubject,
+            message: emailMessage,
+            fromHR: false,
+            fromIT: false,
+            team,
+          });
+
+          (`📧 Feedback approved email sent to employee: ${employee.email}`);
+        } else if (action === 'reject') {
+          // Send email to STL (feedback was rejected) - NO CC
+          const emailSubject = `Feedback Rejected - ${employee.firstName} ${employee.lastName}`;
+          
+          const emailMessage = Helper.getFeedbackRejectedEmail({
+            stlUser,
+            employee,
+            tlUser,
+            comments: comments || 'No reason provided',
+            dashboardUrl: process.env.HRMS_FRONTEND_URL,
+            team,
+          });
+
+          const receiverEmails = [stlUser.email];
+          // NO CC for rejection - only STL gets the email
+
+          Helper.sendEmail({
+            receiverEmails,
+            subject: emailSubject,
+            message: emailMessage,
+            fromHR: false,
+            fromIT: false,
+            team,
+          });
+
+          (`📧 Feedback rejected email sent to STL only: ${stlUser.email}`);
+        }
+      }
+    } catch (error) {
+      console.error('Error sending TL approval email:', error);
+    }
+  }
+
+  res.status(httpStatus.OK).json({
+    success: true,
+    data: updatedFeedback,
+    message: `Feedback ${action}d successfully`
+  });
+});
+
+// Get pending STL feedback for TL approval
+const getPendingSTLFeedback = catchAsync(async (req, res) => {
+  const tlUserId = req.user.id;
+
+  if (req.user.role !== 'teamlead') {
+    return res.status(httpStatus.FORBIDDEN).json({
+      success: false,
+      message: 'Only Team Leads can view pending STL feedback'
+    });
+  }
+
+  // Find employees under this TL
+  const employees = await User.find({
+    teamLeadId: tlUserId,
+    role: { $in: ['employee', 'intern'] }
+  }).select('_id');
+
+  const employeeIds = employees.map(user => user._id);
+
+  // Find pending STL feedback given to these employees
+  const pendingFeedback = await feedbackModel.find({
+    givenTo: { $in: employeeIds }, // STL feedback TO employees under this TL
+    approvalStatus: 'pending_tl_approval',
+    'givenBy': { $exists: true } // Ensure givenBy exists
+  }).populate('givenBy givenTo', 'firstName lastName email role employeeId')
+    .sort({ createdAt: -1 });
+
+  res.status(httpStatus.OK).json({
+    success: true,
+    data: pendingFeedback,
+    message: 'Pending STL feedback retrieved successfully'
   });
 });
 
@@ -300,6 +516,31 @@ const updateFeedback = catchAsync(async (req, res) => {
   });
 });
 
+const getDepartments = catchAsync(async (req, res) => {
+  const Department = require('../models/departmentModel');
+  
+  const departments = await Department.find({ isDeleted: false })
+    .select('_id name')
+    .sort({ name: 1 });
+
+  res.status(200).json({
+    success: true,
+    data: departments,
+  });
+});
+
+const getFeedbackTrends = catchAsync(async (req, res) => {
+  const { id: userId, role: userRole } = req.user;
+  const feedbackId = req.params.id;
+
+  const trends = await feedbackService.getFeedbackTrends(feedbackId, userId, userRole);
+
+  res.status(200).json({
+    success: true,
+    data: trends,
+  });
+});
+
 
 module.exports = {
   createFeedback,
@@ -309,4 +550,8 @@ module.exports = {
   requestEdit,
   updateEditRequestStatus,
   updateFeedback,
+  getDepartments,
+  getFeedbackTrends,
+  approveFeedbackByTL,
+  getPendingSTLFeedback,
 }

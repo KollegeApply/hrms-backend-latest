@@ -20,6 +20,7 @@
   "homepage": "https://github.com/SportsduniaTech/hrms-backend#readme",
   "dependencies": {
     "@azure/storage-blob": "^12.28.0",
+    "@google/generative-ai": "^0.21.0",
     "axios": "^1.9.0",
     "axios-cache-interceptor": "^1.8.0",
     "bcrypt": "^5.1.1",
@@ -30,6 +31,7 @@
     "csvtojson": "^2.0.10",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
+    "dayjs": "^1.11.18",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "helmet": "^8.1.0",

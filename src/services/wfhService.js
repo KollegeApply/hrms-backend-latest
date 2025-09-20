@@ -146,9 +146,9 @@ class wfhService {
           oldWfh?.date,
           'wfh'
         );
-        // console.log(markWFH);
+        // (markWFH);
       } catch (err) {
-        console.log(err);
+        (err);
       }
     } else if (wfhData?.status === 'rejected') {
       oldWfh.rejectedBy = wfhData?.edittorId;

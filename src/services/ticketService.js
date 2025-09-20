@@ -138,7 +138,7 @@ async getAllTickets(currentUser, query = {}, team) {
   async updateTicket(id, updatedData, currentUser) {
     const allowedStatuses = ['resolved', 'rejected', 'in_progress'];
 
-    const { status } = updatedData;
+    const { status, actionReason } = updatedData;
 
     if (!allowedStatuses.includes(status)) {
       throw new ApiError(httpStatus.BAD_REQUEST, "Invalid status update");
@@ -151,6 +151,9 @@ async getAllTickets(currentUser, query = {}, team) {
     if (status === 'resolved' || status === 'rejected') {
       updateFields.resolvedBy = currentUser?.id;
       updateFields.resolvedAt = new Date();
+      if (actionReason) {
+        updateFields.actionReason = actionReason;
+      }
     }
 
     const updatedTicket = await Ticket.findByIdAndUpdate(

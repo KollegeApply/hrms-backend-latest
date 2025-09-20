@@ -18,6 +18,7 @@ class AssetsService {
       serialNumber,
       specifications,
       status = 'assigned',
+      returnRequestDate,
       assignedBy,
       laptopType,
     } = assignmentData;
@@ -57,6 +58,7 @@ class AssetsService {
       assignee,
       serialNumber,
       specifications,
+      returnRequestDate,
       status: status,
       assignedBy,
       laptopType, 
@@ -87,7 +89,7 @@ async fetchAssignedAssets(page, limit, search, team) {
     const populateOptions = [
       {
         path: 'assignee',
-        select: 'firstName lastName employeeId email',
+        select: 'firstName lastName employeeId email department',
       },
       {
         path: 'assignedBy',
@@ -200,10 +202,15 @@ async fetchAssignedAssets(page, limit, search, team) {
     return updatedAssignment;
   }
 
-  async rejectAsset(assetId, userId) {
+  async rejectAsset(assetId, userId, rejectionReason = '') {
+    const updateData = { 
+      status: 'not_acknowledged',
+      ...(rejectionReason && { rejectionReason })
+    };
+    
     const updatedAssignment = await Assets.findOneAndUpdate(
       { _id: assetId, assignee: userId },
-      { $set: { status: 'not_acknowledged' } },
+      { $set: updateData },
       { new: true }
     );
     if (!updatedAssignment) {
@@ -211,16 +218,17 @@ async fetchAssignedAssets(page, limit, search, team) {
       throw new Error('Failed to reject asset');
     }
     logger.info(
-      `Asset ${assetId} not acknowledged successfully:`,
+      `Asset ${assetId} not acknowledged successfully with reason: ${rejectionReason || 'No reason provided'}`,
       updatedAssignment
     );
     return updatedAssignment;
   }
 
   async returnAsset(assetId, userId) {
+    const returnRequestDate = new Date();
     const updatedAssignment = await Assets.findOneAndUpdate(
       { _id: assetId, assignee: userId },
-      { $set: { status: 'return_requested' } },
+      { $set: { status: 'return_requested', returnRequestDate: returnRequestDate } },
       { new: true }
     );
     if (!updatedAssignment) {
@@ -269,6 +277,7 @@ async fetchAssignedAssets(page, limit, search, team) {
           status: 1,
           assignedBy: 1,
           assignedDate: 1,
+          returnRequestDate: 1,
           createdAt: 1,
           updatedAt: 1,
           assignee: {
@@ -301,7 +310,16 @@ async fetchAssignedAssets(page, limit, search, team) {
         requestId,
         { status: newStatus },
         { new: true }
-      ).populate('assignee', 'firstName lastName employeeId email');
+      )
+        .populate({
+          path: 'assignee',
+          select: 'firstName lastName employeeId email jobTitle department teamLeadId subTeamLeadId',
+          populate: [
+            { path: 'department', select: 'name' },
+            { path: 'teamLeadId', select: 'firstName lastName' },
+            { path: 'subTeamLeadId', select: 'firstName lastName' },
+          ],
+        });
 
       if (!request) {
         logger.error(`Asset request not found: ${requestId}`);
@@ -400,6 +418,66 @@ async getPCDepartmentSummary(team) {
       logger.error('Error fetching PC department summary:', error);
       throw error;
     }
+  }
+
+  /**
+   * Fetches assigned assets for team members under a specific team lead
+   * @param {string} teamLeadId - Team lead user ID
+   * @param {number} page - Page number
+   * @param {number} limit - Number of items per page
+   * @param {string} search - Search term
+   * @returns {Promise<object>} - Paginated assigned assets for team members
+   */
+  async fetchTeamAssetsByTeamLead(teamLeadId, page, limit, search) {
+    const query = {};
+
+    if (search) {
+      query.$text = { $search: search };
+    }
+
+    // First, get all users who have this teamLeadId
+    const teamMembers = await User.find({ teamLeadId: teamLeadId }).select('_id');
+    const teamMemberIds = teamMembers.map(member => member._id);
+
+    if (teamMemberIds.length === 0) {
+      // Return empty result if no team members found
+      return {
+        data: [],
+        pagination: {
+          currentPage: page,
+          totalPages: 0,
+          totalItems: 0,
+          itemsPerPage: limit,
+        },
+      };
+    }
+
+    // Find assets assigned to team members
+    query.assignee = { $in: teamMemberIds };
+
+    const populateOptions = [
+      {
+        path: 'assignee',
+        select: 'firstName lastName employeeId email department teamLeadId',
+      },
+      {
+        path: 'assignedBy',
+        select: 'firstName lastName employeeId email team'
+      }
+    ];
+
+    const paginationResult = await paginate(
+      Assets,
+      query,
+      page,
+      limit,
+      { assignedDate: -1 },
+      null,
+      populateOptions
+    );
+
+    logger.info(`Team assets fetched successfully for team lead ${teamLeadId}:`, paginationResult);
+    return paginationResult;
   }
 }
 

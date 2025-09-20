@@ -5,15 +5,19 @@ const {
 } = require('../middleware/authMiddleware');
 const feedbackController = require("../controllers/feedbackController");
 const { USER_ROLES } = require('../utility/constants');
+const AIPreprocessingMiddleware = require('../middleware/aiPreprocessingMiddleware');
 
 const router = express.Router();
 
-router.post("/", authenticateUser, feedbackController.createFeedback);
+router.post("/", authenticateUser, AIPreprocessingMiddleware.preprocessFeedback, feedbackController.createFeedback);
 
 router.get("/", authenticateUser, feedbackController.getAllFeedbacks);
 
+router.get("/departments", authenticateUser, feedbackController.getDepartments);
 
 router.get("/:id", authenticateUser, feedbackController.getFeedbackById);
+
+router.get("/:id/trends", authenticateUser, feedbackController.getFeedbackTrends);
 
 router.put("/:id/concern", authenticateUser, feedbackController.raiseConcern);
 
@@ -22,5 +26,10 @@ router.post('/:id/request-edit', authenticateUser, feedbackController.requestEdi
 router.patch("/:id/request-status", authenticateUser, authorizeRole([USER_ROLES?.HR, USER_ROLES?.ADMIN, USER_ROLES?.SUBADMIN]),feedbackController.updateEditRequestStatus);
 
 router.patch('/:id', authenticateUser, feedbackController.updateFeedback);
+
+// 🎯 TL Approval Routes for STL Feedback
+router.get('/pending/stl-approval', authenticateUser, authorizeRole(['teamlead']), feedbackController.getPendingSTLFeedback);
+
+router.post('/:feedbackId/tl-approval', authenticateUser, authorizeRole(['teamlead']), feedbackController.approveFeedbackByTL);
 
 module.exports = router;

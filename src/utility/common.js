@@ -271,6 +271,19 @@ const transformDocumentPaths = (documents) => {
   return documentsWithUrls;
 };
 
+const isWeeklyOff = (date) => {
+  const day = date.getDay(); // 0 = Sunday, 6 = Saturday
+  if (day === 0) return true; // Sunday is always off
+
+  if (day === 6) { // Saturday
+    // Count which Saturday of the month it is
+    const satCount = Math.floor((date.getDate() + 6) / 7);
+    // 2nd and 4th Saturdays are off
+    return satCount === 2 || satCount === 4;
+  }
+
+  return false;
+}
 
 
 
@@ -285,4 +298,5 @@ module.exports = {
   validateCIFToken,
   cleanEmptyFields,
   transformDocumentPaths,
+  isWeeklyOff,
 };

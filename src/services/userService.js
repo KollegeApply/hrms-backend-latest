@@ -80,13 +80,35 @@ class UserService {
     // Search filter
     const searchFilters = [];
     if (typeof search === 'string' && search.trim().length > 0) {
-      const regex = new RegExp(search.trim(), 'i');
+      const searchTerm = search.trim();
+      const regex = new RegExp(searchTerm, 'i');
+      
       searchFilters.push(
         { firstName: regex },
         { lastName: regex },
         { email: regex },
         { employeeId: regex }
       );
+      
+      // Handle full name search (firstName + lastName combinations)
+      const searchWords = searchTerm.split(/\s+/).filter(word => word.length > 0);
+      if (searchWords.length >= 2) {
+        // Search for "firstName lastName" combination
+        searchFilters.push({
+          $and: [
+            { firstName: new RegExp(searchWords[0], 'i') },
+            { lastName: new RegExp(searchWords[1], 'i') }
+          ]
+        });
+        
+        // Search for "lastName firstName" combination (reverse order)
+        searchFilters.push({
+          $and: [
+            { firstName: new RegExp(searchWords[1], 'i') },
+            { lastName: new RegExp(searchWords[0], 'i') }
+          ]
+        });
+      }
     }
 
     if (isAttendanceLog) {
@@ -485,7 +507,8 @@ async getUserById(id) {
 
           let carryForwarded = 0;
           if (mapping.leaveTypeId.code === 'ANNUAL') {
-            carryForwarded = unusedProbation > 0 ? unusedProbation - 1 : 0;
+            // Carry forward unused probation leave without penalty
+            carryForwarded = unusedProbation > 0 ? unusedProbation : 0;
           }
 
           const accrued = accrualType === 'monthly' ? accrualPerMonth : quota;
@@ -518,19 +541,29 @@ async getUserById(id) {
         // Delete existing onroll balances
         await employeeLeaveBalanceModel.deleteMany({ userId: user._id });
 
-        // Create 1 leave type for probation
-        const probationMapping = await leavePolicyMappingModel.findOne({
+        // Create balance records for all probation policy mappings (including LOP)
+        const probationMappings = await leavePolicyMappingModel.find({
           leavePolicyId: probationPolicy._id,
+          isDeleted: false,
         });
 
-        await employeeLeaveBalanceModel.create({
-          userId: user._id,
-          leaveTypeId: probationMapping.leaveTypeId,
-          accrued: probationMapping.accrualPerMonth,
-          used: 0,
-          carryForwarded: 0,
-          total: probationMapping.accrualPerMonth,
-        });
+        for (const mapping of probationMappings) {
+          let accrued = 0;
+          if (mapping.accrualType === 'monthly') {
+            accrued = mapping.accrualPerMonth;
+          } else if (mapping.accrualType === 'yearly') {
+            accrued = mapping.quota;
+          }
+
+          await employeeLeaveBalanceModel.create({
+            userId: user._id,
+            leaveTypeId: mapping.leaveTypeId,
+            accrued,
+            used: 0,
+            carryForwarded: 0,
+            total: accrued || mapping.quota,
+          });
+        }
 
         updateData.leavePolicyId = probationPolicy._id;
       }
@@ -1123,97 +1156,92 @@ async getUserById(id) {
         status: { $in: ['probation', 'onroll'] },
         team: userTeam,
       };
-      const commonSelectFields = 'id firstName lastName email role employeeId';
+      const commonSelectFields = '_id firstName lastName email role employeeId department';
 
-      if (
-        userRole === 'admin' ||
-        userRole === 'subadmin' ||
-        userRole === 'hr'
-      ) {
-        user = await User.find(query).select(commonSelectFields);
-      } else if (userRole === 'teamlead' || userRole === 'subteamlead') {
-        const allowedRoles = ['admin', 'subadmin', 'hr', 'IT'];
-
-        const currentUser = await User.findById(userId).select(
-          'teamLeadId subTeamLeadId'
-        );
-        const managersToInclude = [];
-        if (currentUser && currentUser.teamLeadId) {
-          managersToInclude.push(currentUser.teamLeadId);
-        }
-        if (currentUser && currentUser.subTeamLeadId) {
-          managersToInclude.push(currentUser.subTeamLeadId);
-        }
-        const uniqueManagersToInclude = [
-          ...new Set(managersToInclude.filter(Boolean)),
-        ];
-
+      // 🎯 NEW FEEDBACK HIERARCHY RULES:
+      if (userRole === 'admin' || userRole === 'subadmin') {
+        // Admin/Subadmin → Anyone (HR, TL, STL, IT, Employee, Intern) - Direct, no approval
+        user = await User.find(query).select(commonSelectFields).populate('department', 'name');
+      } else if (userRole === 'hr') {
+        // HR → STL, TL, Employee, Intern, IT - Direct, no approval
+        user = await User.find({
+          ...query,
+          role: { $in: ['subteamlead', 'teamlead', 'employee', 'intern', 'IT'] },
+        }).select(commonSelectFields).populate('department', 'name');
+      } else if (userRole === 'teamlead') {
+        // TL → Self team + HR (only their team members + HR)
         user = await User.find({
           $and: [
             query,
             {
               $or: [
-                { role: { $in: allowedRoles } },
-                userRole === 'teamlead'
-                  ? { teamLeadId: userId }
-                  : { subTeamLeadId: userId },
-                { _id: { $in: uniqueManagersToInclude } },
+                { teamLeadId: userId }, // Direct team members under this TL
+                { subTeamLeadId: userId }, // Sub team members under this TL  
+                { role: 'hr' }, // HR members
               ],
             },
           ],
-        }).select(commonSelectFields);
-      } else if (userRole === 'employee') {
-        const currentUser = await User.findById(userId).select(
-          'teamLeadId subTeamLeadId'
-        );
+        }).select(commonSelectFields).populate('department', 'name');
+      } else if (userRole === 'subteamlead') {
+        // STL → Self team + TL (only their team members + their TL, exclude Admin/Subadmin)
+        const currentUser = await User.findById(userId).select('teamLeadId');
+        user = await User.find({
+          $and: [
+            query,
+            {
+              role: { $nin: ['admin', 'subadmin'] }, // Exclude Admin/Subadmin
+            },
+            {
+              $or: [
+                { subTeamLeadId: userId }, // Direct team members under this STL
+                { _id: currentUser.teamLeadId }, // Their TL
+              ],
+            },
+          ],
+        }).select(commonSelectFields).populate('department', 'name');
+        
+        // Debug STL filtering
+        if (userRole === 'subteamlead') {
+          logger.info('🔍 STL FILTERING DEBUG', {
+            stlUserId: userId,
+            stlTeamLeadId: currentUser.teamLeadId,
+            foundUsersCount: user.length,
+            foundUserRoles: user.map(u => ({ id: u._id, role: u.role, name: u.firstName + ' ' + u.lastName }))
+          });
+        }
+        
+      } else if (userRole === 'employee' || userRole === 'intern') {
+        // Employee/Intern → TL + STL (their managers)
+        const currentUser = await User.findById(userId).select('teamLeadId subTeamLeadId');
         const allowedUserIds = [
           currentUser.teamLeadId,
           currentUser.subTeamLeadId,
         ].filter(Boolean);
 
-        const allowedRoles = ['admin', 'subadmin', 'hr', 'IT'];
-
         user = await User.find({
           $and: [
             query,
             {
-              $or: [
-                { _id: { $in: allowedUserIds } },
-                { role: { $in: allowedRoles } },
-              ],
+              _id: { $in: allowedUserIds }, // Their TL and STL
             },
           ],
-        }).select(commonSelectFields);
+        }).select(commonSelectFields).populate('department', 'name');
       } else if (userRole === 'IT') {
-        const allowedRoles = ['hr', 'admin', 'subadmin'];
-
-        const currentUser = await User.findById(userId).select(
-          'teamLeadId subTeamLeadId'
-        );
-        const managersToInclude = [];
-        if (currentUser && currentUser.teamLeadId) {
-          managersToInclude.push(currentUser.teamLeadId);
-        }
-        if (currentUser && currentUser.subTeamLeadId) {
-          managersToInclude.push(currentUser.subTeamLeadId);
-        }
-        const uniqueManagersToInclude = [
-          ...new Set(managersToInclude.filter(Boolean)),
-        ];
+        // IT → TL + STL (same as employee/intern)
+        const currentUser = await User.findById(userId).select('teamLeadId subTeamLeadId');
+        const allowedUserIds = [
+          currentUser.teamLeadId,
+          currentUser.subTeamLeadId,
+        ].filter(Boolean);
 
         user = await User.find({
           $and: [
             query,
             {
-              $or: [
-                { role: { $in: allowedRoles } },
-                { teamLeadId: userId },
-                { subTeamLeadId: userId },
-                { _id: { $in: uniqueManagersToInclude } },
-              ],
+              _id: { $in: allowedUserIds }, // Their TL and STL
             },
           ],
-        }).select(commonSelectFields);
+        }).select(commonSelectFields).populate('department', 'name');
       } else {
         user = [];
       }

@@ -34,6 +34,10 @@ const ticketSchema = new mongoose.Schema({
     enum: ['pending', 'in_progress', 'resolved', 'rejected'],
     default: 'pending',
   },
+  actionReason: {
+    type: String,
+    default: '',
+  },
   resolvedAt: {
     type: Date,
   },
