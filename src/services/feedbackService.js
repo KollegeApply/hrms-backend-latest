@@ -380,17 +380,34 @@ class FeedbacksService {
             ]
         };
 
-    // Special case: TL can see all feedback including pending approval
+    // Special case: TL can see focused team feedback
     if (userRole === 'teamlead') {
+        const directReports = await User.find({ teamLeadId: userId }, '_id');
+        const stlUsers = await User.find({ 
+            teamLeadId: userId, 
+            role: 'subteamlead' 
+        }, '_id');
+        
+        const directReportIds = directReports.map(user => user._id);
+        const stlIds = stlUsers.map(user => user._id);
+        
         baseFilter = {
             $or: [
-                { givenBy: userId },          
-                { givenTo: userId }, // TL can see all feedback given to them
-                { givenBy: { $in: teamUserIds } },
+                { givenBy: userId },           // Feedback given by TL
+                { givenTo: userId },           // Feedback received by TL
+                // STL ↔ Employee within team hierarchy only
+                {
+                    givenBy: { $in: stlIds },
+                    givenTo: { $in: directReportIds }
+                },
+                {
+                    givenBy: { $in: directReportIds },
+                    givenTo: { $in: stlIds }
+                },
                 // TL can see STL feedback pending their approval
                 { 
                     approvalStatus: 'pending_tl_approval',
-                    givenBy: { $in: teamUserIds } // From their team STLs
+                    givenBy: { $in: stlIds } // From their team STLs only
                 }
             ]
         };
