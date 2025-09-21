@@ -9,6 +9,7 @@ const {
   SYSTEM_LAUNCH_YEAR,
   SYSTEM_START_MONTH,
 } = require('../utility/constants');
+const { isWeeklyOff } = require('../utility/common');
 const employeeLeaveBalanceModel = require('../models/employeeLeaveBalanceModel');
 const LeavePolicyMapping = require('../models/leavePolicyMappingModel');
 const leaveApplicationModel = require('../models/leaveApplicationModel');
@@ -37,7 +38,7 @@ class StatsService {
 
       // 1. Get Holidays & Working Days
       const holidays = await Holiday.find({
-        date: { $gte: startOfMonth, $lte: currentDate },
+        date: { $gte: startOfMonth, $lte: endOfMonth },
       });
 
       const sundaysCount = this.getSundaysInMonth(currentMonth, currentYear);
@@ -164,14 +165,27 @@ class StatsService {
     for (let day = 1; day <= dayOfMonth; day++) {
       const date = new Date(year, month, day);
       const isHoliday = holidayDates.includes(date.toISOString().split('T')[0]);
-      if (date.getDay() !== 0 && !isHoliday) count++;
+      const isWeekOff = isWeeklyOff(date);
+      
+      // Count as working day if it's not a holiday and not a weekoff
+      if (!isHoliday && !isWeekOff) count++;
     }
     return count;
   }
 
   async getTotalWorkingDays(year, month, holidays, sundaysCount) {
     const daysInMonth = new Date(year, month + 1, 0).getDate();
-    return daysInMonth - holidays.length - sundaysCount;
+    let weekOffCount = 0;
+    
+    // Count weekoffs (Sundays + 2nd & 4th Saturdays only)
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(year, month, day);
+      if (isWeeklyOff(date)) {
+        weekOffCount++;
+      }
+    }
+    
+    return daysInMonth - holidays.length - weekOffCount;
   }
 
   async calculateLossOfPay(userId, year, month, workingDaysElapsed, holidays) {
@@ -215,11 +229,12 @@ class StatsService {
       const date = new Date(year, month, day);
       const dayStr = date.toISOString().split('T')[0];
 
-      const isWeekend = date.getDay() === 0; // Sunday
+      const isWeekOff = isWeeklyOff(date);
       const isHoliday = holidayDates.includes(dayStr);
       const hasAttendance = attendanceDates.has(dayStr);
 
-      if (!isWeekend && !isHoliday && !hasAttendance) {
+      // Only count as LOP if it's a working day (not weekoff/holiday) and no attendance
+      if (!isWeekOff && !isHoliday && !hasAttendance) {
         lopDays += 1;
       }
     }
@@ -393,9 +408,9 @@ class StatsService {
     };
   }
 
-  // Helper to calculate working days between two dates excluding Sundays and holidays
+  // Helper to calculate working days between two dates excluding weekoffs and holidays
   async getWorkingDaysUntilDate(toDate, holidays = [], startDate = null) {
-    // Default startDate: Jan 1 of toDate’s year
+    // Default startDate: Jan 1 of toDate's year
     const start = startDate || new Date(toDate.getFullYear(), 0, 1);
     let workingDays = 0;
 
@@ -406,9 +421,11 @@ class StatsService {
       date <= toDate;
       date.setDate(date.getDate() + 1)
     ) {
-      const isSunday = date.getDay() === 0;
+      const isWeekOff = isWeeklyOff(date);
       const isHoliday = holidayDates.includes(date.toDateString());
-      if (!isSunday && !isHoliday) workingDays++;
+      
+      // Count as working day if it's not a weekoff and not a holiday
+      if (!isWeekOff && !isHoliday) workingDays++;
     }
 
     return workingDays;
@@ -426,7 +443,21 @@ class StatsService {
   async getYearlyWorkingDays(year, holidays, sundaysCount) {
     const daysInYear =
       (year % 4 === 0 && year % 100 > 0) || year % 400 == 0 ? 366 : 365;
-    return daysInYear - holidays.length - sundaysCount;
+    
+    let weekOffCount = 0;
+    
+    // Count all weekoffs in the year
+    for (let month = 0; month < 12; month++) {
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      for (let day = 1; day <= daysInMonth; day++) {
+        const date = new Date(year, month, day);
+        if (isWeeklyOff(date)) {
+          weekOffCount++;
+        }
+      }
+    }
+    
+    return daysInYear - holidays.length - weekOffCount;
   }
 }
 

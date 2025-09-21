@@ -35,16 +35,79 @@ function formatDateYMD(date) {
 }
 
 function formatDateDMY(date) {
-    return moment(date).format("DD-MM-YYYY");
+    return moment(date).tz('Asia/Kolkata').format("DD-MM-YYYY");
 }
 
 function formatDateWithDay(date) {
-    return moment(date).format("ddd, DD-MM-YYYY");
+    return moment(date).tz('Asia/Kolkata').format("ddd, DD-MM-YYYY");
 }
 
 
 function formatReadableDate(date) {
     return moment(date).tz('Asia/Kolkata').format('DD MMMM YYYY');
+}
+
+/**
+ * Check if a given date is the 2nd or 4th Saturday of the month (company off days)
+ * @param {Date|moment} date - The date to check
+ * @returns {boolean} - True if it's 2nd or 4th Saturday, false otherwise
+ * 
+ * Examples:
+ * - Month with 4 Saturdays: 2nd and 4th Saturdays are off
+ * - Month with 5 Saturdays: Only 2nd and 4th Saturdays are off (5th Saturday is working day)
+ * - This handles all edge cases including months starting on different days
+ */
+function isAlternateSaturdayOff(date) {
+    const momentDate = moment(date).tz('Asia/Kolkata');
+    
+    // Check if it's Saturday (6 = Saturday in moment.js)
+    if (momentDate.day() !== 6) {
+        return false;
+    }
+    
+    // Get the first day of the month
+    const firstDayOfMonth = momentDate.clone().startOf('month');
+    
+    // Find all Saturdays in the month
+    const saturdays = [];
+    let currentDay = firstDayOfMonth.clone();
+    
+    // Find first Saturday of the month
+    while (currentDay.day() !== 6) {
+        currentDay.add(1, 'day');
+    }
+    
+    // Collect all Saturdays in the month
+    while (currentDay.month() === firstDayOfMonth.month()) {
+        saturdays.push(currentDay.clone());
+        currentDay.add(7, 'days');
+    }
+    
+    // Find which Saturday of the month the given date is
+    const currentSaturday = momentDate.format('YYYY-MM-DD');
+    const saturdayIndex = saturdays.findIndex(sat => sat.format('YYYY-MM-DD') === currentSaturday);
+    
+    // Return true if it's 2nd (index 1) or 4th (index 3) Saturday only
+    // This is alternate Saturday off - only 2nd and 4th Saturdays are off
+    return saturdayIndex === 1 || saturdayIndex === 3;
+}
+
+/**
+ * Helper function to get ordinal suffix (1st, 2nd, 3rd, 4th, etc.)
+ */
+function getSuffix(num) {
+    const j = num % 10;
+    const k = num % 100;
+    if (j === 1 && k !== 11) {
+        return "st";
+    }
+    if (j === 2 && k !== 12) {
+        return "nd";
+    }
+    if (j === 3 && k !== 13) {
+        return "rd";
+    }
+    return "th";
 }
 
 const dailyAttendanceCheck = async () => {
@@ -55,6 +118,25 @@ const dailyAttendanceCheck = async () => {
     const todayDay = moment(todayStartIST).tz('Asia/Kolkata').day();
     if (todayDay === 0) {
         logger.info(`Today (${formatDateYMD(todayStartIST)}) is Sunday. Skipping daily attendance check.`);
+        return;
+    }
+
+    // Check if today is an alternate Saturday off (2nd or 4th Saturday of the month)
+    if (isAlternateSaturdayOff(todayStartIST)) {
+        const momentToday = moment(todayStartIST).tz('Asia/Kolkata');
+        const firstDayOfMonth = momentToday.clone().startOf('month');
+        let saturdayCount = 0;
+        let currentDay = firstDayOfMonth.clone();
+        
+        // Count which Saturday this is
+        while (currentDay.isSameOrBefore(momentToday, 'day')) {
+            if (currentDay.day() === 6) {
+                saturdayCount++;
+            }
+            currentDay.add(1, 'day');
+        }
+        
+        logger.info(`Today (${formatDateYMD(todayStartIST)}) is the ${saturdayCount}${getSuffix(saturdayCount)} Saturday of the month (company off day). Skipping daily attendance check.`);
         return;
     }
 
@@ -325,6 +407,14 @@ const weeklyReport = async () => {
         });
         const holidayDates = new Set(holidays.map(h => formatDateYMD(h.date)));
 
+        // Add alternate Saturday offs to holiday dates for weekly report calculation
+        for (let i = 1; i <= 6; i++) {
+            const currentDay = startMoment.clone().isoWeekday(i);
+            if (currentDay.day() === 6 && isAlternateSaturdayOff(currentDay.toDate())) {
+                holidayDates.add(formatDateYMD(currentDay.toDate()));
+            }
+        }
+
 
         // PROCESS EACH TEAM SEPARATELY 
         for (const [leadId, members] of usersByTeamLead.entries()) {
@@ -362,7 +452,7 @@ const weeklyReport = async () => {
                 if (!data) continue;
 
                 const dateKey = formatDateYMD(record.checkInTime || record.date);
-                const dayName = moment(dateKey).format('ddd'); // Short day name (Mon, Tue, Wed)
+                const dayName = moment(dateKey).tz('Asia/Kolkata').format('ddd'); // Short day name (Mon, Tue, Wed)
 
                 // Handle leave and WFH statuses
                 if (['leave_applied', 'leave_applied_full', 'leave_applied_first_half', 'leave_applied_second_half', 'wfh_applied'].includes(record.status)) {
@@ -410,7 +500,7 @@ const weeklyReport = async () => {
 
                 for (let i = 1; i <= 6; i++) {
                     const currentDay = startMoment.clone().isoWeekday(i);
-                    const dateKey = currentDay.format('YYYY-MM-DD');
+                    const dateKey = currentDay.format('YYYY-MM-DD'); // Already timezone-aware from startMoment
 
                     if (!holidayDates.has(dateKey)) {
                         workingDaysCount++;
@@ -551,6 +641,28 @@ const updateIncompleteAttendance = async () => {
                 status: 'skipped',
                 message: 'Today is Sunday',
                 day: 'Sunday'
+            };
+        }
+
+        // Check if today is an alternate Saturday off (2nd or 4th Saturday of the month)
+        if (isAlternateSaturdayOff(todayStart.toDate())) {
+            const firstDayOfMonth = todayStart.clone().startOf('month');
+            let saturdayCount = 0;
+            let currentDay = firstDayOfMonth.clone();
+            
+            // Count which Saturday this is
+            while (currentDay.isSameOrBefore(todayStart, 'day')) {
+                if (currentDay.day() === 6) {
+                    saturdayCount++;
+                }
+                currentDay.add(1, 'day');
+            }
+            
+            logger.info(`Today (${formatDateYMD(todayStart.toDate())}) is the ${saturdayCount}${getSuffix(saturdayCount)} Saturday of the month (company off day). Skipping incomplete attendance update.`);
+            return {
+                status: 'skipped',
+                message: `Today is the ${saturdayCount}${getSuffix(saturdayCount)} Saturday of the month (company off day)`,
+                day: 'Alternate Saturday Off'
             };
         }
 

@@ -1,11 +1,17 @@
-const axios = require('axios');
+const OpenAI = require('openai');
 const logger = require('../config/logger');
 
 class AIService {
   constructor() {
-    this.geminiApiKey = process.env.GEMINI_API_KEY;
-    this.geminiBaseUrl = process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta';
-    this.enabled = !!this.geminiApiKey;
+    this.openaiApiKey = process.env.OPENAI_API_KEY;
+    this.openaiModel = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+    this.enabled = !!this.openaiApiKey;
+    
+    if (this.enabled) {
+      this.openai = new OpenAI({
+        apiKey: this.openaiApiKey,
+      });
+    }
   }
 
   /**
@@ -16,13 +22,13 @@ class AIService {
    */
   async analyzeText(text, context = 'general') {
     if (!this.enabled) {
-      logger.warn('AI Service is disabled - no Gemini API key provided');
+      logger.warn('AI Service is disabled - no OpenAI API key provided');
       return this.getDefaultAnalysis();
     }
 
     try {
       const prompt = this.buildAnalysisPrompt(text, context);
-      const response = await this.callGeminiAPI(prompt);
+      const response = await this.callOpenAIAPI(prompt);
       return this.parseAnalysisResponse(response);
     } catch (error) {
       logger.error('AI analysis failed:', error);
@@ -97,87 +103,73 @@ class AIService {
   }
 
   /**
-   * Call Gemini API
+   * Call OpenAI API
    */
-  async callGeminiAPI(prompt) {
-    logger.info('Calling Gemini API', { 
-      baseUrl: this.geminiBaseUrl,
-      hasApiKey: !!this.geminiApiKey,
+  async callOpenAIAPI(prompt) {
+    logger.info('Calling OpenAI API', { 
+      model: this.openaiModel,
+      hasApiKey: !!this.openaiApiKey,
       promptLength: prompt.length 
     });
 
     try {
-      const response = await axios.post(
-        `${this.geminiBaseUrl}/models/gemini-1.5-flash-latest:generateContent?key=${this.geminiApiKey}`,
-        {
-          contents: [
-            {
-              parts: [
-                {
-                  text: `You are an AI assistant that analyzes text and provides structured JSON responses. Always respond with valid JSON only.
-
-${prompt}`
-                }
-              ]
-            }
-          ],
-          generationConfig: {
-            temperature: 0.3,
-            maxOutputTokens: 500,
-            topP: 0.8,
-            topK: 10
-          }
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json'
+      const response = await this.openai.chat.completions.create({
+        model: this.openaiModel,
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an AI assistant that analyzes text and provides structured JSON responses. Always respond with valid JSON only.'
           },
-          timeout: 15000
-        }
-      );
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.3,
+        max_tokens: 500,
+        top_p: 0.8,
+      });
 
-      logger.info('Gemini API response received', { 
-        status: response.status,
-        hasData: !!response.data,
-        hasCandidates: !!response.data.candidates,
-        candidatesLength: response.data.candidates?.length
+      logger.info('OpenAI API response received', { 
+        id: response.id,
+        model: response.model,
+        hasChoices: !!response.choices,
+        choicesLength: response.choices?.length,
+        usage: response.usage
       });
       
       // Log the full response structure for debugging
-      logger.info('Full Gemini response structure:', JSON.stringify(response.data, null, 2));
+      logger.info('Full OpenAI response structure:', JSON.stringify(response, null, 2));
 
-      if (!response.data.candidates || response.data.candidates.length === 0) {
-        logger.error('No candidates in Gemini API response');
-        throw new Error('No candidates in Gemini API response');
+      if (!response.choices || response.choices.length === 0) {
+        logger.error('No choices in OpenAI API response');
+        throw new Error('No choices in OpenAI API response');
       }
 
-      const candidate = response.data.candidates[0];
+      const choice = response.choices[0];
       
-      logger.info('First candidate structure:', JSON.stringify(candidate, null, 2));
+      logger.info('First choice structure:', JSON.stringify(choice, null, 2));
       
-      if (!candidate.content || !candidate.content.parts || candidate.content.parts.length === 0) {
-        logger.error('Invalid response structure from Gemini API', candidate);
-        throw new Error('Invalid response structure from Gemini API');
+      if (!choice.message || !choice.message.content) {
+        logger.error('Invalid response structure from OpenAI API', choice);
+        throw new Error('Invalid response structure from OpenAI API');
       }
 
-      const text = candidate.content.parts[0].text;
-      logger.info('Extracted text from Gemini response:', text);
+      const text = choice.message.content.trim();
+      logger.info('Extracted text from OpenAI response:', text);
       
-      // Check if there are any other parts or different structure
-      logger.info('All parts in candidate:', candidate.content.parts);
-      
-      if (!text || text.trim().length === 0) {
-        logger.error('Empty response from Gemini API');
-        throw new Error('Empty response from Gemini API');
+      if (!text || text.length === 0) {
+        logger.error('Empty response from OpenAI API');
+        throw new Error('Empty response from OpenAI API');
       }
       
       return text;
     } catch (error) {
-      logger.error('Gemini API call failed:', {
+      logger.error('OpenAI API call failed:', {
         message: error.message,
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data
+        type: error.type,
+        code: error.code,
+        status: error.status
       });
       throw error;
     }
@@ -274,7 +266,7 @@ ${prompt}`
   }
 
   /**
-   * Test Gemini API connection
+   * Test OpenAI API connection
    */
   async testConnection() {
     if (!this.enabled) {
@@ -282,40 +274,28 @@ ${prompt}`
     }
 
     try {
-      const response = await axios.post(
-        `${this.geminiBaseUrl}/models/gemini-1.5-flash-latest:generateContent?key=${this.geminiApiKey}`,
-        {
-          contents: [
-            {
-              parts: [
-                {
-                  text: 'Hello, respond with just "OK"'
-                }
-              ]
-            }
-          ],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 10
+      const response = await this.openai.chat.completions.create({
+        model: this.openaiModel,
+        messages: [
+          {
+            role: 'user',
+            content: 'Hello, respond with just "OK"'
           }
-        },
-        {
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          timeout: 10000
-        }
-      );
+        ],
+        temperature: 0.1,
+        max_tokens: 10
+      });
 
-      logger.info('Gemini API test response:', response.data);
-      return { success: true, response: response.data };
+      logger.info('OpenAI API test response:', response);
+      return { success: true, response: response };
     } catch (error) {
-      logger.error('Gemini API test failed:', error.response?.data || error.message);
+      logger.error('OpenAI API test failed:', error);
       return { 
         success: false, 
         error: error.message,
-        status: error.response?.status,
-        data: error.response?.data
+        type: error.type,
+        code: error.code,
+        status: error.status
       };
     }
   }
@@ -359,7 +339,7 @@ Respond with JSON only:
   "recommendation": "Some recommendation"
 }`;
 
-      const response = await this.callGeminiAPI(simplePrompt);
+      const response = await this.callOpenAIAPI(simplePrompt);
       return this.parseAnalysisResponse(response);
     } catch (error) {
       logger.error('Simple analysis failed:', error.message);

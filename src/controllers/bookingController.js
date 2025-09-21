@@ -6,6 +6,7 @@ const catchAsync = require('../utility/catchAsync');
 const Helper = require('../utility/helper');
 const logger = require('../config/logger');
 const { getTeamEmailConfig } = require('../utility/constants');
+const moment = require('moment-timezone');
 
 const listRooms = catchAsync(async (req, res) => {
   const rooms = await bookingService.listRooms();
@@ -64,12 +65,12 @@ const createBooking = catchAsync(async (req, res) => {
               <strong>● Title:</strong> ${created?.title}
             </p>
             <p style="margin: 6px 0; font-size: 14px;">
-              <strong>● Date & Time:</strong> ${new Date(created?.startTime).toLocaleDateString('en-IN')} , 
-              ${new Date(created?.startTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} - 
-              ${new Date(created?.endTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+              <strong>● Date & Time:</strong> ${moment(created?.startTime).tz('Asia/Kolkata').format('DD MMM YYYY')} , 
+              ${moment(created?.startTime).tz('Asia/Kolkata').format('hh:mm A')} - 
+              ${moment(created?.endTime).tz('Asia/Kolkata').format('hh:mm A')}
             </p>
             <p style="margin: 6px 0; font-size: 14px;">
-              <strong>● Location / Link:</strong> ${created?.roomId?.name}
+              <strong>● Location:</strong> ${created?.roomId?.name}
             </p>
             <p style="margin: 6px 0; font-size: 14px;">
               <strong>● Booked By:</strong> ${organizerName}
@@ -128,8 +129,8 @@ const cancelBooking = catchAsync(async (req, res) => {
             <!-- Intro -->
             <p style="font-size: 14px; margin: 0 0 16px 0; color: #7F1D1D;">
               Your booking for <strong>${updated?.roomId?.name}</strong> scheduled on 
-              <strong>${new Date(updated?.startTime).toLocaleDateString('en-IN')} at 
-              ${new Date(updated?.startTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</strong> 
+              <strong>${moment(updated?.startTime).tz('Asia/Kolkata').format('DD MMM YYYY')} at 
+              ${moment(updated?.startTime).tz('Asia/Kolkata').format('hh:mm A')}</strong> 
               has been cancelled.
             </p>
         
@@ -177,8 +178,8 @@ const cancelBooking = catchAsync(async (req, res) => {
             <!-- Intro -->
             <p style="font-size: 14px; margin: 0 0 16px 0; color: #7F1D1D;">
               Your booking for <strong>${updated?.roomId?.name}</strong> scheduled on 
-              <strong>${new Date(updated?.startTime).toLocaleDateString('en-IN')} at 
-              ${new Date(updated?.startTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</strong> 
+              <strong>${moment(updated?.startTime).tz('Asia/Kolkata').format('DD MMM YYYY')} at 
+              ${moment(updated?.startTime).tz('Asia/Kolkata').format('hh:mm A')}</strong> 
               has been cancelled.
             </p>
         
@@ -244,8 +245,8 @@ const updateBooking = catchAsync(async (req, res) => {
             <p style=\"font-size: 14px; margin: 0 0 16px 0;\">The details of your booking have been updated. Please find the revised schedule:</p>
             <div style=\"padding: 14px; background: #fff; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 16px;\">
               <p style=\"margin: 6px 0; font-size: 14px;\"><strong>● Title:</strong> ${updated?.title}</p>
-              <p style=\"margin: 6px 0; font-size: 14px;\"><strong>● New Date & Time:</strong> ${new Date(updated?.startTime).toLocaleDateString('en-IN')} , ${new Date(updated?.startTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} - ${new Date(updated?.endTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
-              <p style=\"margin: 6px 0; font-size: 14px;\"><strong>● New Location / Link:</strong> ${updated?.roomId?.name}</p>
+              <p style=\"margin: 6px 0; font-size: 14px;\"><strong>● New Date & Time:</strong> ${moment(updated?.startTime).tz('Asia/Kolkata').format('DD MMM YYYY')} , ${moment(updated?.startTime).tz('Asia/Kolkata').format('hh:mm A')} - ${moment(updated?.endTime).tz('Asia/Kolkata').format('hh:mm A')}</p>
+              <p style=\"margin: 6px 0; font-size: 14px;\"><strong>● New Location:</strong> ${updated?.roomId?.name}</p>
               <p style=\"margin: 6px 0; font-size: 14px;\"><strong>● Updated By:</strong> ${updaterName}</p>
             </div>
             <p style=\"font-size: 14px; margin: 0 0 12px 0;\">Kindly check the updated details and join accordingly.</p>
@@ -266,8 +267,8 @@ const updateBooking = catchAsync(async (req, res) => {
             <p style=\"font-size: 14px; margin: 0 0 16px 0;\">The details of your booking have been updated. Please find the revised schedule:</p>
             <div style=\"padding: 14px; background: #fff; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 16px;\">
               <p style=\"margin: 6px 0; font-size: 14px;\"><strong>● Title:</strong> ${updated?.title}</p>
-              <p style=\"margin: 6px 0; font-size: 14px;\"><strong>● New Date & Time:</strong> ${new Date(updated?.startTime).toLocaleDateString('en-IN')} , ${new Date(updated?.startTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} - ${new Date(updated?.endTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</p>
-              <p style=\"margin: 6px 0; font-size: 14px;\"><strong>● New Location / Link:</strong> ${updated?.roomId?.name}</p>
+              <p style=\"margin: 6px 0; font-size: 14px;\"><strong>● New Date & Time:</strong> ${moment(updated?.startTime).tz('Asia/Kolkata').format('DD MMM YYYY')} , ${moment(updated?.startTime).tz('Asia/Kolkata').format('hh:mm A')} - ${moment(updated?.endTime).tz('Asia/Kolkata').format('hh:mm A')}</p>
+              <p style=\"margin: 6px 0; font-size: 14px;\"><strong>● New Location:</strong> ${updated?.roomId?.name}</p>
               <p style=\"margin: 6px 0; font-size: 14px;\"><strong>● Updated By:</strong> ${updaterName}</p>
             </div>
             <p style=\"font-size: 14px; margin: 0 0 12px 0;\">Kindly check the updated details and join accordingly.</p>

@@ -42,11 +42,11 @@ const getLeaveById = catchAsync(async (req, res) => {
   const validatedData = await leaveValidator?.leaveIdSchema?.validateAsync({
     id: req?.params?.id,
   });
-  const user1 = req?.user;
-  let leaveFound;
-  if (user1?.role === 'teamlead' || user1?.role === 'subteamlead') {
-    leaveFound = await leaveService?.getLeaveTl(validatedData);
-  } else leaveFound = await leaveService?.getLeaveById(validatedData);
+  
+  // Always get leaves by specific user ID, regardless of role
+  // This endpoint is for getting a specific user's leaves (e.g., for personal calendar)
+  const leaveFound = await leaveService?.getLeaveById(validatedData);
+  
   if (!leaveFound) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Leave not found.');
   }

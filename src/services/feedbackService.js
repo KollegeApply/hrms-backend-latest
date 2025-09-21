@@ -410,7 +410,6 @@ class FeedbacksService {
     if (filters.search) {
         const searchTerm = filters.search.trim();
         if (searchTerm) {
-            console.log(`🔍 Searching for: "${searchTerm}"`);
             
             // Find users that match the search term
             const searchUsers = await User.find({
@@ -420,8 +419,6 @@ class FeedbacksService {
                     { employeeId: { $regex: searchTerm, $options: 'i' } }
                 ]
             }, '_id firstName lastName employeeId');
-            
-            console.log(`🔍 Found ${searchUsers.length} matching users:`, searchUsers.map(u => `${u.firstName} ${u.lastName} (${u.employeeId})`));
             
             const searchUserIds = searchUsers.map(user => user._id);
             
