@@ -18,18 +18,14 @@ const getCurrentMonthRange = () => {
 const attendanceService = {
   async markCheckIn(userId, latitude, longitude, checkInMode) {
     try {
-      const now = new Date();
-      const today = new Date(
-        now?.getFullYear(),
-        now?.getMonth(),
-        now?.getDate()
-      );
+      const now = moment().tz('Asia/Kolkata');
+      const today = now.clone().startOf('day'); 
 
       const existingAttendance = await Attendance.findOne({
         user: userId,
-        date: today,
+        date: today.toDate(),
         checkOutTime: null,
-        status: 'present',
+        status: { $in: ['present', 'late_in', 'early_out', 'late_in_early_out'] },
       });
 
       if (existingAttendance) {
@@ -40,11 +36,57 @@ const attendanceService = {
         };
       }
 
+      // Check if user has any leave applied for today
+      const leaveAttendance = await Attendance.findOne({
+        user: userId,
+        date: today.toDate(),
+        status: { 
+          $in: ['leave_applied_first_half', 'leave_applied_second_half', 'leave_applied_full'] 
+        },
+      });
+
+      // Determine status based on check-in time and leave status
+      let status = 'present';
+      const checkInHour = now.hour();
+      const checkInMinute = now.minute();
+      const checkInTimeInMinutes = checkInHour * 60 + checkInMinute;
+
+      // Check if it's a first half leave (check-in after 2:30 PM)
+      const firstHalfLeaveCutoff = 14 * 60 + 30; // 2:30 PM in minutes
+      
+      // Normal cutoff time (10:15 AM)
+      const normalCutoff = 10 * 60 + 15; // 10:15 AM in minutes
+
+      if (leaveAttendance) {
+        // User has leave applied
+        if (leaveAttendance.status === 'leave_applied_first_half') {
+          // First half leave - check-in after 2:30 PM = late_in
+          if (checkInTimeInMinutes > firstHalfLeaveCutoff) {
+            status = 'late_in';
+          }
+        } else if (leaveAttendance.status === 'leave_applied_second_half') {
+          // Second half leave - check-in after 10:15 AM = late_in
+          if (checkInTimeInMinutes > normalCutoff) {
+            status = 'late_in';
+          }
+        } else if (leaveAttendance.status === 'leave_applied_full') {
+          // Full day leave - should not check in, but if they do, mark as late_in
+          status = 'late_in';
+        }
+      } else {
+        // No leave applied
+        if (checkInTimeInMinutes > normalCutoff) {
+          // Check-in after 10:15 AM without leave = late_in
+          status = 'late_in';
+        }
+      }
+
       const attendance = new Attendance({
         user: userId,
         checkInTime: now,
         checkInLocation: { latitude, longitude },
         date: today,
+        status: status,
         ...(checkInMode && { checkInMode }),
       });
 
@@ -65,69 +107,66 @@ const attendanceService = {
     }
   },
 
-  async createAttendance(userId, status, Id, date, updateIn) {
-    try {
-      const existingAttendace = await Attendance.findOne({
-        user: userId,
-        date: date,
-      });
-      if (existingAttendace) {
-        existingAttendace.status =
-          updateIn === 'leave' ? 'leave_applied' : 'wfh_applied';
-        if (updateIn === 'leave') {
-          existingAttendace.leaveId = Id;
-        } else if (updateIn === 'wfh') {
-          existingAttendace.wfhId = Id;
-        }
-        await existingAttendace.save();
-        return {
-          status: 'success',
-          statusCode: 201,
-          message: 'Data changed successfully.',
-          data: existingAttendace,
-        };
-      }
-      const newAttendance = new Attendance({
-        user: userId,
-        status: updateIn === 'leave' ? 'leave_applied' : 'wfh_applied',
-        leaveId: updateIn === 'leave' ? Id : undefined,
-        wfhId: updateIn === 'wfh' ? Id : undefined,
-        date: date,
-      });
-      await newAttendance.save();
-      return {
-        status: 'success',
-        statusCode: 201,
-        message: 'Attendace created.',
-        data: newAttendance,
-      };
-    } catch (err) {
-      console.error(
-        `Error occured while registering ${status} on date : ${date}. Error: `,
-        err
-      );
-      return {
-        status: 'error',
-        statusCode: 500,
-        message: 'Failed to create attendance.',
-      };
-    }
-  },
+  // async createAttendance(userId, status, Id, date, updateIn) {
+  //   try {
+  //     const existingAttendace = await Attendance.findOne({
+  //       user: userId,
+  //       date: date,
+  //     });
+  //     if (existingAttendace) {
+  //       // For now, keep the old logic but we'll need to update this based on leave type
+  //       existingAttendace.status =
+  //         updateIn === 'leave' ? 'leave_applied_full' : 'wfh_applied';
+  //       if (updateIn === 'leave') {
+  //         existingAttendace.leaveId = Id;
+  //       } else if (updateIn === 'wfh') {
+  //         existingAttendace.wfhId = Id;
+  //       }
+  //       await existingAttendace.save();
+  //       return {
+  //         status: 'success',
+  //         statusCode: 201,
+  //         message: 'Data changed successfully.',
+  //         data: existingAttendace,
+  //       };
+  //     }
+  //     const newAttendance = new Attendance({
+  //       user: userId,
+  //       status: updateIn === 'leave' ? 'leave_applied_full' : 'wfh_applied',
+  //       leaveId: updateIn === 'leave' ? Id : undefined,
+  //       wfhId: updateIn === 'wfh' ? Id : undefined,
+  //       date: date,
+  //     });
+  //     await newAttendance.save();
+  //     return {
+  //       status: 'success',
+  //       statusCode: 201,
+  //       message: 'Attendace created.',
+  //       data: newAttendance,
+  //     };
+  //   } catch (err) {
+  //     console.error(
+  //       `Error occured while registering ${status} on date : ${date}. Error: `,
+  //       err
+  //     );
+  //     return {
+  //       status: 'error',
+  //       statusCode: 500,
+  //       message: 'Failed to create attendance.',
+  //     };
+  //   }
+  // },
 
   async markCheckOut(userId, latitude, longitude, checkOutMode) {
     try {
-      const now = new Date();
-      const today = new Date(
-        now?.getFullYear(),
-        now?.getMonth(),
-        now?.getDate()
-      );
+      const now = moment().tz('Asia/Kolkata');
+      const today = now.clone().startOf('day');
 
       const attendance = await Attendance.findOne({
         user: userId,
-        date: today,
+        date: today.toDate(),
         checkOutTime: null,
-        status: 'present',
+        status: { $in: ['present', 'late_in', 'early_out', 'late_in_early_out'] },
       });
 
       if (!attendance) {
@@ -140,6 +179,52 @@ const attendanceService = {
 
       attendance.checkOutTime = now;
       attendance.checkOutLocation = { latitude, longitude };
+
+      // Calculate work duration using moment timezone
+      const workDurationMs = now.diff(moment(attendance.checkInTime).tz('Asia/Kolkata'));
+      const workDurationHours = workDurationMs / (1000 * 60 * 60); // Convert to hours
+      
+      // Required work hours
+      const requiredWorkHours = 9; // 9 hours
+      const halfDayWorkHours = 4.5; // 4.5 hours for half day leave
+
+      // Check if user has leave applied
+      const leaveAttendance = await Attendance.findOne({
+        user: userId,
+        date: today.toDate(),
+        status: { 
+          $in: ['leave_applied_first_half', 'leave_applied_second_half'] 
+        },
+      });
+
+      let newStatus = attendance.status; // Keep previous status by default
+
+      if (leaveAttendance) {
+        // User has half-day leave applied
+        if (workDurationHours < halfDayWorkHours) {
+          // Worked less than 4.5 hours
+          if (attendance.status === 'present') {
+            newStatus = 'early_out';
+          } else if (attendance.status === 'late_in') {
+            newStatus = 'late_in_early_out';
+          }
+        }
+        // If worked >= 4.5 hours, keep previous status (present or late_in)
+      } else {
+        // No leave applied - check for 9 hours
+        if (workDurationHours < requiredWorkHours) {
+          // Worked less than 9 hours
+          if (attendance.status === 'present') {
+            newStatus = 'early_out';
+          } else if (attendance.status === 'late_in') {
+            newStatus = 'late_in_early_out';
+          }
+        }
+        // If worked >= 9 hours, keep previous status (present or late_in)
+      }
+
+      // Update status
+      attendance.status = newStatus;
 
       if (checkOutMode) {
         attendance.checkOutMode = checkOutMode;
@@ -175,7 +260,7 @@ const attendanceService = {
         date: today,
       });
 
-      if (existingAttendance && existingAttendance?.status !== 'present') {
+      if (existingAttendance && !['present', 'late_in', 'early_out', 'late_in_early_out'].includes(existingAttendance?.status)) {
         return {
           status: 'error',
           statusCode: 400,
@@ -185,7 +270,7 @@ const attendanceService = {
 
       const attendance = await Attendance.findOneAndUpdate(
         { user: userId, date: today },
-        { status: 'leave_applied', leaveReason },
+        { status: 'leave_applied_full', leaveReason },
         { upsert: true, new: true }
       );
 
@@ -219,7 +304,7 @@ const attendanceService = {
         date: today,
       });
 
-      if (existingAttendance && existingAttendance?.status !== 'present') {
+      if (existingAttendance && !['present', 'late_in', 'early_out', 'late_in_early_out'].includes(existingAttendance?.status)) {
         return {
           status: 'error',
           statusCode: 400,
@@ -269,21 +354,22 @@ async getTeamMembers(leaderId) {
       let dateQuery = {};
 
       if (startDateStr && endDateStr) {
-        const parsedStart = parseISO(startDateStr);
-        const parsedEnd = parseISO(endDateStr);
+        // Parse dates using moment timezone for consistency
+        const parsedStart = moment(startDateStr).tz('Asia/Kolkata');
+        const parsedEnd = moment(endDateStr).tz('Asia/Kolkata');
 
-        if (isValid(parsedStart) && isValid(parsedEnd)) {
-          startDate = startOfDay(parsedStart);
-          endDate = endOfDay(parsedEnd);
+        if (parsedStart.isValid() && parsedEnd.isValid()) {
+          startDate = parsedStart.startOf('day');
+          endDate = parsedEnd.endOf('day');
 
-          if (startDate > endDate) {
+          if (startDate.isAfter(endDate)) {
             return {
               status: 'error',
               statusCode: 400,
               message: 'Start date cannot be after end date.',
             };
           }
-          dateQuery = { $gte: startDate, $lte: endDate };
+          dateQuery = { $gte: startDate.toDate(), $lte: endDate.toDate() };
         } else {
           return {
             status: 'error',
@@ -293,25 +379,29 @@ async getTeamMembers(leaderId) {
         }
       } else {
         // Default to current month if no range is provided
-        const defaultRange = getCurrentMonthRange();
-        startDate = defaultRange?.startOfMonth;
-        endDate = defaultRange?.endOfMonth;
+        const now = moment().tz('Asia/Kolkata');
+        startDate = now.clone().startOf('month').startOf('day');
+        endDate = now.clone().endOf('month').endOf('day');
        
-        dateQuery = { $gte: startDate, $lte: endDate };
+        dateQuery = { $gte: startDate.toDate(), $lte: endDate.toDate() };
       }
+      
       let query = { date: dateQuery };
 
-if (['teamlead', 'subteamlead'].includes(role)) {
-  const teamMemberIds = await this.getTeamMembers(userId);
-  query.user = { $in: [userId, ...teamMemberIds] };
-} else if (!['hr', 'subadmin', 'admin'].includes(role)) {
-  query.user = userId;
-}
+      if (['teamlead', 'subteamlead'].includes(role)) {
+        const teamMemberIds = await this.getTeamMembers(userId);
+        query.user = { $in: [userId, ...teamMemberIds] };
+      } else if (!['hr', 'subadmin', 'admin'].includes(role)) {
+        query.user = userId;
+      }
 
       const attendance = await Attendance.find(query)
-        .populate('user', 'firstName lastName employeeId workType')
+        .populate('user', '_id firstName lastName employeeId workType hireDate')
         .populate('leaveId')
-        .sort({ date: -1, checkInTime: -1 });
+        .populate('wfhId')
+        .sort({ date: -1, checkInTime: -1 })
+        .lean();
+
       return {
         status: 'success',
         statusCode: 200,
@@ -329,30 +419,44 @@ if (['teamlead', 'subteamlead'].includes(role)) {
 
   async getTodayCheckInStatus(userId) {
     try {
-      const now = new Date();
-      const todayStart = moment.tz('Asia/Kolkata').startOf('day').utc().toDate();
-      const todayEnd = moment.tz('Asia/Kolkata').endOf('day').utc().toDate();
-
+      const now = moment().tz('Asia/Kolkata');
+      const todayStart = now.clone().startOf('day');
+      const todayEnd = now.clone().endOf('day');
 
       const attendance = await Attendance.findOne({
         user: userId,
-        date: { $gte: todayStart, $lte: todayEnd },
+        date: { $gte: todayStart.toDate(), $lte: todayEnd.toDate() },
       })
         .sort({ checkInTime: -1 })
         .select('checkInTime status checkInMode checkOutMode checkOutTime')
         .lean();
 
       if (attendance) {
+        // Determine if user is currently checked in
+        const isCheckedIn = attendance.checkInTime && !attendance.checkOutTime;
+        
+        // Determine display status based on current attendance state
+        let displayStatus = attendance.status;
+        
+        // If user is checked in but status is early_out or late_in_early_out, 
+        // they might be in the middle of their work day, so show appropriate status
+        if (isCheckedIn) {
+          if (attendance.status === 'early_out' || attendance.status === 'late_in_early_out') {
+            // User is still working, show the base status
+            displayStatus = attendance.status === 'late_in_early_out' ? 'late_in' : 'present';
+          }
+        }
+
         return {
           status: 'success',
           statusCode: 200,
           data: {
-            isCheckedIn:
-              attendance.checkInTime && attendance.checkOutTime ? false : true,
+            isCheckedIn: isCheckedIn,
             checkInTime: attendance.checkInTime,
-            status: attendance.status, // can be 'present', 'leave_applied', or 'wfh_applied'
+            status: displayStatus, // Updated status handling
             checkInMode: attendance.checkInMode,
             checkOutMode: attendance.checkOutMode,
+            checkOutTime: attendance.checkOutTime, // Added for frontend reference
           },
         };
       } else {
@@ -362,9 +466,10 @@ if (['teamlead', 'subteamlead'].includes(role)) {
           data: {
             isCheckedIn: false,
             checkInTime: null,
-            status: 'absent', // optional fallback
-            checkInMode: null, // optional fallback
+            status: 'absent', // No attendance record for today
+            checkInMode: null,
             checkOutMode: null,
+            checkOutTime: null,
           },
         };
       }
@@ -381,10 +486,20 @@ if (['teamlead', 'subteamlead'].includes(role)) {
     }
   },
 
-  async bulkCreateOrUpdateLeaveAttendance(userId, leaveId, dates) {
+  async bulkCreateOrUpdateLeaveAttendance(userId, leaveId, dates, isHalfDay = false, halfDayType = null, leaveTypeCode = null) {
     try {
       if (!Array.isArray(dates) || dates.length === 0) {
         throw new Error('No dates provided for bulk leave attendance.');
+      }
+
+      // Determine the attendance status based on half-day information (same for all leave types)
+      let attendanceStatus = 'leave_applied_full';
+      if (isHalfDay) {
+        if (halfDayType === 'first') {
+          attendanceStatus = 'leave_applied_first_half';
+        } else if (halfDayType === 'second') {
+          attendanceStatus = 'leave_applied_second_half';
+        }
       }
 
       const attendanceOps = dates.map((date) => {
@@ -397,7 +512,7 @@ if (['teamlead', 'subteamlead'].includes(role)) {
               $set: {
                 user: userId,
                 date: standardizedDate,
-                status: 'leave_applied',
+                status: attendanceStatus,
                 leaveId,
               },
             },

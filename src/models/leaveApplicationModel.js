@@ -18,6 +18,14 @@ const leaveApplicationSchema = new Schema(
       default: 'tl-pending',
     },
     isUnpaid: { type: Boolean, default: false },
+    isHalfDay: { type: Boolean, default: false },
+    halfDayType: { 
+      type: String, 
+      enum: ['first', 'second'],
+      required: function() {
+        return this.isHalfDay === true;
+      }
+    },
     isDeleted: { type: Boolean, default: false },
     approvedBy: { type: Schema.Types.ObjectId, ref: 'User' },
     rejectedBy: { type: Schema.Types.ObjectId, ref: 'User' },

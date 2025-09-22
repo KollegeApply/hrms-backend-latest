@@ -95,6 +95,10 @@ router.post('/forgot-password', userController?.forgotPassword); // Request OTP 
 // Update the handler for this route
 router.post('/reset-password', userController?.verifyOtp);
 
+// Section approvals
+router.post('/section-approval/request', authenticateUser, userController?.requestSectionApproval);
+router.get('/section-approval/status', authenticateUser, userController?.getSectionApprovalStatus);
+router.post('/section-approval/token/:token', userController?.sectionApprovalByToken);
 
 router.get('/:id/history', authenticateUser, userController?.getUserHistory);
 
@@ -113,6 +117,14 @@ router.put(
   authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]),
   safeUpload([]), // Allow any file fields
   userController.updateUserCifForm
+);
+
+// Upload Profile Photo: Users can upload their own profile photo
+router.post(
+  '/:userId/profile/photo',
+  authenticateUser,
+  safeUpload(['photo']), // Allow only 'photo' field, single file
+  userController.uploadProfilePhoto
 );
 
 module.exports = router;

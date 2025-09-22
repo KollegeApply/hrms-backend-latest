@@ -104,6 +104,19 @@ class holidayService {
     result.isDeleted = true;
     return await result.save();
   }
+
+  /**
+   * Check if a specific date is a holiday
+   * @param {Date} date - The date to check
+   * @returns {Promise<boolean>} - True if the date is a holiday, false otherwise
+   */
+  async isHoliday(date) {
+    const holiday = await Holiday.findOne({
+      date: date,
+      isDeleted: false,
+    });
+    return !!holiday;
+  }
 }
 
 module.exports = new holidayService();

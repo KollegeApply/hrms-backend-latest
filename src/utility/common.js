@@ -271,6 +271,40 @@ const transformDocumentPaths = (documents) => {
   return documentsWithUrls;
 };
 
+const isWeeklyOff = (date) => {
+  const day = date.getDay(); // 0 = Sunday, 6 = Saturday
+  if (day === 0) return true; // Sunday is always off
+
+  if (day === 6) { // Saturday
+    // Get the first day of the month
+    const firstDayOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
+    
+    // Find all Saturdays in the month
+    const saturdays = [];
+    let currentDay = new Date(firstDayOfMonth);
+    
+    // Find first Saturday of the month
+    while (currentDay.getDay() !== 6) {
+      currentDay.setDate(currentDay.getDate() + 1);
+    }
+    
+    // Collect all Saturdays in the month
+    while (currentDay.getMonth() === firstDayOfMonth.getMonth()) {
+      saturdays.push(new Date(currentDay));
+      currentDay.setDate(currentDay.getDate() + 7);
+    }
+    
+    // Find which Saturday of the month the given date is
+    const dateStr = date.toISOString().split('T')[0];
+    const saturdayIndex = saturdays.findIndex(sat => sat.toISOString().split('T')[0] === dateStr);
+    
+    // Return true if it's 2nd (index 1) or 4th (index 3) Saturday only
+    // This is alternate Saturday off - only 2nd and 4th Saturdays are off
+    return saturdayIndex === 1 || saturdayIndex === 3;
+  }
+
+  return false;
+}
 
 
 
@@ -285,4 +319,5 @@ module.exports = {
   validateCIFToken,
   cleanEmptyFields,
   transformDocumentPaths,
+  isWeeklyOff,
 };

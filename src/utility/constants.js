@@ -6,6 +6,7 @@ const USER_ROLES = {
   SUBADMIN: 'subadmin',
   HR: 'hr',
   EMPLOYEE: 'employee',
+  INTERN: 'intern',
   TEAMLEAD: 'teamlead',
   SUBTEAMLEAD: 'subteamlead',
   IT: 'IT',
@@ -36,6 +37,13 @@ const ASSETS_STATUS = {
   RETURN_REJECTED: 'return_rejected',
   RETURNED: 'returned',
   CANCELLED: 'cancelled',
+};
+
+const ASSET_REQUEST_STATUS = {
+  PENDING: 'asset-request-pending',
+  APPROVED: 'asset-request-approved',
+  REJECTED: 'asset-request-rejected',
+  FULFILLED: 'asset-request-fulfilled',
 };
 
 
@@ -182,6 +190,7 @@ module.exports = {
   VALID_USER_ROLES: Object.values(USER_ROLES),
   VALID_EMPLOYEE_STATUS: Object.values(EMPLOYEE_STATUS),
   VALID_ASSETS_STATUS: Object.values(ASSETS_STATUS),
+  VALID_ASSET_REQUEST_STATUS: Object.values(ASSET_REQUEST_STATUS),
   VALID_LAPTOP_TYPES: Object.values(LAPTOP_TYPES),
   CANDIDATE_STATUS,
   VALID_CANDIDATE_STATUS: Object.values(CANDIDATE_STATUS),

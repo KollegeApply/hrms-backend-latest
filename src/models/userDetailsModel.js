@@ -156,6 +156,18 @@ const UserDetailsSchema = new Schema({
   comments: {
     type: String,
   },
+  // Approval statuses for sensitive sections
+  bankApprovalStatus: { type: String, enum: ['pending', 'approved', 'rejected'] },
+  bankApprovalRequestedAt: Date,
+  bankApprovalDecidedAt: Date,
+  bankApprovalDecidedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  bankApprovalRejectionReason: String,
+
+  documentsApprovalStatus: { type: String, enum: ['pending', 'approved', 'rejected'] },
+  documentsApprovalRequestedAt: Date,
+  documentsApprovalDecidedAt: Date,
+  documentsApprovalDecidedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  documentsApprovalRejectionReason: String,
   isDeleted: { type: Boolean, default: false },
 }, { timestamps: true });
 

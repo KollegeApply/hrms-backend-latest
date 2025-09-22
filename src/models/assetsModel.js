@@ -92,6 +92,16 @@ const assignedAssetSchema = new Schema(
         message: "Return date can only be set if status is 'returned'.",
       },
     },
+    rejectionReason: {
+      type: String,
+      maxlength: 1000,
+      validate: {
+        validator: function () {
+          return this.status === 'not_acknowledged';
+        },
+        message: "Rejection reason can only be set if status is 'not_acknowledged'.",
+      },
+    },
     assignedBy: {
       type: Schema.Types.ObjectId,
       ref: 'User',
