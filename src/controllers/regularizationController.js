@@ -200,9 +200,9 @@ async function sendRegularizationStatusUpdateEmail(attendance, action, team, rej
   const configEmails = getTeamEmailConfig(team);
   let emailSubject = '', emailMessage = '', receiverEmails = [], ccEmails = [];
 
-  const formattedDate = moment(regularization.requestedCheckInTime).format('DD MMMM YYYY');
-  const checkInTime = moment(regularization.requestedCheckInTime).format('hh:mm A');
-  const checkOutTime = moment(regularization.requestedCheckOutTime).format('hh:mm A');
+  const formattedDate = moment(regularization.requestedCheckInTime).tz('Asia/Kolkata').format('DD MMMM YYYY');
+  const checkInTime = moment(regularization.requestedCheckInTime).tz('Asia/Kolkata').format('hh:mm A');
+  const checkOutTime = moment(regularization.requestedCheckOutTime).tz('Asia/Kolkata').format('hh:mm A');
 
   switch (action) {
     case 'new_request':

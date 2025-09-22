@@ -4,6 +4,7 @@ const Booking = require('../models/bookingModel');
 const Rooms = require('../models/roomModel');
 const Helper = require('../utility/helper');
 const { getTeamEmailConfig } = require('../utility/constants');
+const moment = require('moment-timezone');
 
 class BookingService {
   async listRooms() {
@@ -179,7 +180,7 @@ class BookingService {
     const team = user?.team || 'SD';
     const displayTeam = getTeamEmailConfig(team);
 
-    const subject = `📝 Minutes of Meeting – ${booking?.title} (${new Date(booking?.startTime).toLocaleDateString('en-IN')})`;
+    const subject = `📝 Minutes of Meeting – ${booking?.title} (${moment(booking?.startTime).tz('Asia/Kolkata').format('DD MMM YYYY')})`;
     const attendeeNames = (booking?.attendees || [])
       .map(a => {
         const full = [a?.firstName, a?.lastName].filter(Boolean).join(' ').trim();
@@ -197,7 +198,7 @@ class BookingService {
         <!-- Intro -->
         <p style="font-size: 14px; margin: 0 0 16px 0;">
           Please find below the Minutes of Meeting (MoM) for the session held on 
-          <strong>${new Date(booking?.startTime).toLocaleDateString('en-IN')}</strong>.
+          <strong>${moment(booking?.startTime).tz('Asia/Kolkata').format('DD MMM YYYY')}</strong>.
         </p>
     
         <!-- Meeting Details -->
@@ -206,9 +207,9 @@ class BookingService {
             <strong>● Title:</strong> ${booking?.title}
           </p>
           <p style="margin: 6px 0; font-size: 14px;">
-            <strong>● Date & Time:</strong> ${new Date(booking?.startTime).toLocaleDateString('en-IN')} , 
-            ${new Date(booking?.startTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} - 
-            ${new Date(booking?.endTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+            <strong>● Date & Time:</strong> ${moment(booking?.startTime).tz('Asia/Kolkata').format('DD MMM YYYY')} , 
+            ${moment(booking?.startTime).tz('Asia/Kolkata').format('hh:mm A')} - 
+            ${moment(booking?.endTime).tz('Asia/Kolkata').format('hh:mm A')}
           </p>
           <p style="margin: 6px 0; font-size: 14px;">
             <strong>● Attendees:</strong> ${attendeeNames}

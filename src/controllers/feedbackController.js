@@ -100,7 +100,7 @@ const createFeedback = catchAsync(async (req, res) => {
 )
 
 const getAllFeedbacks = catchAsync(async (req, res) => {
-  const { id: userId, role: userRole, team: userTeam } = req.user;
+  const { id: userId, role: userRole } = req.user;
   
   // Extract filter parameters from query
   const filters = {
@@ -112,7 +112,7 @@ const getAllFeedbacks = catchAsync(async (req, res) => {
     search: req.query.search
   };
 
-  const result = await feedbackService.getAllFeedbacks(userId, userRole, userTeam, filters);
+  const result = await feedbackService.getAllFeedbacks(userId, userRole, req.user.team, filters);
 
   res.status(200).json({
     success: true,

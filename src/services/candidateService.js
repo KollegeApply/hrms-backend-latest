@@ -38,7 +38,7 @@ class CandidateService {
     }
   }
 
-  async getCandidates({ page = 1, limit = 10, status, search }, team) {
+  async getCandidates({ page = 1, limit = 10, status, search, includeUserDetails = false }, team) {
     const query = { isDeleted: false };
 
     if (status) {
@@ -88,13 +88,19 @@ class CandidateService {
     const limitInt = parseInt(limit);
     const skip = (pageInt - 1) * limitInt;
 
+    let candidateQuery = Candidate.find(query)
+      .populate('pointOfContact', 'firstName lastName email team')
+      .populate('department', 'name')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitInt);
+    
+    if (includeUserDetails) {
+      candidateQuery = candidateQuery.populate('userDetails');
+    }
+
     const [candidates, total] = await Promise.all([
-      Candidate.find(query)
-        .populate('pointOfContact', 'firstName lastName email team')
-        .populate('department', 'name')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limitInt),
+      candidateQuery,
       Candidate.countDocuments(query),
     ]);
 

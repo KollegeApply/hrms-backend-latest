@@ -30,7 +30,7 @@ const connectDB = async () => {
     }
     
     await mongoose.connect(mongoUri);
-    ('✅ MongoDB connected successfully');
+    console.log('✅ MongoDB connected successfully');
     return true;
   } catch (error) {
     console.error('❌ MongoDB connection error:', error.message);
@@ -149,7 +149,7 @@ const getKPIDefinitions = (kpiType) => {
 // Main setup function
 const setupKPIs = async () => {
   try {
-    ('🚀 Setting up KPIs dynamically...\n');
+    console.log('🚀 Setting up KPIs dynamically...\n');
     
     const connected = await connectDB();
     if (!connected) {
@@ -159,21 +159,21 @@ const setupKPIs = async () => {
     // Find admin user
     const adminUser = await User.findOne({ role: { $in: ['admin', 'subadmin'] } });
     if (!adminUser) {
-      ('❌ No admin user found');
+      console.log('❌ No admin user found');
       return false;
     }
-    (`✅ Admin user: ${adminUser.firstName} ${adminUser.lastName}\n`);
+    console.log(`✅ Admin user: ${adminUser.firstName} ${adminUser.lastName}\n`);
 
     // Get all departments dynamically
     const departments = await Department.find({ isDeleted: false });
-    (`📂 Found ${departments.length} departments:`);
+    console.log(`📂 Found ${departments.length} departments:`);
     
     let created = 0;
     let skipped = 0;
 
     // Process each department
     for (const department of departments) {
-      (`\n🏢 Processing: ${department.name} (${department._id})`);
+      console.log(`\n🏢 Processing: ${department.name} (${department._id})`);
       
       // Check if KPIs already exist
       const existingKPI = await KPI.findOne({
@@ -182,23 +182,23 @@ const setupKPIs = async () => {
       });
 
       if (existingKPI) {
-        (`   ⏭️  Already has KPIs (${existingKPI.kpis.length} items)`);
+        console.log(`   ⏭️  Already has KPIs (${existingKPI.kpis.length} items)`);
         skipped++;
         continue;
       }
 
       // Determine KPI type using department ID
       const kpiType = getDepartmentKPITypeById(department._id);
-      (`   📊 KPI Type: ${kpiType}`);
+      console.log(`   📊 KPI Type: ${kpiType}`);
       
       if (kpiType === 'generic') {
-        (`   📝 Will use generic KPIs (no record needed)`);
+        console.log(`   📝 Will use generic KPIs (no record needed)`);
         continue;
       }
 
       // Get KPI definitions
       const kpiDefinitions = getKPIDefinitions(kpiType);
-      (`   📋 Creating ${kpiDefinitions.length} KPIs`);
+      console.log(`   📋 Creating ${kpiDefinitions.length} KPIs`);
 
       // Create KPI record
       const newKPI = new KPI({
@@ -211,24 +211,24 @@ const setupKPIs = async () => {
       await newKPI.save();
       created++;
       
-      (`   ✅ Created ${kpiType} KPIs`);
+      console.log(`   ✅ Created ${kpiType} KPIs`);
       kpiDefinitions.forEach((kpi, index) => {
-        (`      ${index + 1}. ${kpi.name}`);
+        console.log(`      ${index + 1}. ${kpi.name}`);
       });
     }
 
-    (`\n🎉 KPI Setup Complete!`);
-    (`📊 Summary:`);
-    (`   - Total departments: ${departments.length}`);
-    (`   - KPI records created: ${created}`);
-    (`   - Departments skipped: ${skipped}`);
-    (`   - Departments using generic KPIs: ${departments.length - created - skipped}`);
+    console.log(`\n🎉 KPI Setup Complete!`);
+    console.log(`📊 Summary:`);
+    console.log(`   - Total departments: ${departments.length}`);
+    console.log(`   - KPI records created: ${created}`);
+    console.log(`   - Departments skipped: ${skipped}`);
+    console.log(`   - Departments using generic KPIs: ${departments.length - created - skipped}`);
 
     // Verify setup
     const allKPIs = await KPI.find({ isDeleted: false }).populate('departmentId', 'name');
-    (`\n🔍 Verification - KPI Records in Database:`);
+    console.log(`\n🔍 Verification - KPI Records in Database:`);
     allKPIs.forEach(kpi => {
-      (`   ✅ ${kpi.departmentId.name}: ${kpi.kpis.length} KPIs`);
+      console.log(`   ✅ ${kpi.departmentId.name}: ${kpi.kpis.length} KPIs`);
     });
 
     return true;
@@ -239,7 +239,7 @@ const setupKPIs = async () => {
   } finally {
     if (mongoose.connection.readyState === 1) {
       await mongoose.connection.close();
-      ('\n🔌 Database connection closed');
+      console.log('\n🔌 Database connection closed');
     }
   }
 };

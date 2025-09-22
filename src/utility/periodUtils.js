@@ -52,9 +52,73 @@ const getCurrentMonthPeriods = (periodType = 'monthly') => {
   return [];
 };
 
-// Get all available periods for current month
+// Get all available periods for current month and previous month
 const getAvailablePeriods = (periodType = 'biweekly') => {
-  return getCurrentMonthPeriods(periodType);
+  const currentPeriods = getCurrentMonthPeriods(periodType);
+  const previousPeriods = getPreviousMonthPeriods(periodType);
+  
+  return [...previousPeriods, ...currentPeriods];
+};
+
+// Generate periods for previous month
+const getPreviousMonthPeriods = (periodType = 'monthly') => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth(); // 0-based
+  
+  // Calculate previous month
+  let prevYear = year;
+  let prevMonth = month - 1;
+  if (prevMonth < 0) {
+    prevMonth = 11;
+    prevYear--;
+  }
+  
+  const monthName = new Date(prevYear, prevMonth, 1).toLocaleString('default', { month: 'long' });
+
+  if (periodType === 'monthly') {
+    // Monthly period - full month
+    const from = new Date(prevYear, prevMonth, 1); // First day of month
+    const to = new Date(prevYear, prevMonth + 1, 0); // Last day of month
+    
+    return [{
+      id: `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-monthly`,
+      name: `${monthName} ${prevYear}`,
+      type: 'monthly',
+      from: from,
+      to: to,
+      displayName: `Monthly - ${monthName} ${prevYear}`
+    }];
+  } else if (periodType === 'biweekly') {
+    // Bi-weekly periods - 2 periods per month
+    const firstHalfFrom = new Date(prevYear, prevMonth, 1);
+    const firstHalfTo = new Date(prevYear, prevMonth, 15);
+    const secondHalfFrom = new Date(prevYear, prevMonth, 16);
+    const secondHalfTo = new Date(prevYear, prevMonth + 1, 0);
+
+    return [
+      {
+        id: `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-biweekly-1`,
+        name: `${monthName} ${prevYear} - First Half`,
+        type: 'biweekly',
+        period: 1,
+        from: firstHalfFrom,
+        to: firstHalfTo,
+        displayName: `1st Half - ${monthName} 1-15, ${prevYear}`
+      },
+      {
+        id: `${prevYear}-${String(prevMonth + 1).padStart(2, '0')}-biweekly-2`, 
+        name: `${monthName} ${prevYear} - Second Half`,
+        type: 'biweekly',
+        period: 2,
+        from: secondHalfFrom,
+        to: secondHalfTo,
+        displayName: `2nd Half - ${monthName} 16-${secondHalfTo.getDate()}, ${prevYear}`
+      }
+    ];
+  }
+
+  return [];
 };
 
 // Get period by ID
@@ -176,6 +240,7 @@ const validatePeriod = (periodId) => {
 
 module.exports = {
   getCurrentMonthPeriods,
+  getPreviousMonthPeriods,
   getAvailablePeriods,
   getPeriodById,
   checkFeedbackExists,

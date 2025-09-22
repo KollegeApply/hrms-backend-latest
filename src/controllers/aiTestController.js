@@ -25,8 +25,8 @@ const testAI = catchAsync(async (req, res) => {
         aiAnalysis: analysis,
         serviceStatus: {
           enabled: aiService.enabled,
-          hasApiKey: !!aiService.geminiApiKey,
-          baseUrl: aiService.geminiBaseUrl
+          hasApiKey: !!aiService.openaiApiKey,
+          model: aiService.openaiModel
         }
       }
     });
@@ -39,8 +39,8 @@ const testAI = catchAsync(async (req, res) => {
       error: error.message,
       serviceStatus: {
         enabled: aiService.enabled,
-        hasApiKey: !!aiService.geminiApiKey,
-        baseUrl: aiService.geminiBaseUrl
+        hasApiKey: !!aiService.openaiApiKey,
+        model: aiService.openaiModel
       }
     });
   }
@@ -51,11 +51,11 @@ const getAIStatus = catchAsync(async (req, res) => {
     success: true,
     data: {
       enabled: aiService.enabled,
-      hasApiKey: !!aiService.geminiApiKey,
-      baseUrl: aiService.geminiBaseUrl,
+      hasApiKey: !!aiService.openaiApiKey,
+      model: aiService.openaiModel,
       environment: {
-        GEMINI_API_KEY: process.env.GEMINI_API_KEY ? 'Set' : 'Not Set',
-        GEMINI_BASE_URL: process.env.GEMINI_BASE_URL || 'Using default'
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY ? 'Set' : 'Not Set',
+        OPENAI_MODEL: process.env.OPENAI_MODEL || 'Using default (gpt-4o-mini)'
       }
     }
   });

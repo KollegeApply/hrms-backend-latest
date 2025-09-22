@@ -221,8 +221,8 @@ class AIPreprocessingMiddleware {
   static getAIStatus() {
     return {
       enabled: aiService.enabled,
-      hasApiKey: !!aiService.geminiApiKey,
-      baseUrl: aiService.geminiBaseUrl
+      hasApiKey: !!aiService.openaiApiKey,
+      model: aiService.openaiModel
     };
   }
 }

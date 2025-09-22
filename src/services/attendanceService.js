@@ -396,7 +396,7 @@ async getTeamMembers(leaderId) {
       }
 
       const attendance = await Attendance.find(query)
-        .populate('user', 'firstName lastName employeeId workType hireDate')
+        .populate('user', '_id firstName lastName employeeId workType hireDate')
         .populate('leaveId')
         .populate('wfhId')
         .sort({ date: -1, checkInTime: -1 })
