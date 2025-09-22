@@ -122,6 +122,24 @@ const getAllUsers = catchAsync(async (req, res) => {
   });
 });
 
+// Meeting attendees: allow TL/SubTL to fetch all users without team scoping
+const getAllUsersForMeeting = catchAsync(async (req, res) => {
+  const validatedQuery = await userValidator?.getAllUsersSchema?.validateAsync(
+    { ...req?.query, isPaginated: false }
+  );
+
+  const currentUser = req?.user;
+
+  // Inject a special context understood by service (without changing default route behavior)
+  const result = await userService?.getAllUsers({ ...validatedQuery, context: 'meeting' }, currentUser);
+
+  res?.status(httpStatus.OK).json({
+    status: true,
+    message: 'Users retrieved successfully.',
+    ...result,
+  });
+});
+
 const getUserById = catchAsync(async (req, res) => {
   // 1. Validate ID parameter (using Helper for basic check, Joi for strictness)
   await userValidator?.mongoIdSchema?.validateAsync(req.params); // Validate ID format
@@ -791,6 +809,7 @@ module.exports = {
   getSectionApprovalStatus,
   sectionApprovalByToken,
   uploadProfilePhoto,
+  getAllUsersForMeeting,
 };
 
 // --- Utility: catchAsync (Place in src/utility/catchAsync.js) ---

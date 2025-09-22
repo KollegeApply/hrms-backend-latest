@@ -33,6 +33,8 @@ router.post(
 );
 
 router.get('/', authenticateUser, userController?.getAllUsers);
+// Dedicated route for meeting attendee search to avoid side effects elsewhere
+router.get('/meeting-attendees', authenticateUser, userController?.getAllUsersForMeeting);
 
 router.get('/tl-id', authenticateUser, userController?.getUserByTlId);
 
