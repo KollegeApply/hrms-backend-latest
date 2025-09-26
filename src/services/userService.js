@@ -50,6 +50,7 @@ class UserService {
       isAttendanceLog,
       teamLeadId,
       subTeamLeadId,
+      context,
     } = queryOptions;
 
     const query = {
@@ -72,9 +73,13 @@ class UserService {
     // Team-based filter
     const teamFilter = [];
     if (currentUser?.role === 'teamlead') {
-      teamFilter.push({ teamLeadId: currentUser.id });
+      if (context !== 'meeting') {
+        teamFilter.push({ teamLeadId: currentUser.id });
+      }
     } else if (currentUser?.role === 'subteamlead') {
-      teamFilter.push({ subTeamLeadId: currentUser.id });
+      if (context !== 'meeting') {
+        teamFilter.push({ subTeamLeadId: currentUser.id });
+      }
     }
 
     // Search filter
