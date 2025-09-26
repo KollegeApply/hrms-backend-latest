@@ -13,7 +13,7 @@ const objectId = Joi.string()
 
 const createTicketSchema = Joi.object({
   ticketType: Joi.string()
-    .valid("Payroll and Salary query","HR & Grievance query","Expenses & Reimbursements","Admin & IT","Backdated attendance","Miscellaneous")
+    .valid("Payroll and Salary query","HR & Grievance query","Expenses & Reimbursements","Admin & IT","Backdated attendance","HRMS Query","Miscellaneous")
     .required(),
 
   subject: Joi.string()

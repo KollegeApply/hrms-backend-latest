@@ -86,6 +86,7 @@ const HR_MAIL_PASS = process.env.HR_SMTP_PASS;
 const IT_EMAIL = process.env.IT_EMAIL;
 const IT_MAIL_USER = process.env.IT_SMTP_USER;
 const IT_MAIL_PASS = process.env.IT_SMTP_PASS;
+const HRMS_QUERY_EMAIL = process.env.HRMS_QUERY_EMAIL;
 
 const ADMIN_EMAILS = process.env.ADMIN_EMAILS?.split(',').map(e => e.trim()).filter(Boolean) || [];
 
@@ -115,6 +116,8 @@ function getTeamEmailConfig(team) {
 
     FINANCE_EMAIL: process.env[`FINANCE_EMAIL_${normalizedTeam}`],
 
+    HRMS_QUERY_EMAIL: process.env[`HRMS_QUERY_EMAIL`],
+
     ADMIN_EMAILS: (process.env[`ADMIN_EMAILS_${normalizedTeam}`] || '')
       .split(',')
       .map(e => e.trim())
@@ -130,6 +133,7 @@ function getTeamEmailConfig(team) {
     'HR_MAIL_PASS',
     'IT_MAIL_USER',
     'IT_MAIL_PASS',
+    'HRMS_QUERY_EMAIL',
   ];
 
   const missing = requiredKeys.filter((key) => !config[key]);
@@ -207,6 +211,7 @@ module.exports = {
   HR_MAIL_PASS,
   IT_MAIL_USER,
   IT_MAIL_PASS,
+  HRMS_QUERY_EMAIL,
   OTP_EXPIRY_MINUTES,
   HR_EMAIL,
   IT_EMAIL,

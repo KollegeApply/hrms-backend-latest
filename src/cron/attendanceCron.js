@@ -110,7 +110,7 @@ function getSuffix(num) {
     return "th";
 }
 
-const dailyAttendanceCheck = async () => {
+const dailyAttendanceCheck = async (isTestMode = false) => {
     const todayStartIST = getKolkataStartOfDay();
     const todayEndIST = moment(todayStartIST).add(1, 'day').toDate();
 
@@ -153,7 +153,7 @@ const dailyAttendanceCheck = async () => {
         return;
     }
 
-    logger.info(`Starting daily attendance check for ${formatDateDMY(todayStartIST)}`);
+    logger.info(`Starting daily attendance check${isTestMode ? ' (TEST MODE)' : ''} for ${formatDateDMY(todayStartIST)}`);
 
     try {
         const users = await User.find({
@@ -330,15 +330,20 @@ const dailyAttendanceCheck = async () => {
 
                 const ccEmails = [user?.teamLeadId?.email, user?.subTeamLeadId?.email, configEmails?.HR_EMAIL].filter(Boolean);
 
-                await Helper.sendEmail({
-                    // receiverEmails: [user.email],
-                    receiverEmails: ["lokesh.kumar@sportsdunia.com"],
-                    subject: `Action Required: Attendance Discrepancy Detected for ${formatDateYMD(todayStartIST)}`,
-                    message: mailMessage,
-                    fromHR: false,
-                    // cc: ccEmails,
-                    team: user?.team
-                });
+                if (isTestMode) {
+                    logger.info(`   🧪 TEST MODE: Would send attendance email to ${user.email}`);
+                    logger.info(`   📧 Subject: Action Required: Attendance Discrepancy Detected for ${formatDateYMD(todayStartIST)}`);
+                    logger.info(`   📧 CC: ${ccEmails.join(', ')}`);
+                } else {
+                    await Helper.sendEmail({
+                        receiverEmails: [user.email],
+                        subject: `Action Required: Attendance Discrepancy Detected for ${formatDateYMD(todayStartIST)}`,
+                        message: mailMessage,
+                        fromHR: false,
+                        cc: ccEmails,
+                        team: user?.team
+                    });
+                }
 
                 logger.info(`Daily attendance email sent to ${user.email} for status: ${attendance?.status || 'absent'}`);
             }
@@ -349,7 +354,7 @@ const dailyAttendanceCheck = async () => {
 };
 
 
-const weeklyReport = async () => {
+const weeklyReport = async (isTestMode = false) => {
     const nowIST = moment().tz('Asia/Kolkata');
     const lastWeek = nowIST.clone().subtract(1, 'week');
 
@@ -362,7 +367,7 @@ const weeklyReport = async () => {
 
         const HOURS_PER_DAY = 9;
 
-    logger.info(`Starting weekly report generation for all teams: ${formatDateYMD(startDate)} to ${formatDateYMD(endDate)}`);
+    logger.info(`Starting weekly report generation${isTestMode ? ' (TEST MODE)' : ''} for all teams: ${formatDateYMD(startDate)} to ${formatDateYMD(endDate)}`);
 
     try {
         const allUsers = await User.find({
@@ -580,15 +585,20 @@ const weeklyReport = async () => {
                     tableRows,
                     teamName
                 );
-                await Helper.sendEmail({
-                    // receiverEmails: recipients,
-                    receiverEmails: ["lokesh.kumar@sportsdunia.com"],
-                    subject: `Your Team's Weekly Attendance Report (${formatDateWithDay(startDate)} - ${formatDateWithDay(endDate)})`,
-                    message: mailMessage,
-                    fromHR: false,
-                    team: teamName,
-                    // cc: ccEmails,
-                });
+                if (isTestMode) {
+                    logger.info(`   🧪 TEST MODE: Would send weekly report to ${recipients.join(', ')}`);
+                    logger.info(`   📧 Subject: Your Team's Weekly Attendance Report (${formatDateWithDay(startDate)} - ${formatDateWithDay(endDate)})`);
+                    logger.info(`   📧 CC: ${ccEmails.join(', ')}`);
+                } else {
+                    await Helper.sendEmail({
+                        receiverEmails: recipients,
+                        subject: `Your Team's Weekly Attendance Report (${formatDateWithDay(startDate)} - ${formatDateWithDay(endDate)})`,
+                        message: mailMessage,
+                        fromHR: false,
+                        team: teamName,
+                        cc: ccEmails,
+                    });
+                }
                 logger.info(`Weekly report for team '${lead.firstName}' sent successfully to: ${recipients[0]}`);
             } else {
                 logger.warn(`No valid recipient email for team lead: ${leadName}`);
@@ -608,15 +618,19 @@ if (require.main === module) {
         try {
             await connectDB();
             const mode = process.argv[2] || 'daily';
+            const isTestMode = process.argv[3] === 'test';
+
+            console.log(`🧪 Running Attendance Cron${isTestMode ? ' in TEST mode' : ' in normal mode'} for mode: ${mode}`);
 
             if (mode === 'weekly') {
-                await weeklyReport();
+                await weeklyReport(isTestMode);
             } else if (mode === 'incomplete') {
-                await updateIncompleteAttendance();
+                await updateIncompleteAttendance(isTestMode);
             } else {
-                await dailyAttendanceCheck();
+                await dailyAttendanceCheck(isTestMode);
             }
 
+            console.log(`🎯 ${isTestMode ? 'Test' : 'Execution'} completed successfully`);
             process.exit(0);
         } catch (err) {
             console.error('Error running attendance check:', err);
@@ -625,13 +639,13 @@ if (require.main === module) {
     })();
 }
 
-const updateIncompleteAttendance = async () => {
+const updateIncompleteAttendance = async (isTestMode = false) => {
     try {
         const now = moment().tz('Asia/Kolkata');
         const todayStart = now.clone().startOf('day');
         const todayEnd = now.clone().endOf('day');
 
-        logger.info(`Starting incomplete attendance update for current day: ${formatDateYMD(todayStart.toDate())}`);
+        logger.info(`Starting incomplete attendance update${isTestMode ? ' (TEST MODE)' : ''} for current day: ${formatDateYMD(todayStart.toDate())}`);
 
         // Check if today is Sunday (0 = Sunday in JavaScript)
         const todayDay = todayStart.day();
@@ -723,10 +737,16 @@ const updateIncompleteAttendance = async () => {
 
             // Check if user has checked in but no check out
             if (attendance.checkInTime && !attendance.checkOutTime) {
-                // Always mark as absent when user has checked in but not checked out
                 const oldStatus = attendance.status;
-                attendance.status = 'absent';
-                await attendance.save();
+                
+                if (isTestMode) {
+                    logger.info(`   🧪 TEST MODE: Would mark user ${user.email} as absent (checked in but no checkout)`);
+                    logger.info(`   📝 Status change: ${oldStatus} → absent`);
+                } else {
+                    // Always mark as absent when user has checked in but not checked out
+                    attendance.status = 'absent';
+                    await attendance.save();
+                }
 
                 markedAbsentCount++;
                 markedUsers.push({
@@ -739,7 +759,7 @@ const updateIncompleteAttendance = async () => {
                     newStatus: 'absent'
                 });
 
-                logger.info(`Marked user ${user.email} as absent - checked in but no checkout`);
+                logger.info(`${isTestMode ? 'Would mark' : 'Marked'} user ${user.email} as absent - checked in but no checkout`);
             }
         }
 

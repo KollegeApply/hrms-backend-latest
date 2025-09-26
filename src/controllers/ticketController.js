@@ -23,6 +23,9 @@ const createTicket = catchAsync(async (req, res) => {
 
     if (newTicket.ticketType === "Admin & IT") {
       teamEmails.push(configEmails?.IT_EMAIL);
+    } else if (newTicket.ticketType === "HRMS Query") {
+      // HRMS Query tickets are handled by HR team
+      teamEmails.push(configEmails?.HRMS_QUERY_EMAIL);
     }
 
     const emailSubject = `New Ticket Raised - ${newTicket.subject}`;
@@ -114,6 +117,10 @@ const updateTicket = catchAsync(async (req, res) => {
       if(updatedTicket?.ticketType === "Admin & IT"){
         ccEmails = [req?.user?.email];
         fromIT = true;
+      } else if(updatedTicket?.ticketType === "HRMS Query"){
+        // HRMS Query tickets are handled by HR team
+        ccEmails = [configEmails?.HR_EMAIL, configEmails?.HRMS_QUERY_EMAIL];
+        fromIT = false;
       }
       
       Helper.sendEmail({
