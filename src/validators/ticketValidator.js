@@ -28,6 +28,9 @@ const createTicketSchema = Joi.object({
   createdBy: objectId.required().messages({
     'any.required': 'createdById is required.'
   }),
+
+  // Accept relative or absolute paths; full URL will be constructed server-side
+  imageUrl: Joi.string().allow('', null).optional(),
 });
 
 

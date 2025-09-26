@@ -6,13 +6,54 @@ const logger = require('../config/logger');
 const User = require('../models/userModel');
 const { HR_EMAIL, IT_EMAIL, getTeamEmailConfig } = require('../utility/constants');
 const Helper = require('../utility/helper');
+const { uploadToAzure } = require('../utility/azureBlob');
+const { transformDocumentPaths } = require('../utility/common');
 
 const createTicket = catchAsync(async (req, res) => {
   const createdBy = req?.user?.id;
   const team = req?.user?.team;
   const { ticketData } = req.body;
-  const validatedData = await ticketValidator.createTicketSchema.validateAsync({ ...ticketData, createdBy });
+  // Parse ticketData when sent as multipart/form-data (it will be a JSON string)
+  let parsedTicketData = ticketData;
+  if (typeof ticketData === 'string') {
+    try {
+      parsedTicketData = JSON.parse(ticketData);
+    } catch (e) {
+      return res.status(httpStatus.BAD_REQUEST).json({
+        status: false,
+        message: 'Invalid payload for ticketData',
+      });
+    }
+  }
+  parsedTicketData = parsedTicketData || {};
+  
+  // Handle image upload if present
+  let imageUrl = null;
+  if (req.file) {
+    try {
+      imageUrl = await uploadToAzure(req.file.buffer, req.file.originalname, 'hrms-tickets/');
+      logger.info(`Image uploaded successfully for ticket: ${imageUrl}`);
+    } catch (error) {
+      logger.error('Failed to upload image:', error);
+      return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+        status: false,
+        message: 'Failed to upload image. Please try again.',
+      });
+    }
+  }
+  
+  const validatedData = await ticketValidator.createTicketSchema.validateAsync({ 
+    ...parsedTicketData, 
+    createdBy,
+    imageUrl 
+  });
   const newTicket = await TicketService.createTicket(validatedData);
+  
+  // Transform image URL to full URL if present
+  if (newTicket.imageUrl) {
+    const transformedPaths = transformDocumentPaths({ imageUrl: newTicket.imageUrl });
+    newTicket.imageUrl = transformedPaths.imageUrl;
+  }
 
   const sendMail = req?.body?.sendMail;
 
@@ -63,6 +104,17 @@ const getAllTickets = catchAsync(async (req, res) => {
   const query = req.query;
   const team = req.user.team;
   const result = await TicketService.getAllTickets(user,query,team);
+  
+  // Transform image URLs to full URLs if present
+  if (result.tickets && Array.isArray(result.tickets)) {
+    result.tickets = result.tickets.map(ticket => {
+      if (ticket.imageUrl) {
+        const transformedPaths = transformDocumentPaths({ imageUrl: ticket.imageUrl });
+        ticket.imageUrl = transformedPaths.imageUrl;
+      }
+      return ticket;
+    });
+  }
 
   res.status(httpStatus.OK).json({
     status: true,
@@ -74,6 +126,12 @@ const getAllTickets = catchAsync(async (req, res) => {
 const getTicketById = catchAsync(async (req, res) => {
   const {id} = req.params;
   const result = await TicketService.getTicketById(id);
+  
+  // Transform image URL to full URL if present
+  if (result.imageUrl) {
+    const transformedPaths = transformDocumentPaths({ imageUrl: result.imageUrl });
+    result.imageUrl = transformedPaths.imageUrl;
+  }
 
   res.status(httpStatus.OK).json({
     status: true,

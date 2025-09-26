@@ -96,6 +96,41 @@ const createBooking = catchAsync(async (req, res) => {
         cc: organizerEmail ? [organizerEmail] : [],
         team,
       }).catch(err => logger.error('Failed to send meeting booking email:', err?.message || err));
+    } else if (organizerEmail && team) {
+      // No attendees: notify organizer directly
+      const subject = `✅ Your booking has been confirmed – ${created?.title}`;
+      const displayTeam = getTeamEmailConfig(team);
+      const message = `
+        <div style="font-family: Arial, sans-serif; max-width: 550px; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; background-color: #f9f9f9; color: #333;">
+          <!-- Greeting -->
+          <p style="font-size: 15px; margin: 0 0 12px 0;">Hello ${organizerName},</p>
+
+          <!-- Intro -->
+          <p style="font-size: 14px; margin: 0 0 16px 0;">
+            Your booking for <strong>${created?.roomId?.name}</strong> has been successfully confirmed.  
+            Please find the details below:
+          </p>
+
+          <!-- Meeting Details -->
+          <div style="padding: 14px; background: #fff; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 16px;">
+            <p style="margin: 6px 0; font-size: 14px;"><strong>● Title:</strong> ${created?.title}</p>
+            <p style="margin: 6px 0; font-size: 14px;"><strong>● Date & Time:</strong> ${moment(created?.startTime).tz('Asia/Kolkata').format('DD MMM YYYY')} , ${moment(created?.startTime).tz('Asia/Kolkata').format('hh:mm A')} - ${moment(created?.endTime).tz('Asia/Kolkata').format('hh:mm A')}</p>
+            <p style="margin: 6px 0; font-size: 14px;"><strong>● Location:</strong> ${created?.roomId?.name}</p>
+            <p style="margin: 6px 0; font-size: 14px;"><strong>● Booked By:</strong> ${organizerName}</p>
+          </div>
+
+          <!-- Closing -->
+          <p style="font-size: 14px; margin: 0 0 12px 0;">If you need to make changes, you can edit or cancel the booking from your HRMS portal.</p>
+          <p style="font-size: 14px; margin: 0;">Best Regards,<br/><strong>${displayTeam?.TEAM_NAME || 'Company'}</strong></p>
+        </div>
+      `;
+
+      Helper.sendEmail({
+        receiverEmails: [organizerEmail],
+        subject,
+        message,
+        team,
+      }).catch(err => logger.error('Failed to send meeting booking email (organizer only):', err?.message || err));
     }
   } catch (e) {
     logger.error('Booking email dispatch error:', e?.message || e);

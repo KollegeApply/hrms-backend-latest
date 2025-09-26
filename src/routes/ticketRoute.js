@@ -5,12 +5,13 @@ const {
 } = require('../middleware/authMiddleware');
 const ticketController = require('../controllers/ticketController');
 const { USER_ROLES } = require('../utility/constants');
+const { safeUpload } = require('../middleware/uploadMiddleware');
 
 const router = express.Router();
 
 router.use(authenticateUser);
 
-router.post('/',ticketController.createTicket);
+router.post('/', safeUpload(['image']), ticketController.createTicket);
 
 router.get('/',ticketController.getAllTickets);
 

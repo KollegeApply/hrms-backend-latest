@@ -41,6 +41,10 @@ const ticketSchema = new mongoose.Schema({
   resolvedAt: {
     type: Date,
   },
+  imageUrl: {
+    type: String,
+    default: null,
+  },
   createdAt: {
     type: Date,
     default: Date.now,
