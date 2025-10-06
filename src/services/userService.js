@@ -24,8 +24,67 @@ const employeeLeaveBalanceModel = require('../models/employeeLeaveBalanceModel')
 const leaveTypeModel = require('../models/leaveTypeModel');
 const { default: mongoose } = require('mongoose');
 const candidateModel = require('../models/candidateModel');
+const Feedback = require('../models/feedbackModel');
 
 class UserService {
+  /**
+   * Calculate average rating for a user from all feedback received
+   * @param {string} userId - The user's MongoDB ObjectId
+   * @returns {Promise<number>} - Average rating (0-5 scale) or 0 if no ratings
+   */
+  async calculateAverageRating(userId) {
+    try {
+      const mongoose = require('mongoose');
+      
+      let feedbacks = await Feedback.find({
+        givenTo: userId,
+        isDeleted: false
+      }).select('rating legacyRating');
+
+      if (!feedbacks || feedbacks.length === 0) {
+        return 0;
+      }
+
+      let totalRating = 0;
+      let ratingCount = 0;
+
+      feedbacks.forEach(feedback => {
+        if (feedback.rating && typeof feedback.rating === 'object') {
+          if (feedback.rating.overall !== undefined && typeof feedback.rating.overall === 'number') {
+            totalRating += feedback.rating.overall;
+            ratingCount++;
+          } else {
+            Object.entries(feedback.rating).forEach(([key, value]) => {
+              if (typeof value === 'number' && value > 0 && key !== 'overall') {
+                totalRating += value;
+                ratingCount++;
+              }
+            });
+          }
+        }
+        else if (feedback.legacyRating) {
+          if (feedback.legacyRating.overall !== undefined && typeof feedback.legacyRating.overall === 'number') {
+            totalRating += feedback.legacyRating.overall;
+            ratingCount++;
+          } else {
+            Object.entries(feedback.legacyRating).forEach(([key, value]) => {
+              if (typeof value === 'number' && value > 0 && key !== 'overall') {
+                totalRating += value;
+                ratingCount++;
+              }
+            });
+          }
+        }
+      });
+
+      const averageRating = ratingCount > 0 ? Math.round((totalRating / ratingCount) * 10) / 10 : 0;
+      return averageRating;
+    } catch (error) {
+      logger.error('Error calculating average rating:', error);
+      return 0;
+    }
+  }
+
   /**
    * Get users with pagination and filtering.
    *
@@ -200,9 +259,25 @@ class UserService {
         null,
         populateOptions
       );
+      
+      // Add average rating to each user
+      if (paginatedResult.data && Array.isArray(paginatedResult.data)) {
+        for (let user of paginatedResult.data) {
+          user.averageRating = await this.calculateAverageRating(user._id);
+        }
+      }
+      
       return paginatedResult;
     } else {
       const users = await User.find(query).sort(sort).populate(populateOptions);
+      
+      // Add average rating to each user
+      if (users && Array.isArray(users)) {
+        for (let user of users) {
+          user.averageRating = await this.calculateAverageRating(user._id);
+        }
+      }
+      
       return { data: users };
     }
   }

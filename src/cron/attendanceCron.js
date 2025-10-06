@@ -185,11 +185,25 @@ const dailyAttendanceCheck = async (isTestMode = false) => {
                 continue;
             }
 
-            // Check if user has half-day leave applied
-            const hasHalfDayLeave = attendance?.status && [
-                'leave_applied_first_half', 
-                'leave_applied_second_half'
-            ].includes(attendance.status);
+            // Check if user has half-day leave applied (using new leave linkage approach)
+            let hasHalfDayLeave = false;
+            let halfDayType = null;
+            if (attendance?.leaveId) {
+                try {
+                    const LeaveApplication = require('../models/leaveApplicationModel');
+                    const linkedLeave = await LeaveApplication.findById(attendance.leaveId).select('isHalfDay halfDayType');
+                    hasHalfDayLeave = !!linkedLeave && linkedLeave.isHalfDay === true;
+                    halfDayType = linkedLeave?.halfDayType;
+                } catch (err) {
+                    // Fallback to old status-based approach if leave lookup fails
+                    hasHalfDayLeave = attendance?.status && [
+                        'leave_applied_first_half', 
+                        'leave_applied_second_half'
+                    ].includes(attendance.status);
+                    halfDayType = attendance?.status === 'leave_applied_first_half' ? 'first' : 
+                                  attendance?.status === 'leave_applied_second_half' ? 'second' : null;
+                }
+            }
 
             // Status-based attendance analysis
             if (attendance) {
@@ -203,7 +217,7 @@ const dailyAttendanceCheck = async (isTestMode = false) => {
                     const normalCutoff = 10 * 60 + 15; // 10:15 AM in minutes
 
                     // Check for late check-in based on leave type
-                    if (attendance.status === 'leave_applied_first_half') {
+                    if (halfDayType === 'first') {
                         if (checkInTimeInMinutes > firstHalfLeaveCutoff) {
                             emailReasons.push(`
                                 <h3 style="color: #d9534f; margin-top: 0;">Late Check-in (First Half Leave)</h3>
@@ -214,7 +228,7 @@ const dailyAttendanceCheck = async (isTestMode = false) => {
                                 </p>
                             `);
                         }
-                    } else if (attendance.status === 'leave_applied_second_half') {
+                    } else if (halfDayType === 'second') {
                         if (checkInTimeInMinutes > normalCutoff) {
                             emailReasons.push(`
                                 <h3 style="color: #d9534f; margin-top: 0;">Late Check-in (Second Half Leave)</h3>
@@ -460,10 +474,10 @@ const weeklyReport = async (isTestMode = false) => {
                 const dayName = moment(dateKey).tz('Asia/Kolkata').format('ddd'); // Short day name (Mon, Tue, Wed)
 
                 // Handle leave and WFH statuses
-                if (['leave_applied', 'leave_applied_full', 'leave_applied_first_half', 'leave_applied_second_half', 'wfh_applied'].includes(record.status)) {
+                if (['leave_applied', 'leave_applied_full', 'leave_applied_first_half', 'leave_applied_second_half', 'wfh_applied'].includes(record.status) || record.leaveId) {
                     if (!data.attendanceByDate.has(dateKey)) {
                         data.leaveCount++;
-                        data.attendanceByDate.set(dateKey, { status: record.status });
+                        data.attendanceByDate.set(dateKey, { status: record.status, leaveId: record.leaveId });
                     }
                 } else if (record.checkInTime) {
                     // Handle attendance statuses
