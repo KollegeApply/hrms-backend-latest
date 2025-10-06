@@ -346,70 +346,114 @@ class FeedbacksService {
     const teamUserIds = teamUsers.map(user => user._id);
 
     const isAdmin = ['admin', 'subadmin', 'hr'].includes(userRole);
+    const tab = filters.tab || 'all';
+    
+    // Base filter based on tab selection
+    let baseFilter = {};
 
-    // Base filter for admin/HR users
-    let baseFilter = isAdmin
-        ? {
+    if (tab === 'given') {
+        // Show only feedback given by the current user
+        baseFilter = { givenBy: userId };
+    } else if (tab === 'received') {
+        // Show only feedback received by the current user (excluding pending TL approval)
+        baseFilter = { 
+            givenTo: userId,
             $or: [
-                { givenBy: { $in: teamUserIds } }, // Feedback given by team members
-                { 
-                    givenTo: { $in: teamUserIds }, // Feedback given to team members
-                    $or: [
-                        { approvalStatus: { $ne: 'pending_tl_approval' } }, // Not pending approval
-                        { approvalStatus: { $exists: false } }, // Legacy feedback without approval status
-                        { approvalStatus: 'approved' }, // TL-approved STL feedback
-                        { approvalStatus: 'direct' } // Direct feedback
-                    ]
-                }
-            ]
-        }
-        : {
-            $or: [
-                { givenBy: userId },          
-                // For received feedback, exclude pending TL approval unless user is TL
-                { 
-                    givenTo: userId,
-                    $or: [
-                        { approvalStatus: { $ne: 'pending_tl_approval' } }, // Not pending approval
-                        { approvalStatus: { $exists: false } }, // Legacy feedback without approval status
-                        { approvalStatus: 'approved' }, // Already approved
-                        { approvalStatus: 'direct' } // Direct feedback
-                    ]
-                },   
-                { givenBy: { $in: teamUserIds } }
+                { approvalStatus: { $exists: false } }, // Legacy feedback without approval status
+                { approvalStatus: 'approved' }, // Already approved
+                { approvalStatus: 'direct' }, // Direct feedback
+                { approvalStatus: { $ne: 'pending_tl_approval' } } // Not pending approval
             ]
         };
-
-    // Special case: TL can see focused team feedback
-    if (userRole === 'teamlead') {
+    } else if (tab === 'team-feedbacks' && userRole === 'teamlead') {
+        // Show all feedback given to team members (for team leads)
         const directReports = await User.find({ teamLeadId: userId }, '_id');
+        const directReportIds = directReports.map(user => user._id);
+        baseFilter = { givenTo: { $in: directReportIds } };
+    } else if (tab === 'edit-request') {
+        // Show only feedback with edit requests
+        baseFilter = { 'editRequest.requested': true };
+    } else {
+        // Default: show feedback based on user role
+        if (isAdmin) {
+            // Admin/HR/SubAdmin can see all team feedback
+            baseFilter = {
+                $or: [
+                    { givenBy: { $in: teamUserIds } }, // Feedback given by team members
+                    { 
+                        givenTo: { $in: teamUserIds }, // Feedback given to team members
+                        $or: [
+                            { approvalStatus: { $ne: 'pending_tl_approval' } }, // Not pending approval
+                            { approvalStatus: { $exists: false } }, // Legacy feedback without approval status
+                            { approvalStatus: 'approved' }, // TL-approved STL feedback
+                            { approvalStatus: 'direct' } // Direct feedback
+                        ]
+                    }
+                ]
+            };
+        } else if (userRole === 'teamlead') {
+            // Team leads can see their team feedback
+            const directReports = await User.find({ teamLeadId: userId }, '_id');
+            const stlUsers = await User.find({ 
+                teamLeadId: userId, 
+                role: 'subteamlead' 
+            }, '_id');
+            
+            const directReportIds = directReports.map(user => user._id);
+            const stlIds = stlUsers.map(user => user._id);
+            
+            baseFilter = {
+                $or: [
+                    { givenBy: userId },           // Feedback given by TL
+                    { givenTo: userId },           // Feedback received by TL
+                    // STL ↔ Employee within team hierarchy only
+                    {
+                        givenBy: { $in: stlIds },
+                        givenTo: { $in: directReportIds }
+                    },
+                    {
+                        givenBy: { $in: directReportIds },
+                        givenTo: { $in: stlIds }
+                    },
+                    // TL can see STL feedback pending their approval
+                    { 
+                        approvalStatus: 'pending_tl_approval',
+                        givenBy: { $in: stlIds } // From their team STLs only
+                    }
+                ]
+            };
+        } else {
+            // Employees, IT, Interns can only see their own feedback (given and received)
+            // They cannot see feedback from/to other users
+            baseFilter = {
+                $or: [
+                    { givenBy: userId },          // Feedback given by the user
+                    { 
+                        givenTo: userId,          // Feedback received by the user
+                        $or: [
+                            { approvalStatus: { $ne: 'pending_tl_approval' } }, // Not pending approval
+                            { approvalStatus: { $exists: false } }, // Legacy feedback without approval status
+                            { approvalStatus: 'approved' }, // Already approved
+                            { approvalStatus: 'direct' } // Direct feedback
+                        ]
+                    }
+                ]
+            };
+        }
+    }
+
+    // Special case: TL can see STL feedback pending their approval (for stl-approvals tab)
+    if (userRole === 'teamlead' && tab === 'stl-approvals') {
         const stlUsers = await User.find({ 
             teamLeadId: userId, 
             role: 'subteamlead' 
         }, '_id');
         
-        const directReportIds = directReports.map(user => user._id);
         const stlIds = stlUsers.map(user => user._id);
         
-        baseFilter = {
-            $or: [
-                { givenBy: userId },           // Feedback given by TL
-                { givenTo: userId },           // Feedback received by TL
-                // STL ↔ Employee within team hierarchy only
-                {
-                    givenBy: { $in: stlIds },
-                    givenTo: { $in: directReportIds }
-                },
-                {
-                    givenBy: { $in: directReportIds },
-                    givenTo: { $in: stlIds }
-                },
-                // TL can see STL feedback pending their approval
-                { 
-                    approvalStatus: 'pending_tl_approval',
-                    givenBy: { $in: stlIds } // From their team STLs only
-                }
-            ]
+        baseFilter = { 
+            approvalStatus: 'pending_tl_approval',
+            givenBy: { $in: stlIds } // From their team STLs only
         };
     }
 
@@ -544,6 +588,7 @@ class FeedbacksService {
 
     // Get total count for pagination
     const totalCount = await Feedback.countDocuments(finalFilter);
+
 
     return {
         feedbacks,

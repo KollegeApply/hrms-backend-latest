@@ -172,6 +172,12 @@ userSchema.set('toJSON', {
     delete ret.__v;
     delete ret.password; // Ensure password is never sent
     delete ret.isDeleted; // Usually don't send this either
+    
+    // Preserve dynamically added fields like averageRating
+    if (doc.averageRating !== undefined) {
+      ret.averageRating = doc.averageRating;
+    }
+    
     return ret;
   },
 });
@@ -184,6 +190,12 @@ userSchema.set('toObject', {
     delete ret.__v;
     delete ret.password;
     delete ret.isDeleted;
+    
+    // Preserve dynamically added fields like averageRating
+    if (doc.averageRating !== undefined) {
+      ret.averageRating = doc.averageRating;
+    }
+    
     return ret;
   },
 });

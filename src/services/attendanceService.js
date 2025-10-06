@@ -1,5 +1,6 @@
 const Attendance = require('../models/attendanceModel');
 const User = require('../models/userModel');
+const LeaveApplication = require('../models/leaveApplicationModel');
 const { startOfDay, endOfDay, parseISO, isValid } = require('date-fns');
 const moment = require('moment-timezone');
 
@@ -21,14 +22,13 @@ const attendanceService = {
       const now = moment().tz('Asia/Kolkata');
       const today = now.clone().startOf('day'); 
 
+      // Check for any existing attendance record for today
       const existingAttendance = await Attendance.findOne({
         user: userId,
         date: today.toDate(),
-        checkOutTime: null,
-        status: { $in: ['present', 'late_in', 'early_out', 'late_in_early_out'] },
       });
 
-      if (existingAttendance) {
+      if (existingAttendance && existingAttendance.checkInTime) {
         return {
           status: 'error',
           statusCode: 400,
@@ -81,16 +81,30 @@ const attendanceService = {
         }
       }
 
-      const attendance = new Attendance({
-        user: userId,
-        checkInTime: now,
-        checkInLocation: { latitude, longitude },
-        date: today,
-        status: status,
-        ...(checkInMode && { checkInMode }),
-      });
-
-      await attendance.save();
+      let attendance;
+      
+      if (leaveAttendance) {
+        // Update existing leave attendance record with check-in details
+        attendance = leaveAttendance;
+        attendance.checkInTime = now;
+        attendance.checkInLocation = { latitude, longitude };
+        attendance.status = status;
+        if (checkInMode) {
+          attendance.checkInMode = checkInMode;
+        }
+        await attendance.save();
+      } else {
+        // Create new attendance record
+        attendance = new Attendance({
+          user: userId,
+          checkInTime: now,
+          checkInLocation: { latitude, longitude },
+          date: today,
+          status: status,
+          ...(checkInMode && { checkInMode }),
+        });
+        await attendance.save();
+      }
       return {
         status: 'success',
         statusCode: 201,
@@ -188,21 +202,22 @@ const attendanceService = {
       const requiredWorkHours = 9; // 9 hours
       const halfDayWorkHours = 4.5; // 4.5 hours for half day leave
 
-      // Check if user has leave applied
-      const leaveAttendance = await Attendance.findOne({
-        user: userId,
-        date: today.toDate(),
-        status: { 
-          $in: ['leave_applied_first_half', 'leave_applied_second_half'] 
-        },
-      });
-
+      // Determine half-day leave via linkage first, fallback to legacy status
+      let hasHalfDayLeave = false;
+      if (attendance.leaveId) {
+        try {
+          const linkedLeave = await LeaveApplication.findById(attendance.leaveId).select('isHalfDay halfDayType');
+          hasHalfDayLeave = !!linkedLeave && linkedLeave.isHalfDay === true;
+        } catch (_) {
+          hasHalfDayLeave = false;
+        }
+      }
       let newStatus = attendance.status; // Keep previous status by default
 
-      if (leaveAttendance) {
-        // User has half-day leave applied
+      if (hasHalfDayLeave) {
+        // User has half-day leave applied (detected via linkage)
         if (workDurationHours < halfDayWorkHours) {
-          // Worked less than 4.5 hours
+          // Worked less than 4.5 hours in the working half
           if (attendance.status === 'present') {
             newStatus = 'early_out';
           } else if (attendance.status === 'late_in') {
