@@ -155,6 +155,8 @@ const updateUser = catchAsync(async (req, res) => {
       );
     }
 
+    console.log(updatedUser, "updateUser")
+
     // sending mail
     if (oldUser?.status === 'probation' && updatedUser?.status === 'onroll') {
       const today = new Date();

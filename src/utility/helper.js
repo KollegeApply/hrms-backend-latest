@@ -289,7 +289,7 @@ class Helper {
     `;
   }
 
-  static fullTimeConversion(userName,tlName, date, jobTitle, team) {
+  static fullTimeConversion(userName, date, jobTitle, team) {
     const displayTeam = getTeamEmailConfig(team);
 
       const formattedDate = moment.tz(date, 'Asia/Kolkata').format('DD MMMM YYYY');
