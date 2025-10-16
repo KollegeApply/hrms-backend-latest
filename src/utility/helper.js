@@ -344,7 +344,7 @@ class Helper {
     `;
   }
 
-  static fullTimeConversion(userName, tlName, date, jobTitle, team) {
+  static fullTimeConversion(userName, date, jobTitle, team) {
     const displayTeam = getTeamEmailConfig(team);
 
     const formattedDate = moment.tz(date, 'Asia/Kolkata').format('DD MMMM YYYY');
@@ -377,7 +377,7 @@ class Helper {
     </div>
 
     <p style="color: #555; font-size: 16px; line-height: 1.6;">
-      Thank you for your dedication and the contributions you’ve made thus far. We look forward to seeing your continued growth and success in your role.
+      Thank you for your dedication and the contributions you’ve made this far. We look forward to seeing your continued growth and success in your role.
     </p>
 
     <p style="color: #555; font-size: 16px; line-height: 1.6;">

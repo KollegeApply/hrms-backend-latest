@@ -247,16 +247,15 @@ async finalSubmit(email, data) {
       throw new Error('Candidate not found');
     }
 
-    let userDetails = await UserDetails.findById(candidate.userDetails);
-    if (!userDetails) {
-      userDetails = new UserDetails();
-    }
+    const updatedUserDetails = await UserDetails.findByIdAndUpdate(
+    candidate.userDetails, 
+    updateData,            
+    { new: true, upsert: true } 
+  );
 
-    Object.assign(userDetails, updateData);
-    await userDetails.save();
 
     candidate.status = 'underReview';
-    candidate.userDetails = userDetails._id;
+    candidate.userDetails = updatedUserDetails._id;
     await candidate.save();
 
     return candidate;

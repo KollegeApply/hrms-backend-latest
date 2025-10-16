@@ -61,6 +61,7 @@ const createTicket = catchAsync(async (req, res) => {
     const createdByUser = await User.findById(createdBy);
     const configEmails = getTeamEmailConfig(team);
     const teamEmails = [configEmails?.HR_EMAIL];
+    const ccEmails = [createdByUser?.email];
 
     if (newTicket.ticketType === "Admin & IT") {
       teamEmails.push(configEmails?.IT_EMAIL);
@@ -85,6 +86,7 @@ const createTicket = catchAsync(async (req, res) => {
       message: emailMessage,
       fromHR: false,
       fromIT: false,
+      cc:ccEmails,
       team,
     }).catch((err) => {
       logger.error(`Failed to send ticket creation email:`, err);

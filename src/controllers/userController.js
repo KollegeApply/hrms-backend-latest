@@ -14,6 +14,7 @@ const candidateValidator = require('../validators/candidateValidator');
 const { uploadToAzure } = require('../utility/azureBlob');
 const { transformDocumentPaths } = require('../utility/common');
 const crypto = require('crypto');
+const moment = require('moment-timezone');
 
 // Helper function to validate URLs
 function isValidUrl(string) {
@@ -207,9 +208,10 @@ const updateUser = catchAsync(async (req, res) => {
 
   // sending mail
   if (oldUser?.status === 'probation' && updatedUser?.status === 'onroll') {
-    const today = new Date();
-    const tomorrow = new Date(today);
-    tomorrow.setDate(today.getDate() + 1);
+    const today = moment();
+    const tomorrow = today.clone().add(1, 'days');   
+
+    const formattedDate = tomorrow.format('DD MMMM YYYY');
     const sendMail = req?.body?.sendMail === true;
     if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
       logger.info(
@@ -220,7 +222,7 @@ const updateUser = catchAsync(async (req, res) => {
         subject: `You’ve Earned Full-Time Status! Congratulations !!`,
         message: Helper.fullTimeConversion(
           updatedUser?.firstName,
-          tomorrow.toISOString(),
+          formattedDate,
           updatedUser?.jobTitle,
           updatedUser?.team,
         ),
