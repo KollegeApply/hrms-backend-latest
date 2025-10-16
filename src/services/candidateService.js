@@ -4,6 +4,8 @@ const { generateCIFToken, cleanEmptyFields } = require('../utility/common');
 const _ = require('lodash');
 const jwt = require('jsonwebtoken');
 const User = require('../models/userModel');
+const aiService = require('./aiService');
+const logger = require('../config/logger');
 
 
 const cleanDataForUpdate = (data) => {
@@ -36,7 +38,7 @@ class CandidateService {
     }
   }
 
-  async getCandidates({ page = 1, limit = 10, status, search }, team) {
+  async getCandidates({ page = 1, limit = 10, status, search, includeUserDetails = false }, team) {
     const query = { isDeleted: false };
 
     if (status) {
@@ -44,12 +46,37 @@ class CandidateService {
     }
 
     if (search) {
-      query.$or = [
-        { firstName: { $regex: search, $options: 'i' } },
-        { lastName: { $regex: search, $options: 'i' } },
-        { personalEmail: { $regex: search, $options: 'i' } },
-        { phoneNumber: { $regex: search, $options: 'i' } }
+      const searchTerm = search.trim();
+      const regex = new RegExp(searchTerm, 'i');
+      
+      const searchFilters = [
+        { firstName: regex },
+        { lastName: regex },
+        { personalEmail: regex },
+        { phoneNumber: regex }
       ];
+      
+      // Handle full name search (firstName + lastName combinations)
+      const searchWords = searchTerm.split(/\s+/).filter(word => word.length > 0);
+      if (searchWords.length >= 2) {
+        // Search for "firstName lastName" combination
+        searchFilters.push({
+          $and: [
+            { firstName: new RegExp(searchWords[0], 'i') },
+            { lastName: new RegExp(searchWords[1], 'i') }
+          ]
+        });
+        
+        // Search for "lastName firstName" combination (reverse order)
+        searchFilters.push({
+          $and: [
+            { firstName: new RegExp(searchWords[1], 'i') },
+            { lastName: new RegExp(searchWords[0], 'i') }
+          ]
+        });
+      }
+      
+      query.$or = searchFilters;
     }
 
     const teamUsers = await User.find({ team }, '_id');
@@ -61,13 +88,19 @@ class CandidateService {
     const limitInt = parseInt(limit);
     const skip = (pageInt - 1) * limitInt;
 
+    let candidateQuery = Candidate.find(query)
+      .populate('pointOfContact', 'firstName lastName email team')
+      .populate('department', 'name')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limitInt);
+    
+    if (includeUserDetails) {
+      candidateQuery = candidateQuery.populate('userDetails');
+    }
+
     const [candidates, total] = await Promise.all([
-      Candidate.find(query)
-        .populate('pointOfContact', 'firstName lastName email team')
-        .populate('department', 'name')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limitInt),
+      candidateQuery,
       Candidate.countDocuments(query),
     ]);
 
@@ -214,16 +247,15 @@ async finalSubmit(email, data) {
       throw new Error('Candidate not found');
     }
 
-    let userDetails = await UserDetails.findById(candidate.userDetails);
-    if (!userDetails) {
-      userDetails = new UserDetails();
-    }
+    const updatedUserDetails = await UserDetails.findByIdAndUpdate(
+    candidate.userDetails, 
+    updateData,            
+    { new: true, upsert: true } 
+  );
 
-    Object.assign(userDetails, updateData);
-    await userDetails.save();
 
     candidate.status = 'underReview';
-    candidate.userDetails = userDetails._id;
+    candidate.userDetails = updatedUserDetails._id;
     await candidate.save();
 
     return candidate;

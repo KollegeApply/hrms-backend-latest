@@ -5,6 +5,7 @@ const {
   authenticateUser,
   authorizeRole,
 } = require('../middleware/authMiddleware');
+const { safeUpload } = require('../middleware/uploadMiddleware');
 const { USER_ROLES } = require('../utility/constants');
 
 const router = express.Router();
@@ -32,6 +33,8 @@ router.post(
 );
 
 router.get('/', authenticateUser, userController?.getAllUsers);
+// Dedicated route for meeting attendee search to avoid side effects elsewhere
+router.get('/meeting-attendees', authenticateUser, userController?.getAllUsersForMeeting);
 
 router.get('/tl-id', authenticateUser, userController?.getUserByTlId);
 
@@ -94,7 +97,36 @@ router.post('/forgot-password', userController?.forgotPassword); // Request OTP 
 // Update the handler for this route
 router.post('/reset-password', userController?.verifyOtp);
 
+// Section approvals
+router.post('/section-approval/request', authenticateUser, userController?.requestSectionApproval);
+router.get('/section-approval/status', authenticateUser, userController?.getSectionApprovalStatus);
+router.post('/section-approval/token/:token', userController?.sectionApprovalByToken);
 
 router.get('/:id/history', authenticateUser, userController?.getUserHistory);
+
+// Approve User Form: Restricted to HR/Admin/SubAdmin
+router.put(
+  '/:id/approve',
+  authenticateUser,
+  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]),
+  userController.approveUser
+);
+
+// Update User CIF Form: Restricted to HR/Admin/SubAdmin
+router.put(
+  '/:id/cif-form',
+  authenticateUser,
+  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]),
+  safeUpload([]), // Allow any file fields
+  userController.updateUserCifForm
+);
+
+// Upload Profile Photo: Users can upload their own profile photo
+router.post(
+  '/:userId/profile/photo',
+  authenticateUser,
+  safeUpload(['photo']), // Allow only 'photo' field, single file
+  userController.uploadProfilePhoto
+);
 
 module.exports = router;

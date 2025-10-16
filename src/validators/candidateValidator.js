@@ -70,7 +70,7 @@ const candidateDraftSchema = Joi.object({
     nationality: Joi.string().min(1).optional(),
     aadharCard: Joi.string().pattern(AADHAR_REGEX).optional(),
     panCard: Joi.string().uppercase().pattern(PAN_REGEX).optional(),
-    workExp: Joi.string().pattern(/^[0-9]+$/).optional(),
+    workExp: Joi.string().pattern(/^[0-9]+(\.[0-9]+)?$/).optional(),
     existingPfAccount: Joi.string().valid("yes", "no").optional(),
 
     existingUan: Joi.when("existingPfAccount", {
@@ -238,7 +238,7 @@ const finalSubmitSchema = candidateDraftSchema.concat(
         .uppercase()
         .pattern(PAN_REGEX)
         .required(),
-      workExp: Joi.string().pattern(/^[0-9]+$/).required(),
+      workExp: Joi.string().pattern(/^[0-9]+(\.[0-9]+)?$/).required(),
       existingPfAccount: Joi.string().valid("yes", "no").required(),
 
       existingUan: Joi.when(Joi.ref("existingPfAccount"), {
@@ -359,6 +359,61 @@ const finalSubmitSchema = candidateDraftSchema.concat(
       expectedJoiningDate: Joi.string().isoDate().optional().allow('', null),
     })
   )
+  .custom((value, helpers) => {
+    if (!value || !Array.isArray(value)) {
+      return value;
+    }
+    
+    for (let i = 0; i < value.length; i++) {
+      const entry = value[i];
+      
+      // Check if entry is effectively empty
+      const isEffectivelyEmpty = 
+        (!entry.organization || entry.organization.trim() === '') &&
+        (!entry.from || entry.from.trim() === '') &&
+        (!entry.to || entry.to.trim() === '') &&
+        (!entry.jobTitle || entry.jobTitle.trim() === '') &&
+        (!entry.address || entry.address.trim() === '') &&
+        (!entry.reasonForLeaving || entry.reasonForLeaving.trim() === '') &&
+        (!entry.finalSalary || entry.finalSalary.trim() === '') &&
+        (!entry.supervisorName || entry.supervisorName.trim() === '') &&
+        (!entry.supervisorContact || entry.supervisorContact.trim() === '') &&
+        (!entry.employmentType || entry.employmentType.trim() === '') &&
+        (!entry.expectedCTC || entry.expectedCTC.trim() === '') &&
+        (!entry.expectedJoiningDate || entry.expectedJoiningDate.trim() === '');
+      
+      if (isEffectivelyEmpty) {
+        continue; // Allow completely empty entries
+      }
+      
+      // If not empty, validate required fields
+      if (!entry.organization || entry.organization.trim() === '') {
+        return helpers.error('array.includesRequiredUnknowns', { 
+          message: `Employment entry ${i + 1}: Organization is required when employment details are provided` 
+        });
+      }
+      
+      if (!entry.from || entry.from.trim() === '') {
+        return helpers.error('array.includesRequiredUnknowns', { 
+          message: `Employment entry ${i + 1}: From date is required when employment details are provided` 
+        });
+      }
+      
+      if (!entry.to || entry.to.trim() === '') {
+        return helpers.error('array.includesRequiredUnknowns', { 
+          message: `Employment entry ${i + 1}: To date is required when employment details are provided` 
+        });
+      }
+      
+      if (!entry.jobTitle || entry.jobTitle.trim() === '') {
+        return helpers.error('array.includesRequiredUnknowns', { 
+          message: `Employment entry ${i + 1}: Job Title is required when employment details are provided` 
+        });
+      }
+    }
+    
+    return value;
+  })
   .optional(),
 
 
@@ -409,7 +464,7 @@ const finalSubmitSchema = candidateDraftSchema.concat(
       graduationProof: Joi.string().required(),
       updatedResume: Joi.string().required(),
       cancelledChequeOrPassbook: Joi.string().required(),
-      form11: Joi.string().required(),
+      form11: Joi.string().optional().allow(null, ''),
 
       // --- Optional Documents ---
       postGraduationProof: Joi.string().optional().allow(null, ''),

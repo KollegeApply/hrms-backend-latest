@@ -14,6 +14,8 @@ if (process.env.NODE_ENV) {
 const LeavePolicy = require('../models/leavePolicyModel');
 const LeaveType = require('../models/leaveTypeModel');
 const LeavePolicyMapping = require('../models/leavePolicyMappingModel');
+const User = require('../models/userModel');
+const EmployeeLeaveBalance = require('../models/employeeLeaveBalanceModel');
 
 async function addLOPToProbationPolicy() {
   try {
@@ -36,6 +38,7 @@ async function addLOPToProbationPolicy() {
     });
 
     if (existingMapping) {
+      console.log('ℹ️ LOP mapping already exists for Probation Policy');
     } else {
       await LeavePolicyMapping.create({
         leavePolicyId: probationPolicy._id,
@@ -48,6 +51,36 @@ async function addLOPToProbationPolicy() {
       });
 
       console.log('✅ LOP successfully added to Probation Policy');
+    }
+
+    // Create LOP balance documents for existing probation users
+    const probationUsers = await User.find({
+      status: 'probation',
+      leavePolicyId: probationPolicy._id
+    });
+
+    console.log(`📋 Found ${probationUsers.length} probation users to update`);
+
+    for (const user of probationUsers) {
+      // Check if user already has LOP balance
+      const existingBalance = await EmployeeLeaveBalance.findOne({
+        userId: user._id,
+        leaveTypeId: lopLeaveType._id
+      });
+
+      if (!existingBalance) {
+        await EmployeeLeaveBalance.create({
+          userId: user._id,
+          leaveTypeId: lopLeaveType._id,
+          accrued: 0,
+          used: 0,
+          carryForwarded: 0,
+          total: 0,
+        });
+        console.log(`✅ Created LOP balance for user: ${user.employeeId}`);
+      } else {
+        console.log(`ℹ️ LOP balance already exists for user: ${user.employeeId}`);
+      }
     }
   } catch (err) {
     console.error('❌ Error:', err);

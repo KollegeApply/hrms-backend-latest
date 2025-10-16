@@ -13,7 +13,7 @@ const objectId = Joi.string()
 
 const createTicketSchema = Joi.object({
   ticketType: Joi.string()
-    .valid("Payroll and Salary query","HR & Grievance query","Expenses & Reimbursements","Admin & IT","Backdated attendance","Miscellaneous")
+    .valid("Payroll and Salary query","HR & Grievance query","Expenses & Reimbursements","Admin & IT","Backdated attendance","HRMS Query","Miscellaneous")
     .required(),
 
   subject: Joi.string()
@@ -28,13 +28,21 @@ const createTicketSchema = Joi.object({
   createdBy: objectId.required().messages({
     'any.required': 'createdById is required.'
   }),
+
+  // Accept relative or absolute paths; full URL will be constructed server-side
+  imageUrl: Joi.string().allow('', null).optional(),
 });
 
 
 
 const updateTicketSchema = Joi.object({
   status: Joi.string().valid('pending', 'in_progress', 'resolved','rejected'),
-});
+  actionReason: Joi.string().allow('', null),
+  // Accept legacy/alternative client field and rename it to actionReason
+  resolutionComment: Joi.string().allow('', null),
+})
+  .rename('resolutionComment', 'actionReason', { ignoreUndefined: true, override: true })
+  .options({ stripUnknown: true });
 
 module.exports = {
   createTicketSchema,

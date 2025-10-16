@@ -22,6 +22,9 @@ router.post(
 // Get all Holiday
 router.get('/', authenticateUser, holidayController?.getAllHolidays);
 
+// Check if a date is a holiday
+router.get('/check', authenticateUser, holidayController?.checkHoliday);
+
 // Get Holiday by Id
 router.get('/:id', authenticateUser, holidayController?.getHolidayById);
 

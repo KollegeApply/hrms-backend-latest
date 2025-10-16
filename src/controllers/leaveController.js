@@ -42,11 +42,11 @@ const getLeaveById = catchAsync(async (req, res) => {
   const validatedData = await leaveValidator?.leaveIdSchema?.validateAsync({
     id: req?.params?.id,
   });
-  const user1 = req?.user;
-  let leaveFound;
-  if (user1?.role === 'teamlead' || user1?.role === 'subteamlead') {
-    leaveFound = await leaveService?.getLeaveTl(validatedData);
-  } else leaveFound = await leaveService?.getLeaveById(validatedData);
+  
+  // Always get leaves by specific user ID, regardless of role
+  // This endpoint is for getting a specific user's leaves (e.g., for personal calendar)
+  const leaveFound = await leaveService?.getLeaveById(validatedData);
+  
   if (!leaveFound) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Leave not found.');
   }
@@ -63,19 +63,20 @@ const updateLeave = catchAsync(async (req, res) => {
   const { id: leaveId } = req.params;
   const { status: action } = req.body; 
   const editor = req.user;
+  const team = req.user.team;
 
-  const updatedLeave = await leaveService.updateLeaveStatus({
+  const updatedData = await leaveService.updateLeaveStatus({
     leaveId,
     action,
     editor,
   });
 
-  await sendLeaveStatusUpdateEmail(updatedLeave, editor.team);
+  await sendLeaveStatusUpdateEmail(updatedData, team);
 
   res.status(httpStatus.OK).json({
     status: true,
     message: 'Leave status updated successfully.',
-    data: updatedLeave,
+    data: updatedData,
   });
 });
 
@@ -84,7 +85,8 @@ const updateLeave = catchAsync(async (req, res) => {
 async function sendLeaveStatusUpdateEmail(updatedLeave, team) {
   const mailReceiver = await User.findById(updatedLeave.userId)
     .populate('teamLeadId', 'email firstName')
-    .populate('subTeamLeadId', 'email firstName');
+    .populate('subTeamLeadId', 'email firstName')
+    .populate('department', 'name');
 
   const leaveType = await leaveTypeModel.findById(updatedLeave.leaveTypeId).select('name');
 
@@ -102,51 +104,63 @@ async function sendLeaveStatusUpdateEmail(updatedLeave, team) {
   const configEmails = getTeamEmailConfig(team);
   let emailSubject = '', emailMessage = '', receiverEmails = [], ccEmails = [];
 
+  // Prepare employee information for email templates
+  const employeeInfo = {
+    employeeId: mailReceiver.employeeId || 'N/A',
+    jobTitle: mailReceiver.jobTitle || 'N/A',
+    department: mailReceiver.department?.name || 'N/A'
+  };
+
   switch (updatedLeave.status) {
     case 'hr-pending':
       emailSubject = 'Leave Request Pending Your Approval';
-      emailMessage = Helper.leaveHRPendingNotification(mailReceiver.firstName, formattedLeaveDates, leaveType.name, updatedLeave.leaveReason, team, process.env.HRMS_FRONTEND_URL);
+      emailMessage = Helper.leaveHRPendingNotification(mailReceiver.firstName, formattedLeaveDates, leaveType.name, updatedLeave.leaveReason, team, process.env.HRMS_FRONTEND_URL, updatedLeave.isHalfDay, updatedLeave.halfDayType, employeeInfo);
       receiverEmails = [configEmails.HR_EMAIL];
       ccEmails = [mailReceiver.email, mailReceiver.teamLeadId?.email, mailReceiver.subTeamLeadId?.email].filter(Boolean);
       break;
     case 'approved':
       emailSubject = 'Your Leave Request Has Been Approved';
-      emailMessage = Helper.leaveHRApprovalNotification(mailReceiver.firstName, formattedLeaveDates, leaveType.name, updatedLeave.leaveReason, team);
+      emailMessage = Helper.leaveHRApprovalNotification(mailReceiver.firstName, formattedLeaveDates, leaveType.name, updatedLeave.leaveReason, team, updatedLeave.isHalfDay, updatedLeave.halfDayType, employeeInfo);
       receiverEmails = [mailReceiver.email];
       ccEmails = [...configEmails.ADMIN_EMAILS, mailReceiver.teamLeadId?.email, mailReceiver.subTeamLeadId?.email].filter(Boolean);
       break;
     case 'tl-rejected':
       emailSubject = 'Your Leave Request Has Been Rejected by Team Lead';
-      emailMessage = Helper.leaveTLRejectionNotification(mailReceiver.firstName, formattedLeaveDates, leaveType.name, updatedLeave.leaveReason, team);
+      emailMessage = Helper.leaveTLRejectionNotification(mailReceiver.firstName, formattedLeaveDates, leaveType.name, updatedLeave.leaveReason, team, updatedLeave.isHalfDay, updatedLeave.halfDayType, employeeInfo);
       receiverEmails = [mailReceiver.email];
       ccEmails = [configEmails.HR_EMAIL, mailReceiver.teamLeadId?.email, mailReceiver.subTeamLeadId?.email].filter(Boolean);
       break;
     case 'hr-rejected':
       emailSubject = 'Your Leave Request Has Been Rejected by HR';
-      emailMessage = Helper.leaveHRRejectionNotification(mailReceiver.firstName, formattedLeaveDates, leaveType.name, updatedLeave.leaveReason, team);
+      emailMessage = Helper.leaveHRRejectionNotification(mailReceiver.firstName, formattedLeaveDates, leaveType.name, updatedLeave.leaveReason, team, updatedLeave.isHalfDay, updatedLeave.halfDayType, employeeInfo);
       receiverEmails = [mailReceiver.email];
       ccEmails = [configEmails.HR_EMAIL, mailReceiver.teamLeadId?.email, mailReceiver.subTeamLeadId?.email].filter(Boolean);
       break;
     case 'revoked':
       emailSubject = 'Leave Request Revoked by Employee';
-      emailMessage = Helper.leaveRevokedNotification(mailReceiver.firstName, formattedLeaveDates, leaveType.name, updatedLeave.leaveReason, team);
+      emailMessage = Helper.WfhLeaveRevoked(mailReceiver.firstName, 'Leave', formattedLeaveDates, leaveType.name, updatedLeave.leaveReason, team, employeeInfo);
       receiverEmails = [configEmails.HR_EMAIL, mailReceiver.teamLeadId?.email].filter(Boolean);
       ccEmails = [...configEmails.ADMIN_EMAILS, mailReceiver.subTeamLeadId?.email].filter(Boolean);
       break;
   }
 
-  if (receiverEmails.length) {
-    Helper.sendEmail({
-      receiverEmails,
-      subject: emailSubject,
-      message: emailMessage,
-      cc: ccEmails,
-      team,
-    }).catch(err => logger.error(`Failed to send leave notification for leave ID ${updatedLeave._id}:`, err));
-  }
-}
+      if (receiverEmails.length) {
+        Helper.sendEmail({
+          receiverEmails,
+          subject: emailSubject,
+          message: emailMessage,
+          cc: ccEmails,
+          team,
+        }).catch(err => logger.error(`Failed to send leave notification:`, err));
+      }
+  
+  
+
+  // email sending handled above; nothing to return here
+};
 
 
+// delete leave
 const deleteLeave = catchAsync(async (req, res) => {
   const userId = req.user.id;
   const teamCode = req?.user?.team;
@@ -163,7 +177,8 @@ const deleteLeave = catchAsync(async (req, res) => {
 
   const user = await User?.findById(req?.user?.id)
     .populate('teamLeadId', 'email')
-    .populate('subTeamLeadId', 'email');
+    .populate('subTeamLeadId', 'email')
+    .populate('department', 'name');
 
   const sendMail = req?.query?.sendMail === 'true';
   if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
@@ -206,19 +221,29 @@ const deleteLeave = catchAsync(async (req, res) => {
       ccEmails.push(user.subTeamLeadId.email);
     }
 
+    // Prepare employee information for email templates
+    const employeeInfo = {
+      employeeId: user.employeeId || 'N/A',
+      jobTitle: user.jobTitle || 'N/A',
+      department: user.department?.name || 'N/A'
+    };
+
     // Send email
+    const userFullName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim();
     Helper.sendEmail({
       receiverEmails: [
-        configEmails?.HR_EMAIL
+        configEmails?.HR_EMAIL,
+        ...configEmails?.ADMIN_EMAILS
       ],
       subject: 'Revoked leave application',
       message: Helper.WfhLeaveRevoked(
-        user?.firstName,
+        userFullName,
         'Leave',
         formattedLeaveDates,
         leaveType,
         null,
         teamCode,
+        employeeInfo,
       ),
       cc: ccEmails,
       team:teamCode,
@@ -245,9 +270,17 @@ const applyForLeave = catchAsync(async (req, res) => {
 
     const user = await User.findById(userId)
       .populate('teamLeadId', 'firstName email firstName')
-      .populate('subTeamLeadId', 'firstName email firstName');
+      .populate('subTeamLeadId', 'firstName email firstName')
+      .populate('department', 'name');
 
     const hasTL = user?.teamLeadId || user?.subTeamLeadId;
+
+  const userFullName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim();
+  const primaryTlName = user?.teamLeadId
+    ? `${user.teamLeadId.firstName || ''} ${user.teamLeadId.lastName || ''}`.trim()
+    : (user?.subTeamLeadId
+      ? `${user.subTeamLeadId.firstName || ''} ${user.subTeamLeadId.lastName || ''}`.trim()
+      : '');
 
     leaveData.status = hasTL ? 'tl-pending' : 'hr-pending';
 
@@ -268,8 +301,17 @@ const applyForLeave = catchAsync(async (req, res) => {
     const from = result?.data?.dates[0];
     const to = result?.data?.dates[result?.data?.dates?.length - 1];
     const leaveReason = result?.data?.leaveReason;
+    const isHalfDay = result?.data?.isHalfDay;
+    const halfDayType = result?.data?.halfDayType;
 
     const configEmails = getTeamEmailConfig(team);
+
+    // Prepare employee information for email templates
+    const employeeInfo = {
+      employeeId: user.employeeId || 'N/A',
+      jobTitle: user.jobTitle || 'N/A',
+      department: user.department?.name || 'N/A'
+    };
 
     const sendMail = req?.body?.sendMail === true;
     if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
@@ -288,8 +330,8 @@ const applyForLeave = catchAsync(async (req, res) => {
             receiverEmails: [primaryRecipient],
             subject: 'Leave Application - Action Required',
             message: Helper.WfhLeaveApplication({
-              userName: user?.firstName,
-              tlName: user?.teamLeadId?.firstName || user?.subTeamLeadId?.firstName,
+              userName: userFullName,
+              tlName: primaryTlName,
               requestType: 'Leave',
               leaveType: leaveType?.name || 'Leave',
               fromDate: from,
@@ -297,6 +339,9 @@ const applyForLeave = catchAsync(async (req, res) => {
               reason: leaveReason,
               dashboardUrl: process?.env?.HRMS_FRONTEND_URL,
               team,
+              isHalfDay: isHalfDay,
+              halfDayType: halfDayType,
+              employeeInfo: employeeInfo,
             }),
             cc: ccList,
             team,
@@ -323,6 +368,9 @@ const applyForLeave = catchAsync(async (req, res) => {
             reason: leaveReason,
             dashboardUrl: process?.env?.HRMS_FRONTEND_URL,
             team,
+            isHalfDay: isHalfDay,
+            halfDayType: halfDayType,
+            employeeInfo: employeeInfo,
           }),
           cc: ccList,
           team,

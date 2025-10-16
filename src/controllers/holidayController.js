@@ -97,10 +97,28 @@ const deleteHoliday = catchAsync(async (req, res) => {
   });
 });
 
+// Check if a date is a holiday
+const checkHoliday = catchAsync(async (req, res) => {
+  const { date } = req.query;
+  
+  if (!date) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Date parameter is required.');
+  }
+
+  const isHoliday = await holidayService?.isHoliday(new Date(date));
+
+  res?.status(httpStatus.OK).json({
+    status: true,
+    message: 'Holiday check completed.',
+    data: { isHoliday, date },
+  });
+});
+
 module.exports = {
   createHoliday,
   getAllHolidays,
   getHolidayById,
   updateHoliday,
   deleteHoliday,
+  checkHoliday,
 };

@@ -6,6 +6,7 @@ const USER_ROLES = {
   SUBADMIN: 'subadmin',
   HR: 'hr',
   EMPLOYEE: 'employee',
+  INTERN: 'intern',
   TEAMLEAD: 'teamlead',
   SUBTEAMLEAD: 'subteamlead',
   IT: 'IT',
@@ -36,6 +37,13 @@ const ASSETS_STATUS = {
   RETURN_REJECTED: 'return_rejected',
   RETURNED: 'returned',
   CANCELLED: 'cancelled',
+};
+
+const ASSET_REQUEST_STATUS = {
+  PENDING: 'asset-request-pending',
+  APPROVED: 'asset-request-approved',
+  REJECTED: 'asset-request-rejected',
+  FULFILLED: 'asset-request-fulfilled',
 };
 
 
@@ -78,6 +86,7 @@ const HR_MAIL_PASS = process.env.HR_SMTP_PASS;
 const IT_EMAIL = process.env.IT_EMAIL;
 const IT_MAIL_USER = process.env.IT_SMTP_USER;
 const IT_MAIL_PASS = process.env.IT_SMTP_PASS;
+const HRMS_QUERY_EMAIL = process.env.HRMS_QUERY_EMAIL;
 
 const ADMIN_EMAILS = process.env.ADMIN_EMAILS?.split(',').map(e => e.trim()).filter(Boolean) || [];
 
@@ -105,6 +114,10 @@ function getTeamEmailConfig(team) {
     IT_MAIL_USER: process.env[`IT_SMTP_USER_${normalizedTeam}`],
     IT_MAIL_PASS: process.env[`IT_SMTP_PASS_${normalizedTeam}`],
 
+    FINANCE_EMAIL: process.env[`FINANCE_EMAIL_${normalizedTeam}`],
+
+    HRMS_QUERY_EMAIL: process.env[`HRMS_QUERY_EMAIL`],
+
     ADMIN_EMAILS: (process.env[`ADMIN_EMAILS_${normalizedTeam}`] || '')
       .split(',')
       .map(e => e.trim())
@@ -120,6 +133,7 @@ function getTeamEmailConfig(team) {
     'HR_MAIL_PASS',
     'IT_MAIL_USER',
     'IT_MAIL_PASS',
+    'HRMS_QUERY_EMAIL',
   ];
 
   const missing = requiredKeys.filter((key) => !config[key]);
@@ -180,6 +194,7 @@ module.exports = {
   VALID_USER_ROLES: Object.values(USER_ROLES),
   VALID_EMPLOYEE_STATUS: Object.values(EMPLOYEE_STATUS),
   VALID_ASSETS_STATUS: Object.values(ASSETS_STATUS),
+  VALID_ASSET_REQUEST_STATUS: Object.values(ASSET_REQUEST_STATUS),
   VALID_LAPTOP_TYPES: Object.values(LAPTOP_TYPES),
   CANDIDATE_STATUS,
   VALID_CANDIDATE_STATUS: Object.values(CANDIDATE_STATUS),
@@ -196,6 +211,7 @@ module.exports = {
   HR_MAIL_PASS,
   IT_MAIL_USER,
   IT_MAIL_PASS,
+  HRMS_QUERY_EMAIL,
   OTP_EXPIRY_MINUTES,
   HR_EMAIL,
   IT_EMAIL,

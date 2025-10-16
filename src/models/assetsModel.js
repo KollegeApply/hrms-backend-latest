@@ -27,8 +27,13 @@ const assignedAssetSchema = new Schema(
       required: function() {
         return this.assetType === 'laptop';
       },
-      enum: {
-        values: VALID_LAPTOP_TYPES,
+      validate: {
+        validator: function(value) {
+          if (this.assetType === 'laptop') {
+            return VALID_LAPTOP_TYPES.includes(value);
+          }
+          return value === '' || value === null || value === undefined;
+        },
         message: 'Invalid laptop type: {VALUE}',
       },
       trim: true,
@@ -85,6 +90,16 @@ const assignedAssetSchema = new Schema(
           return this.status === 'returned';
         },
         message: "Return date can only be set if status is 'returned'.",
+      },
+    },
+    rejectionReason: {
+      type: String,
+      maxlength: 1000,
+      validate: {
+        validator: function () {
+          return this.status === 'not_acknowledged';
+        },
+        message: "Rejection reason can only be set if status is 'not_acknowledged'.",
       },
     },
     assignedBy: {
