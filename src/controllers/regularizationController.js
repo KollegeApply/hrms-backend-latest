@@ -50,7 +50,8 @@ const regularizationController = {
     // Send email notification to Team Lead
     if (result.status === 'success') {
       try {
-        await sendRegularizationStatusUpdateEmail(result.data, 'new_request', user.team);
+        // Use employee's team for email (cross-team TL support)
+        await sendRegularizationStatusUpdateEmail(result.data, 'new_request');
       } catch (error) {
         logger.error('Error sending regularization email notification:', error);
         // Don't fail the request if email fails
@@ -101,7 +102,8 @@ const regularizationController = {
           // Fallback to role-based logic
           action = user.role === 'teamlead' ? 'hr-pending' : 'approved';
         }
-        await sendRegularizationStatusUpdateEmail(result.data, action, user.team);
+        // Use employee's team for email (cross-team TL support)
+        await sendRegularizationStatusUpdateEmail(result.data, action);
       } catch (error) {
         logger.error('Error sending regularization approval email notification:', error);
         // Don't fail the request if email fails
@@ -132,7 +134,8 @@ const regularizationController = {
           // Fallback to role-based logic
           action = user.role === 'teamlead' ? 'tl-rejected' : 'hr-rejected';
         }
-        await sendRegularizationStatusUpdateEmail(result.data, action, user.team, reason);
+        // Use employee's team for email (cross-team TL support)
+        await sendRegularizationStatusUpdateEmail(result.data, action, reason);
       } catch (error) {
         logger.error('Error sending regularization rejection email notification:', error);
         // Don't fail the request if email fails
@@ -152,7 +155,8 @@ const regularizationController = {
     // Send email notification for revocation
     if (result.status === 'success') {
       try {
-        await sendRegularizationStatusUpdateEmail(result.data, 'revoked', user.team);
+        // Use employee's team for email (cross-team TL support)
+        await sendRegularizationStatusUpdateEmail(result.data, 'revoked');
       } catch (error) {
         logger.error('Error sending regularization revocation email notification:', error);
         // Don't fail the request if email fails
@@ -174,7 +178,7 @@ const regularizationController = {
 
 };
 
-async function sendRegularizationStatusUpdateEmail(attendance, action, team, rejectionReason = '') {
+async function sendRegularizationStatusUpdateEmail(attendance, action, rejectionReason = '') {
   // Add null checks for attendance and regularization
   if (!attendance) {
     logger.error('sendRegularizationStatusUpdateEmail: attendance is undefined');
@@ -197,6 +201,8 @@ async function sendRegularizationStatusUpdateEmail(attendance, action, team, rej
     return;
   }
 
+  // Use employee's team for email config (cross-team TL support)
+  const team = employee.team;
   const configEmails = getTeamEmailConfig(team);
   let emailSubject = '', emailMessage = '', receiverEmails = [], ccEmails = [];
 

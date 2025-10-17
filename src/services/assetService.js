@@ -47,10 +47,8 @@ class AssetsService {
       throw new Error('Assigned by user not found');
     }
 
-
-    if(user?.team !== assignedByUser?.team){
-      throw new Error("You can't assign this user.")
-    }
+    // Cross-team asset assignment is now allowed
+    // Removed team restriction to enable TLs to manage cross-team employees
 
     const newAssignment = new Assets({
       assetType,

@@ -170,8 +170,8 @@ const regularizationService = {
         query.user = userId;
       } else if (logFilter === 'all-log') {
         // Show all requests based on role
-        if (userRole === 'teamlead') {
-          // Team leads can see their team members' requests
+        if (userRole === 'teamlead' || userRole === 'subteamlead') {
+          // Team leads and sub team leads can see their team members' requests (cross-team support)
           const teamMembers = await this.getTeamMembers(userId);
           query.user = { $in: teamMembers };
         } else if (['hr', 'subadmin', 'admin'].includes(userRole)) {
@@ -183,8 +183,8 @@ const regularizationService = {
         }
       } else {
         // Default behavior (backward compatibility)
-        if (userRole === 'teamlead') {
-          // Team leads can see their team members' requests
+        if (userRole === 'teamlead' || userRole === 'subteamlead') {
+          // Team leads and sub team leads can see their team members' requests (cross-team support)
           const teamMembers = await this.getTeamMembers(userId);
           query.user = { $in: teamMembers };
         } else if (['hr', 'subadmin', 'admin'].includes(userRole)) {
@@ -442,7 +442,8 @@ const regularizationService = {
     try {
       let query = { 'regularization.status': { $exists: true } };
 
-      if (userRole === 'teamlead') {
+      if (userRole === 'teamlead' || userRole === 'subteamlead') {
+        // TLs and STLs can see tl-pending requests (cross-team support)
         query['regularization.status'] = 'tl-pending';
         const teamMembers = await this.getTeamMembers(userId);
         query.user = { $in: teamMembers };
@@ -483,12 +484,15 @@ const regularizationService = {
   // Helper methods
   async getTeamMembers(teamLeadId) {
     try {
+      // Cross-team support: Find all users where this person is TL or STL
       const teamMembers = await User.find({
         $or: [
           { _id: teamLeadId },
-          { teamLeadId: teamLeadId }
+          { teamLeadId: teamLeadId },
+          { subTeamLeadId: teamLeadId }
         ]
       }).select('_id');
+      
       return teamMembers.map(member => member._id);
     } catch (error) {
       throw error;

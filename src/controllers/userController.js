@@ -45,7 +45,8 @@ const createUser = catchAsync(async (req, res) => {
     req.body.teamLeadId = '6808c6d86d2d1bdfd589c57a';
   }
 
-  req.body.team = req.user.team;
+  // Allow cross-team user creation - team should be selected from frontend
+  // No longer auto-assigning TL's team to enable cross-team management
 
   const validatedData = await userValidator?.createUserSchema?.validateAsync(
     req?.body
@@ -58,7 +59,8 @@ const createUser = catchAsync(async (req, res) => {
     // sending mail
     const sendMail = req?.body?.sendMail === true;
     if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
-      const teamCode = req?.user?.team || 'SD';
+      // Use the newly created user's team for email config (cross-team support)
+      const teamCode = user?.team || 'SD';
       const emailConfig = getTeamEmailConfig(teamCode);
       logger.info(`Sending welcome email to ${user.email}`);
       Helper.sendEmail({

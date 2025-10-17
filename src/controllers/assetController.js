@@ -31,7 +31,8 @@ const assignAsset = catchAsync(async (req, res) => {
     const employee = await User.findById(assignee)
       .populate('teamLeadId', 'firstName lastName email')
       .populate('department', 'name');
-    const team = req?.user?.team;
+    // Use employee's team for email config (for cross-team TL support)
+    const team = employee?.team;
     
     // Construct full names
     const employeeFullName = `${employee?.firstName || ''} ${employee?.lastName || ''}`.trim();
@@ -153,7 +154,8 @@ const updateAssignedAsset = catchAsync(async (req, res) => {
         teamLeadName
       );
 
-      const configEmails = getTeamEmailConfig(req.user.team);
+      // Use employee's team for email config (cross-team TL support)
+      const configEmails = getTeamEmailConfig(employee.team);
 
       const receiverEmails = [
         configEmails?.HR_EMAIL,
@@ -176,7 +178,7 @@ const updateAssignedAsset = catchAsync(async (req, res) => {
         fromHR: false,
         fromIt: true,
         cc: ccEmails,
-        team:req.user.team,
+        team: employee.team, // Use employee's team for cross-team support
       }).catch((err) => {
         logger.error(
           `Failed to send asset return confirmation email for ${updatedRequest.assetName}:`,
@@ -265,7 +267,8 @@ const acknowledgeAsset = catchAsync(async (req, res) => {
       teamLeadName
     );
 
-    const configEmails = getTeamEmailConfig(req.user.team);
+    // Use employee's team for email config (cross-team TL support)
+    const configEmails = getTeamEmailConfig(employee.team);
 
     const receiverEmails = [configEmails?.HR_EMAIL, poc.email, configEmails?.IT_EMAIL, employee?.email];
 
@@ -286,7 +289,7 @@ const acknowledgeAsset = catchAsync(async (req, res) => {
       fromHR: false,
       fromIt: false,
       cc: ccEmails,
-      team:req.user.team,
+      team: employee.team, // Use employee's team for cross-team support
     }).catch((err) => {
       logger.error(
         `Failed to send asset acknowledgment email to HR for asset ${assetName}:`,
@@ -748,7 +751,8 @@ const updateAssetRequestStatus = catchAsync(async (req, res) => {
     );
 
     const receiverEmails = [employee?.email].filter(Boolean);
-    const configEmails = getTeamEmailConfig(req.user.team);
+    // Use employee's team for email config (cross-team TL support)
+    const configEmails = getTeamEmailConfig(employee.team);
     const ccEmails = [configEmails?.HR_EMAIL, configEmails?.IT_EMAIL, req.user?.email, ...configEmails?.ADMIN_EMAILS].filter(Boolean);
 
     logger.info(`Sending asset return ${updStatus} email to ${employee?.email}`);
@@ -759,7 +763,7 @@ const updateAssetRequestStatus = catchAsync(async (req, res) => {
       fromHR: false,
       fromIT: true,
       cc: ccEmails,
-      team: req.user.team,
+      team: employee.team, // Use employee's team for cross-team support
     }).catch((err) => {
       logger.error(`Failed to send asset return ${updStatus} email to ${employee?.email}:`, err);
     });

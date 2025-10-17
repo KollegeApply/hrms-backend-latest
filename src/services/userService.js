@@ -112,11 +112,27 @@ class UserService {
       context,
     } = queryOptions;
 
+    // For cross-team TL support: When fetching TLs/STLs/Admins/HR for dropdowns,
+    // show all teams to enable cross-team management
+    const rolesForAllTeams = ['teamlead', 'subteamlead', 'admin', 'subadmin', 'hr'];
+    const showAllTeams = role && rolesForAllTeams.includes(role) && !isAttendanceLog;
+    
+    // For attendance log, TLs/STLs should see cross-team members
+    const isTLOrSTL = ['teamlead', 'subteamlead'].includes(currentUser?.role);
+    const skipTeamFilterForAttendance = isAttendanceLog && isTLOrSTL;
+
     const query = {
-      team: currentUser?.team,
       status: status === null ? { $in: ['probation', 'onroll'] } : status,
       isDeleted: false,
     };
+    
+    // Apply team filter only if:
+    // - Not fetching cross-team roles for dropdowns
+    // - Not attendance log for TL/STL (they can see cross-team)
+    if (!showAllTeams && !skipTeamFilterForAttendance) {
+      query.team = currentUser?.team;
+    }
+    
     const andConditions = [];
 
     // Department filter
@@ -372,24 +388,33 @@ async getUserById(id) {
       throw new ApiError(httpStatus.CONFLICT, 'Employee ID is already in use.');
     }
 
-    // Validate IDs (Team Lead, Sub Team Lead, HR POC)
+    // Validate IDs (Team Lead, Sub Team Lead, HR POC) and auto-assign team
     const idsToValidate = [
       { id: userData?.teamLeadId, label: 'Team Lead' },
       { id: userData?.subTeamLeadId, label: 'Sub Team Lead' },
       { id: userData?.hrPocId, label: 'HR' },
     ];
 
+    let autoAssignedTeam = null;
     for (const { id, label } of idsToValidate) {
       if (id) {
         const userExists = await this.getUserById(id);
         if (!userExists)
           throw new ApiError(httpStatus.NOT_FOUND, `${label} not found`);
+        
+        // Auto-assign team based on Team Lead's team (for cross-team support)
+        if (label === 'Team Lead' && !userData?.team) {
+          autoAssignedTeam = userExists.team;
+        }
       }
     }
 
+    // Use auto-assigned team if no team provided, otherwise default to 'SD'
+    const assignedTeam = userData?.team || autoAssignedTeam || 'SD';
+
     // Auto-generate Employee ID
     const lastUser = await User.findOne({
-      employeeId: { $regex: new RegExp(`^${userData?.team || 'SD'}_\\d+$`) },
+      employeeId: { $regex: new RegExp(`^${assignedTeam}_\\d+$`) },
     })
       .sort({ employeeId: -1 })
       .select('employeeId')
@@ -427,7 +452,8 @@ async getUserById(id) {
     // Create and Save User
     const user = new User({
       ...userData,
-      employeeId: `${userData?.team}_${paddedNumber}`,
+      team: assignedTeam, // Use auto-assigned team
+      employeeId: `${assignedTeam}_${paddedNumber}`,
       password: hashedPassword,
       email: userData?.email?.toLowerCase(),
       leavePolicyId: assignedPolicy._id,
@@ -1232,27 +1258,34 @@ async getUserById(id) {
   async getUserByTlId(userId, userRole, userTeam) {
     try {
       let user;
-      const query = {
+      // Base query without team restriction for cross-team TL support
+      const baseQuery = {
         status: { $in: ['probation', 'onroll'] },
+      };
+      
+      // Query with team restriction (for admin/hr roles)
+      const queryWithTeam = {
+        ...baseQuery,
         team: userTeam,
       };
-      const commonSelectFields = '_id firstName lastName email role employeeId department';
+      
+      const commonSelectFields = '_id firstName lastName email role employeeId department team';
 
       // 🎯 NEW FEEDBACK HIERARCHY RULES:
       if (userRole === 'admin' || userRole === 'subadmin') {
         // Admin/Subadmin → Anyone (HR, TL, STL, IT, Employee, Intern) - Direct, no approval
-        user = await User.find(query).select(commonSelectFields).populate('department', 'name');
+        user = await User.find(queryWithTeam).select(commonSelectFields).populate('department', 'name');
       } else if (userRole === 'hr') {
         // HR → STL, TL, Employee, Intern, IT - Direct, no approval
         user = await User.find({
-          ...query,
+          ...queryWithTeam,
           role: { $in: ['subteamlead', 'teamlead', 'employee', 'intern', 'IT'] },
         }).select(commonSelectFields).populate('department', 'name');
       } else if (userRole === 'teamlead') {
-        // TL → Self team + HR (only their team members + HR)
+        // TL → Cross-team members + HR (removed team restriction)
         user = await User.find({
           $and: [
-            query,
+            baseQuery, // Use baseQuery without team restriction
             {
               $or: [
                 { teamLeadId: userId }, // Direct team members under this TL
@@ -1263,11 +1296,11 @@ async getUserById(id) {
           ],
         }).select(commonSelectFields).populate('department', 'name');
       } else if (userRole === 'subteamlead') {
-        // STL → Self team + TL (only their team members + their TL, exclude Admin/Subadmin)
+        // STL → Cross-team members + TL (removed team restriction for cross-team support)
         const currentUser = await User.findById(userId).select('teamLeadId');
         user = await User.find({
           $and: [
-            query,
+            baseQuery, // Use baseQuery without team restriction
             {
               role: { $nin: ['admin', 'subadmin'] }, // Exclude Admin/Subadmin
             },
@@ -1291,7 +1324,7 @@ async getUserById(id) {
         }
         
       } else if (userRole === 'employee' || userRole === 'intern') {
-        // Employee/Intern → TL + STL (their managers)
+        // Employee/Intern → TL + STL (their managers, cross-team support)
         const currentUser = await User.findById(userId).select('teamLeadId subTeamLeadId');
         const allowedUserIds = [
           currentUser.teamLeadId,
@@ -1300,14 +1333,14 @@ async getUserById(id) {
 
         user = await User.find({
           $and: [
-            query,
+            baseQuery, // Use baseQuery without team restriction
             {
               _id: { $in: allowedUserIds }, // Their TL and STL
             },
           ],
         }).select(commonSelectFields).populate('department', 'name');
       } else if (userRole === 'IT') {
-        // IT → TL + STL (same as employee/intern)
+        // IT → TL + STL (same as employee/intern, cross-team support)
         const currentUser = await User.findById(userId).select('teamLeadId subTeamLeadId');
         const allowedUserIds = [
           currentUser.teamLeadId,
@@ -1316,7 +1349,7 @@ async getUserById(id) {
 
         user = await User.find({
           $and: [
-            query,
+            baseQuery, // Use baseQuery without team restriction
             {
               _id: { $in: allowedUserIds }, // Their TL and STL
             },

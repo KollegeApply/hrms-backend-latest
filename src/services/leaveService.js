@@ -297,6 +297,8 @@ async updateLeaveStatus({ leaveId, action, editor }) {
 }
 
   async getLeaveTl({ id, team }) {
+    // Cross-team support: Find all users where this person is TL or STL
+    // regardless of team (already implemented correctly)
     const leadUsers = await User.find(
       {
         $or: [{ teamLeadId: id }, { subTeamLeadId: id }],

@@ -342,8 +342,20 @@ class FeedbacksService {
     }
 
    getAllFeedbacks = async (userId, userRole, userTeam, filters = {}) => {
-    const teamUsers = await User.find({ team: userTeam }, '_id');
-    const teamUserIds = teamUsers.map(user => user._id);
+    // For cross-team TL support: TLs use teamLeadId filter, others use team filter
+    let teamUserIds = [];
+    if (userRole === 'teamlead' || userRole === 'subteamlead') {
+      // For TLs/STLs, get users they manage (cross-team support)
+      const managedUsers = await User.find({ 
+        $or: [{ teamLeadId: userId }, { subTeamLeadId: userId }]
+      }, '_id');
+      teamUserIds = managedUsers.map(user => user._id);
+      teamUserIds.push(userId); // Include self
+    } else {
+      // For admin/hr, use team-based filter
+      const teamUsers = await User.find({ team: userTeam }, '_id');
+      teamUserIds = teamUsers.map(user => user._id);
+    }
 
     const isAdmin = ['admin', 'subadmin', 'hr'].includes(userRole);
     const tab = filters.tab || 'all';
@@ -366,8 +378,10 @@ class FeedbacksService {
             ]
         };
     } else if (tab === 'team-feedbacks' && userRole === 'teamlead') {
-        // Show all feedback given to team members (for team leads)
-        const directReports = await User.find({ teamLeadId: userId }, '_id');
+        // Show all feedback given to team members (for team leads, cross-team)
+        const directReports = await User.find({ 
+          $or: [{ teamLeadId: userId }, { subTeamLeadId: userId }]
+        }, '_id');
         const directReportIds = directReports.map(user => user._id);
         baseFilter = { givenTo: { $in: directReportIds } };
     } else if (tab === 'edit-request') {
@@ -392,10 +406,12 @@ class FeedbacksService {
                 ]
             };
         } else if (userRole === 'teamlead') {
-            // Team leads can see their team feedback
-            const directReports = await User.find({ teamLeadId: userId }, '_id');
+            // Team leads can see their team feedback (cross-team support)
+            const directReports = await User.find({ 
+              $or: [{ teamLeadId: userId }, { subTeamLeadId: userId }]
+            }, '_id');
             const stlUsers = await User.find({ 
-                teamLeadId: userId, 
+                $or: [{ teamLeadId: userId }, { subTeamLeadId: userId }],
                 role: 'subteamlead' 
             }, '_id');
             

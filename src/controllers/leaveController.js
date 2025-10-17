@@ -63,7 +63,6 @@ const updateLeave = catchAsync(async (req, res) => {
   const { id: leaveId } = req.params;
   const { status: action } = req.body; 
   const editor = req.user;
-  const team = req.user.team;
 
   const updatedData = await leaveService.updateLeaveStatus({
     leaveId,
@@ -71,7 +70,8 @@ const updateLeave = catchAsync(async (req, res) => {
     editor,
   });
 
-  await sendLeaveStatusUpdateEmail(updatedData, team);
+  // Pass null for team - will use employee's team in email function
+  await sendLeaveStatusUpdateEmail(updatedData, null);
 
   res.status(httpStatus.OK).json({
     status: true,
@@ -82,7 +82,7 @@ const updateLeave = catchAsync(async (req, res) => {
 
 
 
-async function sendLeaveStatusUpdateEmail(updatedLeave, team) {
+async function sendLeaveStatusUpdateEmail(updatedLeave, team = null) {
   const mailReceiver = await User.findById(updatedLeave.userId)
     .populate('teamLeadId', 'email firstName')
     .populate('subTeamLeadId', 'email firstName')
@@ -94,6 +94,9 @@ async function sendLeaveStatusUpdateEmail(updatedLeave, team) {
     logger.error(`Could not find user or leave type for leave ID: ${updatedLeave._id}`);
     return;
   }
+  
+  // Use employee's team for email config (cross-team TL support)
+  team = mailReceiver.team;
   
   const fromMoment = moment(updatedLeave.dates[0]).tz('Asia/Kolkata');
   const toMoment = moment(updatedLeave.dates[updatedLeave.dates.length - 1]).tz('Asia/Kolkata');
