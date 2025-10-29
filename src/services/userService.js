@@ -1238,7 +1238,7 @@ async getUserById(id) {
       };
       const commonSelectFields = '_id firstName lastName email role employeeId department';
 
-      // 🎯 NEW FEEDBACK HIERARCHY RULES:
+      // NEW FEEDBACK HIERARCHY RULES:
       if (userRole === 'admin' || userRole === 'subadmin') {
         // Admin/Subadmin → Anyone (HR, TL, STL, IT, Employee, Intern) - Direct, no approval
         user = await User.find(query).select(commonSelectFields).populate('department', 'name');

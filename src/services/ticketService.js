@@ -56,6 +56,11 @@ async getAllTickets(currentUser, query = {}, team) {
         { ticketType: "Admin & IT" },
         { createdBy: new mongoose.Types.ObjectId(currentUser.id) }
       ];
+    } else if (currentUser.email === process.env.HRMS_QUERY_EMAIL) {
+      matchStage['$or'] = [
+        { ticketType: "HRMS Query" },
+        { createdBy: new mongoose.Types.ObjectId(currentUser.id) }
+      ];
     } else {
       matchStage['createdBy'] = new mongoose.Types.ObjectId(currentUser.id);
     }

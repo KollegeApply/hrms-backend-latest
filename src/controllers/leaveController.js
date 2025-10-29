@@ -10,6 +10,7 @@ const User = require('../models/userModel');
 const { formatDateToKolkata } = require('../utility/common');
 const LeaveApplication = require('../models/leaveApplicationModel');
 const leaveTypeModel = require('../models/leaveTypeModel');
+const EmployeeLeaveBalance = require('../models/employeeLeaveBalanceModel');
 const moment = require("moment-timezone");
 
 const getAllLeave = catchAsync(async (req, res) => {
@@ -306,11 +307,20 @@ const applyForLeave = catchAsync(async (req, res) => {
 
     const configEmails = getTeamEmailConfig(team);
 
+    // Get leave balance
+    const leaveBalance = await EmployeeLeaveBalance.findOne({
+      userId,
+      leaveTypeId: result?.data?.leaveTypeId
+    });
+
+    const totalAvailable = leaveBalance ? (leaveBalance.accrued + leaveBalance.carryForwarded - leaveBalance.used) : 0;
+
     // Prepare employee information for email templates
     const employeeInfo = {
       employeeId: user.employeeId || 'N/A',
       jobTitle: user.jobTitle || 'N/A',
-      department: user.department?.name || 'N/A'
+      department: user.department?.name || 'N/A',
+      leaveBalance: totalAvailable
     };
 
     const sendMail = req?.body?.sendMail === true;
