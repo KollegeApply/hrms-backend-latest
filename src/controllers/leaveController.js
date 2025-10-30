@@ -313,7 +313,7 @@ const applyForLeave = catchAsync(async (req, res) => {
       leaveTypeId: result?.data?.leaveTypeId
     });
 
-    const totalAvailable = leaveBalance ? (leaveBalance.accrued + leaveBalance.carryForwarded - leaveBalance.used) : 0;
+    const totalAvailable = leaveBalance ? (leaveBalance.total - leaveBalance.used) : 0;
 
     // Prepare employee information for email templates
     const employeeInfo = {
