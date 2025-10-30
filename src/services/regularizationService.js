@@ -135,7 +135,7 @@ const regularizationService = {
   },
 
   // Get all regularization requests
-  async getRegularizations(userId, userRole, filters = {}) {
+  async getRegularizations(userId, userRole, filters = {}, team) {
     try {
       const { startDate, endDate, status, type, page = 1, limit = 10, department, logFilter } = filters;
       const query = { 'regularization.status': { $exists: true } };
@@ -177,6 +177,8 @@ const regularizationService = {
         } else if (['hr', 'subadmin', 'admin'].includes(userRole)) {
           // HR/Admin/SubAdmin can see all requests by default
           // No additional filtering needed - they can see all regularization requests
+          const teamMembers = await User.find({ team }).select('_id');
+          query.user = { $in: teamMembers.map(u => u._id) };
         } else if (userRole === 'employee') {
           // Employees can only see their own requests (same as my-log)
           query.user = userId;
@@ -190,6 +192,8 @@ const regularizationService = {
         } else if (['hr', 'subadmin', 'admin'].includes(userRole)) {
           // HR/Admin/SubAdmin can see all requests by default
           // No additional filtering needed
+           const teamMembers = await User.find({ team }).select('_id');
+          query.user = { $in: teamMembers.map(u => u._id) };
         } else if (userRole === 'employee') {
           // Employees can only see their own requests
           query.user = userId;

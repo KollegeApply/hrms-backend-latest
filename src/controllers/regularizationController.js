@@ -64,8 +64,9 @@ const regularizationController = {
   getRegularizations: catchAsync(async (req, res) => {
     const { user } = req;
     const filters = req.query;
+    const team = user.team;
 
-    const result = await regularizationService.getRegularizations(user._id, user.role, filters);
+    const result = await regularizationService.getRegularizations(user._id, user.role, filters, team);
 
     res.status(200).json(result);
   }),

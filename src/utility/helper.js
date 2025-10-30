@@ -465,6 +465,7 @@ class Helper {
               ${requestType === 'Leave' ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${displayLeaveType}</li>` : ''}
               <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Date:</strong> ${leaveMessage}</li>
               <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>
+              ${employeeInfo?.leaveBalance ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Remaining Leave Balance:</strong> ${employeeInfo.leaveBalance} days</li>` : ''}
             </ul>
           </div>
   
@@ -2728,6 +2729,166 @@ class Helper {
             <strong>${displayTeam?.TEAM_NAME || 'HRMS'} Team</strong>
           </p>
         </div>
+      </div>
+    </div>
+    `;
+  }
+
+  static getFeedbackReminderForTL(tlName, dashboardUrl, team) {
+    const displayTeam = getTeamEmailConfig(team);
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #333;">Team Feedback Required</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Dear <strong>${tlName}</strong>,
+        </p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          This is a gentle reminder to provide feedback for your team members. Regular feedback helps in professional growth and maintains transparent communication within the team.
+        </p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Please take a moment to provide constructive feedback that will help your team members understand their strengths and areas for improvement.
+        </p>
+        <div style="text-align: center; margin-top: 30px;">
+          <a href="${dashboardUrl}/feedbacks/management" style="background-color: #1976d2; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+            Provide Feedback
+          </a>
+        </div>
+        <p style="color: #777; font-size: 14px; line-height: 1.5; margin-top: 30px;">
+          Thank you for your commitment to team development.<br><br>
+          Best regards,<br>
+          <strong>Team ${displayTeam?.TEAM_NAME}</strong>
+        </p>
+      </div>
+    </div>
+    `;
+  }
+
+  static getRegularizationReminder(userName, dashboardUrl, team) {
+    const displayTeam = getTeamEmailConfig(team);
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #333;">Pending Regularization Reminder</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Hi <strong>${userName}</strong>,
+        </p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          This is a reminder that you have pending attendance regularization requests that need your attention.
+        </p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+        Kindly check and take action on pending regularization requests.
+        </p>
+        <div style="text-align: center; margin-top: 30px;">
+          <a href="${dashboardUrl}/regularization" style="background-color: #ff9800; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+            Regularize Now
+          </a>
+        </div>
+        <p style="color: #777; font-size: 14px; line-height: 1.5; margin-top: 30px;">
+          Best regards,<br>
+          <strong>Team ${displayTeam?.TEAM_NAME}</strong>
+        </p>
+      </div>
+    </div>
+    `;
+  }
+
+  static getTLLeaveActionReminder(tlName, dashboardUrl, team) {
+    const displayTeam = getTeamEmailConfig(team);
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #333;">Action Required</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Hi <strong>${tlName}</strong>,
+        </p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          You have pending items that require your attention:
+        </p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6; margin-top: 20px;">
+          1. <strong>Leave Requests:</strong> Please review and take appropriate action on pending leave requests.
+        </p>
+        <div style="text-align: center; margin-top: 15px;">
+          <a href="${dashboardUrl}/leaves" style="background-color: #3f51b5; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+            Review Leave Requests
+          </a>
+        </div>
+        <p style="color: #555; font-size: 16px; line-height: 1.6; margin-top: 25px;">
+          2. <strong>Regularization Requests:</strong> Please review pending attendance regularization requests.
+        </p>
+        <div style="text-align: center; margin-top: 15px;">
+          <a href="${dashboardUrl}/regularization" style="background-color: #ff9800; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+            Review Regularizations
+          </a>
+        </div>
+        <p style="color: #777; font-size: 14px; line-height: 1.5; margin-top: 30px;">
+          Best regards,<br>
+          <strong>Team ${displayTeam?.TEAM_NAME}</strong>
+        </p>
+      </div>
+    </div>
+    `;
+  }
+
+  static getAttendanceCheckInReminder(userName, team) {
+    const displayTeam = getTeamEmailConfig(team);
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #333;">🕒 Check-in Reminder</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Good morning <strong>${userName}</strong>,
+        </p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          This is a friendly reminder that your workday is about to begin. Please remember to mark your attendance when you start your work.
+        </p>
+        <div style="background-color: #fafafa; padding: 15px; border-radius: 5px; margin-top: 20px;">
+          <p style="color: #666; font-size: 14px; margin: 0;">
+            <strong>Quick Reminder:</strong>
+            <ul style="margin: 10px 0 0 0; padding-left: 20px; color: #666;">
+              <li>Mark your attendance promptly at the start of your workday</li>
+              <li>Ensure you're ready for any scheduled morning meetings</li>
+              <li>Check your calendar for today's important tasks</li>
+            </ul>
+          </p>
+        </div>
+        <p style="color: #777; font-size: 14px; line-height: 1.5; margin-top: 30px;">
+          Have a productive day!<br><br>
+          Best regards,<br>
+          <strong>Team ${displayTeam?.TEAM_NAME}</strong>
+        </p>
+      </div>
+    </div>
+    `;
+  }
+
+  static getAttendanceCheckOutReminder(userName, team) {
+    const displayTeam = getTeamEmailConfig(team);
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #333;">🕒 Check-out Reminder</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Hi <strong>${userName}</strong>,
+        </p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          This is a friendly reminder to mark your check-out before ending your workday.
+        </p>
+        <p style="color: #777; font-size: 14px; line-height: 1.5; margin-top: 30px;">
+          Thank you for your hard work today!<br><br>
+          Best regards,<br>
+          <strong>Team ${displayTeam?.TEAM_NAME}</strong>
+        </p>
       </div>
     </div>
     `;

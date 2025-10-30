@@ -57,9 +57,9 @@ const getKPIsForEmployee = catchAsync(async (req, res) => {
     });
   }
 
-  // 🎯 Special case: Employee/Intern/IT giving feedback to TL/STL
+  // Special case: Employee/Intern/IT giving feedback to TL/STL
   // Use leadership KPIs instead of department-specific KPIs
-  if ((currentUserRole === 'employee' || currentUserRole === 'intern' || currentUserRole === 'IT') && 
+  if ((currentUserRole === 'employee' || currentUserRole === 'intern' || currentUserRole === 'IT' || currentUserRole === 'subteamlead') && 
       (employee.role === 'teamlead' || employee.role === 'subteamlead')) {
     
     const kpis = kpiService.getLeadershipKPIs();
