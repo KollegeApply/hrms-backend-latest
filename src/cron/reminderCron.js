@@ -50,9 +50,31 @@ async function sendAttendanceReminders() {
       status: { $in: ['probation','onroll'] },
       isDeleted: false,
     });
-    const checkInTime = '10:15 AM'; // Default check-in time
 
-    for (const user of users) {
+    // Get today's date in IST
+    const now = moment().tz('Asia/Kolkata');
+    const today = now.clone().startOf('day');
+
+    // Get all attendance records for today
+    const todayAttendance = await Attendance.find({
+      date: today.toDate(),
+      checkInTime: { $exists: true },
+      $or: [
+        { status: 'present' },
+        { status: 'late_in' },
+        { status: 'leave_applied_full' },
+        { status: 'leave_applied_first_half' },
+      ]
+    }).select('user');
+
+    // Create a set of user IDs who have already checked in or marked leave/WFH
+    const checkedInUserIds = new Set(todayAttendance.map(a => a.user.toString()));
+
+    // Filter users who haven't checked in
+    const usersToRemind = users.filter(user => !checkedInUserIds.has(user._id.toString()));
+
+    // Send reminders only to users who haven't checked in
+    for (const user of usersToRemind) {
       const userName = `${user.firstName} ${user.lastName}`;
       
       Helper.sendEmail({
@@ -86,7 +108,7 @@ async function sendRegularizationReminders() {
         const userName = `${user.firstName} ${user.lastName}`;
         
         Helper.sendEmail({
-          receiverEmails: [user.email], // Actual logic commented
+          receiverEmails: [user.email],
           subject: 'Pending Attendance Regularization',
           message: Helper.getRegularizationReminder(userName, dashboardUrl, user.team),
           team: user.team
@@ -146,7 +168,34 @@ async function sendCheckOutReminders() {
       isDeleted: false,
     });
 
-    for (const user of users) {
+    // Get today's date in IST
+    const now = moment().tz('Asia/Kolkata');
+    const today = now.clone().startOf('day');
+
+    // Get all attendance records for today where users have checked out
+    const todayAttendance = await Attendance.find({
+      date: today.toDate(),
+      checkInTime: { $exists: true },
+      checkOutTime: { $exists: true }, // Only get records where checkout exists
+      $or: [
+        { status: 'present' },
+        { status: 'late_in' },
+        { status: 'leave_applied_full' },
+        { status: 'leave_applied_first_half' },
+        {status: 'early_out'},
+        {status: 'late_in_early_out'},
+        {status: 'leave_applied_second_half'},
+      ]
+    }).select('user');
+
+    // Create a set of user IDs who have already checked out
+    const checkedOutUserIds = new Set(todayAttendance.map(a => a.user.toString()));
+
+    // Filter users who haven't checked out
+    const usersToRemind = users.filter(user => !checkedOutUserIds.has(user._id.toString()));
+
+    // Send reminders only to users who haven't checked out
+    for (const user of usersToRemind) {
       const userName = `${user.firstName} ${user.lastName}`;
       
       Helper.sendEmail({
