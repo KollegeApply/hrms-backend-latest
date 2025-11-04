@@ -6,6 +6,7 @@ const logger = require('../config/logger');
 const mongoose = require('mongoose');
 const Attendance = require('../models/attendanceModel');
 const LeaveApplication = require('../models/leaveApplicationModel');
+const Holiday = require('../models/holidayModel');
 require('dotenv').config({ path: './.env.production' }); // Make sure in production it is .env.production
 
 /**
@@ -46,14 +47,36 @@ async function sendFeedbackReminders() {
  */
 async function sendAttendanceReminders() {
   try {
+    // Get today's date in IST
+    const now = moment().tz('Asia/Kolkata');
+    const today = now.clone().startOf('day');
+    const todayEnd = moment(today).add(1, 'day').toDate();
+
+    // Check if today is Sunday (0 = Sunday in JavaScript)
+    const todayDay = today.day();
+    if (todayDay === 0) {
+      logger.info(`Today (${today.format('YYYY-MM-DD')}) is Sunday. Skipping check-in reminders.`);
+      return;
+    }
+
+    // Check if today is a holiday
+    const todayHoliday = await Holiday.findOne({
+      date: {
+        $gte: today.toDate(),
+        $lt: todayEnd
+      },
+      isDeleted: false
+    });
+
+    if (todayHoliday) {
+      logger.info(`Today (${today.format('YYYY-MM-DD')}) is a holiday (${todayHoliday.name || 'Unnamed'}). Skipping check-in reminders.`);
+      return;
+    }
+
     const users = await User.find({ 
       status: { $in: ['probation','onroll'] },
       isDeleted: false,
     });
-
-    // Get today's date in IST
-    const now = moment().tz('Asia/Kolkata');
-    const today = now.clone().startOf('day');
 
     // Get all attendance records for today
     const todayAttendance = await Attendance.find({
@@ -163,14 +186,36 @@ async function sendTLLeaveActionReminders() {
  */
 async function sendCheckOutReminders() {
   try {
+    // Get today's date in IST
+    const now = moment().tz('Asia/Kolkata');
+    const today = now.clone().startOf('day');
+    const todayEnd = moment(today).add(1, 'day').toDate();
+
+    // Check if today is Sunday (0 = Sunday in JavaScript)
+    const todayDay = today.day();
+    if (todayDay === 0) {
+      logger.info(`Today (${today.format('YYYY-MM-DD')}) is Sunday. Skipping check-out reminders.`);
+      return;
+    }
+
+    // Check if today is a holiday
+    const todayHoliday = await Holiday.findOne({
+      date: {
+        $gte: today.toDate(),
+        $lt: todayEnd
+      },
+      isDeleted: false
+    });
+
+    if (todayHoliday) {
+      logger.info(`Today (${today.format('YYYY-MM-DD')}) is a holiday (${todayHoliday.name || 'Unnamed'}). Skipping check-out reminders.`);
+      return;
+    }
+
     const users = await User.find({ 
       status: { $in: ['probation','onroll'] },
       isDeleted: false,
     });
-
-    // Get today's date in IST
-    const now = moment().tz('Asia/Kolkata');
-    const today = now.clone().startOf('day');
 
     // Get all attendance records for today where users have checked out
     const todayAttendance = await Attendance.find({
