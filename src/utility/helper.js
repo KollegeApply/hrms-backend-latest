@@ -2815,7 +2815,7 @@ class Helper {
           1. <strong>Leave Requests:</strong> Please review and take appropriate action on pending leave requests.
         </p>
         <div style="text-align: center; margin-top: 15px;">
-          <a href="${dashboardUrl}/leaves" style="background-color: #3f51b5; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+          <a href="${dashboardUrl}/leave" style="background-color: #3f51b5; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold;">
             Review Leave Requests
           </a>
         </div>
