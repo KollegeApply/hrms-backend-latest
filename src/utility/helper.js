@@ -106,7 +106,13 @@ class Helper {
       const info = await transporter.sendMail(mailOptions);
       logger.info(`Email sent to ${receiverEmails.join(', ')} | ID: ${info.messageId}`);
     } catch (error) {
-      logger.error('Failed to send email:', error?.message || error);
+      const errorMessage = error?.message || error;
+      logger.error(`Failed to send email: ${errorMessage}`, {
+        code: error?.code,
+        responseCode: error?.response?.statusCode || error?.responseCode,
+        stack: error?.stack,
+      });
+      throw error;
     }
   }
 

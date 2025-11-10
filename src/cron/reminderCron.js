@@ -356,6 +356,7 @@ async function sendAttendanceReminders() {
       const userName = `${user.firstName} ${user.lastName}`;
       emailQueue.push({
         receiverEmails: [user.email],
+
         subject: 'Daily Check-in Reminder',
         message: Helper.getAttendanceCheckInReminder(userName, user.team),
         team: user.team
