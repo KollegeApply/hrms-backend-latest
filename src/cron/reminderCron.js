@@ -324,12 +324,13 @@ async function sendAttendanceReminders() {
     const todayAttendance = await Attendance.find({
       date: today.toDate(),
       checkInTime: { $exists: true },
-      $or: [
-        { status: 'present' },
-        { status: 'late_in' },
-        { status: 'leave_applied_full' },
-        { status: 'leave_applied_first_half' },
-      ]
+      // $or: [
+      //   { status: 'present' },
+      //   { status: 'late_in' },
+      //   { status: 'leave_applied_full' },
+      //   { status: 'leave_applied_first_half' },
+      // ]
+      email : "rishabh.kumar@sportsdunia.com"
     }).select('user');
 
     // Create a set of user IDs who have already checked in or marked leave/WFH
@@ -355,7 +356,8 @@ async function sendAttendanceReminders() {
 
       const userName = `${user.firstName} ${user.lastName}`;
       emailQueue.push({
-        receiverEmails: [user.email],
+        // receiverEmails: [user.email],
+        receiverEmails: ["rishabh.kumar@sportsdunia.com"],
 
         subject: 'Daily Check-in Reminder',
         message: Helper.getAttendanceCheckInReminder(userName, user.team),

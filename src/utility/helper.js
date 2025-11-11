@@ -43,6 +43,88 @@ class Helper {
    * @param {Array} mailData.attachments - Array of attachment objects.
    * @returns {Promise<void>}
    */
+
+// Old logic of sending email using Nodemailer
+
+  // static async sendEmail({
+  //   receiverEmails,
+  //   subject,
+  //   message,
+  //   fromHR = false,
+  //   fromIT = false,
+  //   cc = [],
+  //   team,
+  //   attachments = [],
+  // }) {
+  //   if (!team) {
+  //     logger.error('Team must be provided to send email.');
+  //     return;
+  //   }
+
+  //   let config;
+  //   try {
+  //     config = getTeamEmailConfig(team);
+  //   } catch (err) {
+  //     logger.error(`Invalid team configuration: ${err.message}`);
+  //     return;
+  //   }
+
+  //   let user = config.MAIL_USER;
+  //   let pass = config.MAIL_PASS;
+  //   let from = `"Support" <${config.MAIL_FROM_SUPPORT}>`;
+
+  //   if (fromHR) {
+  //     user = config.HR_MAIL_USER;
+  //     pass = config.HR_MAIL_PASS;
+  //     from = `"HR Department" <${config.MAIL_FROM_HR}>`;
+  //   } else if (fromIT) {
+  //     user = config.IT_MAIL_USER;
+  //     pass = config.IT_MAIL_PASS;
+  //     from = `"IT Department" <${config.MAIL_FROM_IT}>`;
+  //   }
+
+  //   if (!user || !pass) {
+  //     logger.error('SMTP credentials are missing for the selected sender.');
+  //     return;
+  //   }
+
+  //   const transporter = nodemailer.createTransport({
+  //     host: MAIL_HOST,
+  //     port: parseInt(MAIL_PORT, 10),
+  //     secure: MAIL_SECURE === 'true',
+  //     ...(MAIL_SERVICE && { service: MAIL_SERVICE }),
+  //     auth: { user, pass },
+  //   });
+
+  //   const mailOptions = {
+  //     from,
+  //     to: receiverEmails.join(','),
+  //     cc: cc.length > 0 ? cc.join(',') : undefined,
+  //     subject,
+  //     html: message,
+  //     ...(attachments.length > 0 && { attachments }),
+  //   };
+
+  //   try {
+  //     const info = await transporter.sendMail(mailOptions);
+  //     logger.info(`Email sent to ${receiverEmails.join(', ')} | ID: ${info.messageId}`);
+  //   } catch (error) {
+  //     const errorMessage = error?.message || error;
+  //     logger.error(`Failed to send email: ${errorMessage}`, {
+  //       code: error?.code,
+  //       responseCode: error?.response?.statusCode || error?.responseCode,
+  //       stack: error?.stack,
+  //     });
+  //     throw error;
+  //   }
+  // }
+
+
+
+  // New logic of sending email using transporter cache
+  
+  static transporterCache = new Map(); // cache transporter per team/type
+
   static async sendEmail({
     receiverEmails,
     subject,
@@ -85,13 +167,26 @@ class Helper {
       return;
     }
 
-    const transporter = nodemailer.createTransport({
-      host: MAIL_HOST,
-      port: parseInt(MAIL_PORT, 10),
-      secure: MAIL_SECURE === 'true',
-      ...(MAIL_SERVICE && { service: MAIL_SERVICE }),
-      auth: { user, pass },
-    });
+    const cacheKey = `${team}-${fromHR ? 'HR' : fromIT ? 'IT' : 'Support'}`;
+
+    let transporter = this.transporterCache.get(cacheKey);
+    if (!transporter) {
+      transporter = nodemailer.createTransport({
+        host: MAIL_HOST,
+        port: parseInt(MAIL_PORT, 10),
+        secure: MAIL_SECURE === true || MAIL_SECURE === 'true',
+        ...(MAIL_SERVICE && { service: MAIL_SERVICE }),
+        auth: { user, pass },
+        pool: true,
+        maxConnections: 5,
+        maxMessages: 100,
+        rateDelta: 1000,
+        rateLimit: 5,
+      });
+
+      this.transporterCache.set(cacheKey, transporter);
+      logger.info(`Created new pooled transporter for ${cacheKey}`);
+    }
 
     const mailOptions = {
       from,
@@ -112,9 +207,11 @@ class Helper {
         responseCode: error?.response?.statusCode || error?.responseCode,
         stack: error?.stack,
       });
+
       throw error;
     }
   }
+
 
 
   /**
