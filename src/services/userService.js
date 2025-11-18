@@ -128,7 +128,8 @@ class UserService {
 
     const query = {
       // Skip team filter for HR/Admin/Subadmin or Finance teamlead when isAttendanceLog is true
-      ...(skipTeamScope ? {} : { team: currentUser?.team }),
+      // ...(skipTeamScope ? {} : { team: currentUser?.team }),
+      team: currentUser?.team,
       status: status === null ? { $in: ['probation', 'onroll'] } : status,
       isDeleted: false,
     };
