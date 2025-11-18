@@ -2898,36 +2898,7 @@ class Helper {
     `;
   }
 
-  // static getRegularizationReminder(userName, dashboardUrl, team) {
-  //   const displayTeam = getTeamEmailConfig(team);
-  //   return `
-  //   <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
-  //     <div style="text-align: center; margin-bottom: 20px;">
-  //       <h1 style="color: #333;">Pending Regularization Reminder</h1>
-  //     </div>
-  //     <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
-  //       <p style="color: #555; font-size: 16px; line-height: 1.6;">
-  //         Hi <strong>${userName}</strong>,
-  //       </p>
-  //       <p style="color: #555; font-size: 16px; line-height: 1.6;">
-  //         This is a reminder that you have pending attendance regularization requests that need your attention.
-  //       </p>
-  //       <p style="color: #555; font-size: 16px; line-height: 1.6;">
-  //       Kindly check and take action on pending regularization requests.
-  //       </p>
-  //       <div style="text-align: center; margin-top: 30px;">
-  //         <a href="${dashboardUrl}/regularization" style="background-color: #ff9800; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold;">
-  //           Regularize Now
-  //         </a>
-  //       </div>
-  //       <p style="color: #777; font-size: 14px; line-height: 1.5; margin-top: 30px;">
-  //         Best regards,<br>
-  //         <strong>Team ${displayTeam?.TEAM_NAME}</strong>
-  //       </p>
-  //     </div>
-  //   </div>
-  //   `;
-  // }
+
   static getRegularizationReminder(userName, dashboardUrl, team) {
     const displayTeam = getTeamEmailConfig(team);
   
