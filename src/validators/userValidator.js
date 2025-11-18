@@ -147,6 +147,14 @@ const updateUserSchema = Joi.object({
     'date.format': 'Date of Birth must be in YYYY-MM-DD format',
     'date.base': 'Date of Birth must be a valid date',
   }),
+  effectiveAt: Joi.date().iso().optional().allow(null).messages({
+    'date.format': 'Effective date must be in YYYY-MM-DD format',
+    'date.base': 'Effective date must be a valid date',
+  }),
+  onrollDate: Joi.date().iso().optional().allow(null).messages({
+    'date.format': 'Onroll date must be in YYYY-MM-DD format',
+    'date.base': 'Onroll date must be a valid date',
+  }),
 })
   .min(1)
   .options({ stripUnknown: true }); // Require at least one field to update
@@ -181,7 +189,8 @@ const getAllUsersSchema = Joi.object({
   sortBy: Joi.string().trim().optional().default('createdAt'), // Field to sort by
   sortOrder: Joi.string().valid('asc', 'desc').optional().default('desc'), // Sort direction
   isPaginated: Joi.boolean().optional().default(true), // Default to paginated results
-  isAttendanceLog: Joi.boolean().optional().default(false)
+  isAttendanceLog: Joi.boolean().optional().default(false),
+  isMeetingAttendee: Joi.boolean().optional().default(false),
 }).options({ stripUnknown: true });
 
 const changePasswordSchema = Joi.object({

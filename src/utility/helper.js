@@ -2094,7 +2094,7 @@ class Helper {
   /**
    * Email template for regularization notification to Team Lead
    */
-  static regularizationNotificationEmail(teamLeadName, employeeFirstName, employeeLastName, date, checkInTime, checkOutTime, reason, type, regularizationId, team = 'SD', employeeId = '', jobTitle = '', department = '') {
+  static regularizationNotificationEmail(teamLeadName, employeeFirstName, employeeLastName, date, checkInTime, checkOutTime, reason, type, regularizationId, team = 'SD', employeeId = '', jobTitle = '', department = '', regularizationTaken = 0, regularizationLeft = 4) {
     const displayTeam = getTeamEmailConfig(team);
 
     return `
@@ -2134,7 +2134,16 @@ class Helper {
               <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Requested Check-out Time:</strong> ${checkOutTime}</li>
               <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Type:</strong> ${type.charAt(0).toUpperCase() + type.slice(1)} Regularization</li>
               <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Reason:</strong> ${reason}</li>
-              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Status:</strong> <span style="color: #ffc107; font-weight: bold;">Pending TL Approval</span></li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Status:</strong> <span style="color: #ffc107; font-weight: bold;">Pending TL Approval</span></li>
+            </ul>
+          </div>
+
+          <!-- Regularization Count Section -->
+          <div style="background-color: #ffffff; padding: 16px 20px; border-radius: 6px; border: 1px solid #dee2e6; margin-bottom: 20px;">
+            <h3 style="color: #495057; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Monthly Regularization Status</h3>
+            <ul style="list-style: none; padding: 0; margin: 0;">
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Regularizations Taken:</strong> <span style="color: #007bff; font-weight: bold;">${regularizationTaken}</span></li>
+              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Regularizations Left:</strong> <span style="color: #28a745; font-weight: bold;">${regularizationLeft}</span></li>
             </ul>
           </div>
         </div>
@@ -2578,13 +2587,19 @@ class Helper {
    * @param {string} team - User team (SD or KAP)
    * @returns {string} HTML template for birthday email
    */
-  static getBirthdayEmailTemplate(user, department, team) {
+  static getBirthdayEmailTemplate(user, department, team, profilePhotoUrl = null) {
     const displayTeam = getTeamEmailConfig(team);
     return `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f5f5f5; padding: 40px 20px;">
         <div style="text-align: center; margin-bottom: 40px;">
           <h1 style="color: #333; font-size: 28px; margin-bottom: 30px;">Happy Birthday, ${user.firstName} ${user.lastName} 🎂</h1>
         </div>
+        
+        ${profilePhotoUrl ? `
+        <div style="text-align: center; margin-bottom: 40px;">
+          <img src="${profilePhotoUrl}" alt="${user.firstName} ${user.lastName}" style="width: 200px; height: 200px; border-radius: 50%; object-fit: cover; border: 4px solid #fff; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
+        </div>
+        ` : ''}
         
         <div style="text-align: center; margin-bottom: 40px;">
           <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 10px;">On this special day, the ${displayTeam?.TEAM_NAME || 'KollegeApply'} family celebrates you</p>
@@ -2617,9 +2632,10 @@ class Helper {
    * @param {string} yearText - 'year' or 'years'
    * @param {Date} today - Today's date
    * @param {string} team - User team (SD or KAP)
+   * @param {string} profilePhotoUrl - Profile photo URL (optional)
    * @returns {string} HTML template for work anniversary email
    */
-  static getWorkAnniversaryEmailTemplate(user, department, yearsOfService, yearText, today, team) {
+  static getWorkAnniversaryEmailTemplate(user, department, yearsOfService, yearText, today, team, profilePhotoUrl = null) {
     const displayTeam = getTeamEmailConfig(team);
     return `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f5f5f5; padding: 40px 20px;">
@@ -2627,6 +2643,12 @@ class Helper {
           <h1 style="color: #333; font-size: 24px; margin-bottom: 20px;">Another Year of Excellence🏆 with ${displayTeam?.TEAM_NAME || 'KollegeApply'} !</h1>
           <h2 style="color: #333; font-size: 20px; margin-bottom: 30px;">⭐Congratulations ${user.firstName} ${user.lastName}⭐</h2>
         </div>
+        
+        ${profilePhotoUrl ? `
+        <div style="text-align: center; margin-bottom: 30px;">
+          <img src="${profilePhotoUrl}" alt="${user.firstName} ${user.lastName}" style="width: 200px; height: 200px; border-radius: 50%; object-fit: cover; border: 4px solid #fff; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
+        </div>
+        ` : ''}
         
         <div style="text-align: center; margin-bottom: 30px;">
           <p style="color: #333; font-size: 18px; margin-bottom: 10px; font-weight: bold;">Today marks a special milestone</p>
@@ -2663,15 +2685,22 @@ class Helper {
    * @param {string} spouseName - Spouse name (optional)
    * @param {Date} today - Today's date
    * @param {string} team - User team (SD or KAP)
+   * @param {string} profilePhotoUrl - Profile photo URL (optional)
    * @returns {string} HTML template for marriage anniversary email
    */
-  static getMarriageAnniversaryEmailTemplate(user, departmentName, yearsOfMarriage, yearText, spouseName, today, team) {
+  static getMarriageAnniversaryEmailTemplate(user, departmentName, yearsOfMarriage, yearText, spouseName, today, team, profilePhotoUrl = null) {
     const displayTeam = getTeamEmailConfig(team);
     return `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f5f5f5; padding: 40px 20px;">
         <div style="text-align: center; margin-bottom: 40px;">
           <h1 style="color: #333; font-size: 24px; margin-bottom: 30px;">Happy Marriage Anniversary, ${user.firstName} ${user.lastName} 💑</h1>
         </div>
+        
+        ${profilePhotoUrl ? `
+        <div style="text-align: center; margin-bottom: 40px;">
+          <img src="${profilePhotoUrl}" alt="${user.firstName} ${user.lastName}" style="width: 200px; height: 200px; border-radius: 50%; object-fit: cover; border: 4px solid #fff; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
+        </div>
+        ` : ''}
         
         <div style="text-align: center; margin-bottom: 40px;">
           <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">On behalf of the ${displayTeam?.TEAM_NAME || 'KollegeApply'} Team, we warmly congratulate you and</p>
@@ -2869,36 +2898,75 @@ class Helper {
     `;
   }
 
+  // static getRegularizationReminder(userName, dashboardUrl, team) {
+  //   const displayTeam = getTeamEmailConfig(team);
+  //   return `
+  //   <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+  //     <div style="text-align: center; margin-bottom: 20px;">
+  //       <h1 style="color: #333;">Pending Regularization Reminder</h1>
+  //     </div>
+  //     <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+  //       <p style="color: #555; font-size: 16px; line-height: 1.6;">
+  //         Hi <strong>${userName}</strong>,
+  //       </p>
+  //       <p style="color: #555; font-size: 16px; line-height: 1.6;">
+  //         This is a reminder that you have pending attendance regularization requests that need your attention.
+  //       </p>
+  //       <p style="color: #555; font-size: 16px; line-height: 1.6;">
+  //       Kindly check and take action on pending regularization requests.
+  //       </p>
+  //       <div style="text-align: center; margin-top: 30px;">
+  //         <a href="${dashboardUrl}/regularization" style="background-color: #ff9800; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+  //           Regularize Now
+  //         </a>
+  //       </div>
+  //       <p style="color: #777; font-size: 14px; line-height: 1.5; margin-top: 30px;">
+  //         Best regards,<br>
+  //         <strong>Team ${displayTeam?.TEAM_NAME}</strong>
+  //       </p>
+  //     </div>
+  //   </div>
+  //   `;
+  // }
   static getRegularizationReminder(userName, dashboardUrl, team) {
     const displayTeam = getTeamEmailConfig(team);
+  
     return `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
-      <div style="text-align: center; margin-bottom: 20px;">
-        <h1 style="color: #333;">Pending Regularization Reminder</h1>
-      </div>
-      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
-        <p style="color: #555; font-size: 16px; line-height: 1.6;">
-          Hi <strong>${userName}</strong>,
-        </p>
-        <p style="color: #555; font-size: 16px; line-height: 1.6;">
-          This is a reminder that you have pending attendance regularization requests that need your attention.
-        </p>
-        <p style="color: #555; font-size: 16px; line-height: 1.6;">
-        Kindly check and take action on pending regularization requests.
-        </p>
-        <div style="text-align: center; margin-top: 30px;">
-          <a href="${dashboardUrl}/regularization" style="background-color: #ff9800; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold;">
-            Regularize Now
-          </a>
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+        
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h1 style="color: #333;">Attendance Regularization Reminder</h1>
         </div>
-        <p style="color: #777; font-size: 14px; line-height: 1.5; margin-top: 30px;">
-          Best regards,<br>
-          <strong>Team ${displayTeam?.TEAM_NAME}</strong>
-        </p>
+  
+        <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+  
+          <p style="color: #555; font-size: 16px; line-height: 1.6;">
+            Hi <strong>${userName}</strong>,
+          </p>
+  
+          <p style="color: #555; font-size: 16px; line-height: 1.6;">
+            We request you to kindly review your recent attendance records and ensure that all entries are accurate and up to date. 
+            If there are any days where regularization is needed, please apply for it at your earliest convenience. 
+            Keeping your attendance updated helps avoid discrepancies and ensures a smooth monthly attendance process for you.
+          </p>
+  
+          <div style="text-align: center; margin-top: 30px;">
+            <a href="${dashboardUrl}/regularization" 
+               style="background-color: #ff9800; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+              Review Regularization
+            </a>
+          </div>
+  
+          <p style="color: #777; font-size: 14px; line-height: 1.5; margin-top: 30px;">
+            Best regards,<br>
+            <strong>Team ${displayTeam?.TEAM_NAME}</strong>
+          </p>
+  
+        </div>
       </div>
-    </div>
     `;
   }
+  
 
   static getTLLeaveActionReminder(tlName, dashboardUrl, team) {
     const displayTeam = getTeamEmailConfig(team);

@@ -112,8 +112,23 @@ class UserService {
       context,
     } = queryOptions;
 
+    // Fetch user with department to check if Finance teamlead (needed before query setup)
+    const userWithDept = await User.findById(currentUser.id).populate('department', 'name').lean();
+    
+    // Check if user is Finance department teamlead
+    const isFinanceTeamlead = 
+      currentUser?.role === 'teamlead' && 
+      userWithDept?.department?.name?.toLowerCase()?.trim() === 'finance';
+
+    // Check if user should see all users (HR/Admin/Subadmin or Finance teamlead)
+    const shouldSeeAllUsers = ['hr', 'subadmin', 'admin'].includes(currentUser?.role) || 
+                              (isFinanceTeamlead && isAttendanceLog);
+
+    const skipTeamScope = shouldSeeAllUsers || context === 'meeting';
+
     const query = {
-      team: currentUser?.team,
+      // Skip team filter for HR/Admin/Subadmin or Finance teamlead when isAttendanceLog is true
+      ...(skipTeamScope ? {} : { team: currentUser?.team }),
       status: status === null ? { $in: ['probation', 'onroll'] } : status,
       isDeleted: false,
     };
@@ -129,9 +144,9 @@ class UserService {
       andConditions.push({ role });
     }
 
-    // Team-based filter
+    // Team-based filter (skip for Finance teamlead - same as HR)
     const teamFilter = [];
-    if (currentUser?.role === 'teamlead') {
+    if (currentUser?.role === 'teamlead' && !isFinanceTeamlead) {
       if (context !== 'meeting') {
         teamFilter.push({ teamLeadId: currentUser.id });
       }
@@ -675,6 +690,14 @@ async getUserById(id) {
       }
     }
 
+    // Extract effectiveAt from updateData if provided (for status changes)
+    // This should be extracted before Object.assign to avoid saving in user model
+    const effectiveAtDate = updateData.effectiveAt || updateData.onrollDate || null;
+    
+    // Remove effectiveAt and onrollDate from updateData before saving to avoid storing in user model
+    delete updateData.effectiveAt;
+    delete updateData.onrollDate;
+
     // Apply updates
     Object.assign(user, updateData);
     const updatedUser = await user.save();
@@ -689,16 +712,23 @@ async getUserById(id) {
     );
 
     await Promise.all(
-      changedFields.map((field) =>
-        employeeHistory.create({
+      changedFields.map((field) => {
+        const historyData = {
           employeeId: updatedUser._id,
           entity: field,
           previous: oldUser[field] || null,
           changed: updatedUser[field] || null,
           changedBy: changedByUser._id,
           actionAt: new Date(),
-        })
-      )
+        };
+        
+        // Add effectiveAt only if provided and field is 'status'
+        if (effectiveAtDate && field === 'status') {
+          historyData.effectiveAt = new Date(effectiveAtDate);
+        }
+        
+        return employeeHistory.create(historyData);
+      })
     );
 
     return updatedUser.toJSON();
