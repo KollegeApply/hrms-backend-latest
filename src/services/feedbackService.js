@@ -589,9 +589,9 @@ class FeedbacksService {
     // Get total count for pagination
     const totalCount = await Feedback.countDocuments(finalFilter);
 
-    // Fetch logged-in user's teamLeadId if user is TL (to check if feedback is from their own TL)
+    // Fetch logged-in user's teamLeadId if user is TL or subTL (to check if feedback is from their own TL)
     let userTeamLeadId = null;
-    if (userRole === 'teamlead') {
+    if (userRole === 'teamlead' || userRole === 'subteamlead') {
         const loggedInUser = await User.findById(userId).select('teamLeadId');
         userTeamLeadId = loggedInUser?.teamLeadId ? String(loggedInUser.teamLeadId).trim() : null;
     }
@@ -613,7 +613,7 @@ class FeedbacksService {
     const processedFeedbacks = feedbacks.map(feedback => {
         const feedbackObj = feedback.toObject();
         // If TL is viewing received feedback (tab=received), check each feedback
-        if (userRole === 'teamlead' && filters.tab === 'received') {
+        if ((userRole === 'teamlead' || userRole === 'subteamlead') && filters.tab === 'received') {
             // Check if feedback is from their own TL - if yes, keep givenBy, else remove it
             try {
                 const givenById = feedbackObj.givenBy?._id || feedbackObj.givenBy?.id || feedbackObj.givenBy;
@@ -741,14 +741,14 @@ class FeedbacksService {
         // Also remove givenBy field when HR receives feedback from their HR team lead
         const feedbackObj = feedback.toObject();
         try {
-            if (userRole === 'teamlead' && feedbackObj.givenTo && userId) {
+            if ((userRole === 'teamlead' || userRole === 'subteamlead') && feedbackObj.givenTo && userId) {
                 // Check if givenTo is populated (object with _id or id) or just ObjectId
                 // Mongoose virtual 'id' field is also available after toObject()
                 const givenToId = feedbackObj.givenTo._id || feedbackObj.givenTo.id || feedbackObj.givenTo;
                 const givenToIdStr = givenToId ? String(givenToId).trim() : null;
                 const userIdStr = userId ? String(userId).trim() : null;
                 
-                // If givenTo matches the logged-in TL, check if feedback is from their own TL
+                // If givenTo matches the logged-in TL/subTL, check if feedback is from their own TL
                 if (givenToIdStr && userIdStr && givenToIdStr === userIdStr) {
                     // Fetch logged-in user's teamLeadId
                     const loggedInUser = await User.findById(userId).select('teamLeadId');

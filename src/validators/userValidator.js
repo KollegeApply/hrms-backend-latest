@@ -147,10 +147,6 @@ const updateUserSchema = Joi.object({
     'date.format': 'Date of Birth must be in YYYY-MM-DD format',
     'date.base': 'Date of Birth must be a valid date',
   }),
-  effectiveAt: Joi.date().iso().optional().allow(null).messages({
-    'date.format': 'Effective date must be in YYYY-MM-DD format',
-    'date.base': 'Effective date must be a valid date',
-  }),
   onrollDate: Joi.date().iso().optional().allow(null).messages({
     'date.format': 'Onroll date must be in YYYY-MM-DD format',
     'date.base': 'Onroll date must be a valid date',

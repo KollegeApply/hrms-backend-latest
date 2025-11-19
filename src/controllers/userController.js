@@ -189,6 +189,7 @@ const updateUser = catchAsync(async (req, res) => {
   const validatedData = await userValidator?.updateUserSchema?.validateAsync(
     req?.body
   );
+  console.log(validatedData, "validatedData")
   if (Object.keys(validatedData).length === 0) {
     throw new ApiError(
       httpStatus.BAD_REQUEST,
@@ -198,7 +199,7 @@ const updateUser = catchAsync(async (req, res) => {
 
   // Map onrollDate to effectiveAt if effectiveAt is not provided and onrollDate exists
   // This ensures the date selected on frontend is stored in employeeHistory.effectiveAt
-  if (!validatedData.effectiveAt && validatedData.onrollDate) {
+  if ( validatedData.onrollDate) {
     validatedData.effectiveAt = validatedData.onrollDate;
   }
 

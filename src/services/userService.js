@@ -693,10 +693,9 @@ async getUserById(id) {
 
     // Extract effectiveAt from updateData if provided (for status changes)
     // This should be extracted before Object.assign to avoid saving in user model
-    const effectiveAtDate = updateData.effectiveAt || updateData.onrollDate || null;
+    const effectiveAtDate = updateData.onrollDate || new Date();
     
     // Remove effectiveAt and onrollDate from updateData before saving to avoid storing in user model
-    delete updateData.effectiveAt;
     delete updateData.onrollDate;
 
     // Apply updates
