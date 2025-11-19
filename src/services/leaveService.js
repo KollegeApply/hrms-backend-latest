@@ -44,10 +44,16 @@ class leaveService {
       {
         path: 'userId',
         select: '_id firstName lastName employeeId workType hireDate',
-        populate: {
-          path: 'department',
-          select: 'name'
-        }
+        populate: [
+          {
+            path: 'department',
+            select: 'name'
+          },
+          {
+            path: 'teamLeadId',
+            select: 'firstName lastName email employeeId'
+          }
+        ]
       },
       {
         path: 'leaveTypeId',
@@ -86,10 +92,16 @@ class leaveService {
       {
         path: 'userId',
         select: '_id firstName lastName employeeId workType hireDate',
-        populate: {
-          path: 'department',
-          select: 'name'
-        }
+        populate: [
+          {
+            path: 'department',
+            select: 'name'
+          },
+          {
+            path: 'teamLeadId',
+            select: 'firstName lastName email employeeId'
+          }
+        ]
       },
       {
         path: 'leaveTypeId',
@@ -362,10 +374,16 @@ async updateLeaveStatus({ leaveId, action, editor }) {
       {
         path: 'userId',
         select: '_id firstName lastName employeeId workType hireDate',
-        populate: {
-          path: 'department',
-          select: 'name'
-        }
+        populate: [
+          {
+            path: 'department',
+            select: 'name'
+          },
+          {
+            path: 'teamLeadId',
+            select: 'firstName lastName email employeeId'
+          }
+        ]
       },
       {
         path: 'leaveTypeId',
