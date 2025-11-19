@@ -12,6 +12,7 @@ const LeavePolicy = require('../models/leavePolicyModel');
 const LeavePolicyMapping = require('../models/leavePolicyMappingModel');
 const EmployeeLeaveBalance = require('../models/employeeLeaveBalanceModel');
 const moment = require('moment-timezone');
+const { paginate } = require('../utility/common');
 
 class leaveService {
   /**
@@ -23,45 +24,102 @@ class leaveService {
 
   /**
    * Get all Leave (excluding soft-deleted ones).
-   * @returns {Promise<Leave[]>} - List of all non-deleted Leaves, sorted by date.
+   * @param {string} team - Team code to filter by
+   * @param {number} page - Page number (default: 1)
+   * @param {number} limit - Items per page (default: 10)
+   * @returns {Promise<object>} - Paginated list of all non-deleted Leaves, sorted by date.
    */
-  async getAllLeave(team) {
+  async getAllLeave(team, page = 1, limit = 10) {
+    // Get all user IDs for the team
+    const teamUsers = await User.find({ team }).select('_id');
+    const teamUserIds = teamUsers.map(user => user._id);
 
-  const leaves = await LeaveApplication.find()
-      .sort({
-        createdAt: -1,
-      })
-       .populate({
-      path: 'userId',
-      match: { team },
-    })
-      .populate({
+    // Build query to filter by team users
+    const query = {
+      userId: { $in: teamUserIds },
+      isDeleted: { $ne: true }
+    };
+
+    const populateOptions = [
+      {
+        path: 'userId',
+        select: '_id firstName lastName employeeId workType hireDate',
+        populate: [
+          {
+            path: 'department',
+            select: 'name'
+          },
+          {
+            path: 'teamLeadId',
+            select: 'firstName lastName email employeeId'
+          }
+        ]
+      },
+      {
         path: 'leaveTypeId',
         select: 'name',
-      });
+      }
+    ];
 
-    if (!leaves || leaves?.length === 0) {
-      return leaves;
-    }
+    const paginationResult = await paginate(
+      LeaveApplication,
+      query,
+      page,
+      limit,
+      { createdAt: -1 },
+      null,
+      populateOptions
+    );
 
-     return leaves.filter(leave => leave.userId !== null);
+    return paginationResult;
   }
 
   /**
    * Get a Leave by UserID.
    * @param {Object} params - Object containing the leave ID.
    * @param {String} params.id - MongoDB ObjectId.
-   * @returns {Promise<Leave>} - The found leave.
-   * @throws {ApiError} - If no leave is found with the given ID.
+   * @param {number} page - Page number (default: 1)
+   * @param {number} limit - Items per page (default: 10)
+   * @returns {Promise<object>} - Paginated list of leaves for the user.
    */
-  async getLeaveById({ id }) {
-    const result = await LeaveApplication.find({ userId: id })
-      .sort({ createdAt: -1 })
-      .populate('userId');
-    if (!result) {
-      throw new ApiError(httpStatus.NOT_FOUND, 'No Leave for the given user');
-    }
-    return result;
+  async getLeaveById({ id }, page = 1, limit = 10) {
+    const query = {
+      userId: id,
+      isDeleted: { $ne: true }
+    };
+
+    const populateOptions = [
+      {
+        path: 'userId',
+        select: '_id firstName lastName employeeId workType hireDate',
+        populate: [
+          {
+            path: 'department',
+            select: 'name'
+          },
+          {
+            path: 'teamLeadId',
+            select: 'firstName lastName email employeeId'
+          }
+        ]
+      },
+      {
+        path: 'leaveTypeId',
+        select: 'name',
+      }
+    ];
+
+    const paginationResult = await paginate(
+      LeaveApplication,
+      query,
+      page,
+      limit,
+      { createdAt: -1 },
+      null,
+      populateOptions
+    );
+
+    return paginationResult;
   }
 
   /**
@@ -296,7 +354,7 @@ async updateLeaveStatus({ leaveId, action, editor }) {
   return await leave.save();
 }
 
-  async getLeaveTl({ id, team }) {
+  async getLeaveTl({ id, team }, page = 1, limit = 10) {
     const leadUsers = await User.find(
       {
         $or: [{ teamLeadId: id }, { subTeamLeadId: id }],
@@ -307,14 +365,43 @@ async updateLeaveStatus({ leaveId, action, editor }) {
     const userIds = leadUsers.map((user) => user._id.toString());
     userIds.push(id);
 
-    const leaveEntries = await LeaveApplication.find({
+    const query = {
       userId: { $in: userIds },
-    })
-      .sort({ createdAt: -1 })
-      .populate('userId')
-      .populate('leaveTypeId');
+      isDeleted: { $ne: true }
+    };
 
-    return leaveEntries;
+    const populateOptions = [
+      {
+        path: 'userId',
+        select: '_id firstName lastName employeeId workType hireDate',
+        populate: [
+          {
+            path: 'department',
+            select: 'name'
+          },
+          {
+            path: 'teamLeadId',
+            select: 'firstName lastName email employeeId'
+          }
+        ]
+      },
+      {
+        path: 'leaveTypeId',
+        select: 'name',
+      }
+    ];
+
+    const paginationResult = await paginate(
+      LeaveApplication,
+      query,
+      page,
+      limit,
+      { createdAt: -1 },
+      null,
+      populateOptions
+    );
+
+    return paginationResult;
   }
   /**
    * Soft delete a Leave Application by its ID.

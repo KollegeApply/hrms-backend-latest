@@ -4,10 +4,28 @@ const UserDetails = require('../models/userDetailsModel');
 const Department = require('../models/departmentModel');
 const logger = require('../config/logger');
 const Helper = require('../utility/helper');
+const { transformDocumentPaths } = require('../utility/common');
 const moment = require('moment-timezone');
 require('dotenv').config({ path: './.env.production' });
 
 const MONGO_URI = process.env.MONGO_URI;
+
+const getProfilePhotoUrl = (user) => {
+  if (!user) return null;
+
+  if (user.profilePhoto) {
+    const transformed = transformDocumentPaths({ profilePhoto: user.profilePhoto });
+    return transformed.profilePhoto;
+  }
+
+  const documentsPhoto = user.userDetails?.documents?.photograph;
+  if (documentsPhoto) {
+    const transformed = transformDocumentPaths({ photograph: documentsPhoto });
+    return transformed.photograph;
+  }
+
+  return null;
+};
 
 /**
  * Anniversary Scheduler - Sends Anniversary Emails
@@ -80,12 +98,15 @@ async function runAnniversaryScheduler(isTestMode = false) {
         },
         isDeleted: false,
         dateOfBirth: { $exists: true, $ne: null }
-      }).select('firstName lastName email employeeId dateOfBirth department team jobTitle')
-        .populate('department', 'name');
+      }).select('firstName lastName email employeeId dateOfBirth department team jobTitle profilePhoto userDetails')
+        .populate('department', 'name')
+        .populate('userDetails', 'documents');
 
       for (const user of birthdayUsers) {
         try {
           const age = currentYear - new Date(user.dateOfBirth).getFullYear();
+          
+          const profilePhotoUrl = getProfilePhotoUrl(user);
           
           // Send birthday email to the user
           if (isTestMode) {
@@ -95,7 +116,7 @@ async function runAnniversaryScheduler(isTestMode = false) {
             await Helper.sendEmail({
               receiverEmails: [user.email],
               subject: `🎂 Happy Birthday ${user.firstName}! 🎉`,
-              message: Helper.getBirthdayEmailTemplate(user, user.department, user.team),
+              message: Helper.getBirthdayEmailTemplate(user, user.department, user.team, profilePhotoUrl),
               fromHR: false,
               team: user?.team || 'SD'
             });
@@ -129,13 +150,16 @@ async function runAnniversaryScheduler(isTestMode = false) {
         },
         isDeleted: false,
         hireDate: { $exists: true, $ne: null }
-      }).select('firstName lastName email employeeId hireDate department team jobTitle')
-        .populate('department', 'name');
+      }).select('firstName lastName email employeeId hireDate department team jobTitle profilePhoto userDetails')
+        .populate('department', 'name')
+        .populate('userDetails', 'documents');
 
       for (const user of workAnniversaryUsers) {
         try {
           const yearsOfService = currentYear - new Date(user.hireDate).getFullYear();
           const yearText = yearsOfService === 1 ? 'year' : 'years';
+
+          const profilePhotoUrl = getProfilePhotoUrl(user);
 
           // Send work anniversary email to the user
           if (isTestMode) {
@@ -145,7 +169,7 @@ async function runAnniversaryScheduler(isTestMode = false) {
             await Helper.sendEmail({
               receiverEmails: [user.email],
               subject: `🏆 Congratulations on Your ${yearsOfService}-Year Work Anniversary!`,
-              message: Helper.getWorkAnniversaryEmailTemplate(user, user.department, yearsOfService, yearText, today, user.team),
+              message: Helper.getWorkAnniversaryEmailTemplate(user, user.department, yearsOfService, yearText, today, user.team, profilePhotoUrl),
               fromHR: false,
               team: user?.team || 'SD'
             });
@@ -175,9 +199,9 @@ async function runAnniversaryScheduler(isTestMode = false) {
         userDetails: { $exists: true, $ne: null }
       }).populate({
         path: 'userDetails',
-        select: 'personalInfo'
+        select: 'personalInfo documents'
       }).populate('department', 'name')
-        .select('firstName lastName email employeeId team userDetails department jobTitle');
+        .select('firstName lastName email employeeId team userDetails department jobTitle profilePhoto');
 
       const marriageAnniversaryUsers = allUsersWithMarriageData.filter(user => {
         const marriageDate = user.userDetails?.personalInfo?.marriageDate;
@@ -200,6 +224,8 @@ async function runAnniversaryScheduler(isTestMode = false) {
           const spouseName = user.userDetails.personalInfo.spouseName;
           const departmentName = user.department?.name;
 
+          const profilePhotoUrl = getProfilePhotoUrl(user);
+
           // Send marriage anniversary email to the user
           if (isTestMode) {
             logger.info(`   🧪 TEST MODE: Would send marriage anniversary email to ${user.firstName} ${user.lastName} (${user.email})`);
@@ -208,7 +234,7 @@ async function runAnniversaryScheduler(isTestMode = false) {
             await Helper.sendEmail({
               receiverEmails: [user.email],
               subject: `💑 Happy ${yearsOfMarriage}-Year Marriage Anniversary!`,
-              message: Helper.getMarriageAnniversaryEmailTemplate(user, departmentName, yearsOfMarriage, yearText, spouseName, today, user.team),
+              message: Helper.getMarriageAnniversaryEmailTemplate(user, departmentName, yearsOfMarriage, yearText, spouseName, today, user.team, profilePhotoUrl),
               fromHR: false,
               team: user?.team || 'SD'
             });

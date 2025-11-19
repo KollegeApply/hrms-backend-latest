@@ -13,6 +13,7 @@ const UserDetails = require('../models/userDetailsModel');
 const candidateValidator = require('../validators/candidateValidator');
 const { uploadToAzure } = require('../utility/azureBlob');
 const { transformDocumentPaths } = require('../utility/common');
+const EmployeeHistory = require('../models/employeeHistory');
 const crypto = require('crypto');
 const moment = require('moment-timezone');
 
@@ -102,8 +103,13 @@ const getAllUsers = catchAsync(async (req, res) => {
   const currentUser = req?.user;
 
 
+  // Meeting attendee flag should bypass team scoping
+  const queryOptions = validatedQuery?.isMeetingAttendee
+    ? { ...validatedQuery, context: 'meeting' }
+    : validatedQuery;
+
   // 2. Call service to get users
-  const result = await userService?.getAllUsers(validatedQuery, currentUser); // Service handles pagination logic
+  const result = await userService?.getAllUsers(queryOptions, currentUser); // Service handles pagination logic
 
   // 3. Transform profile photos to full URLs if needed
   if (result.data && Array.isArray(result.data)) {
@@ -183,11 +189,18 @@ const updateUser = catchAsync(async (req, res) => {
   const validatedData = await userValidator?.updateUserSchema?.validateAsync(
     req?.body
   );
+  console.log(validatedData, "validatedData")
   if (Object.keys(validatedData).length === 0) {
     throw new ApiError(
       httpStatus.BAD_REQUEST,
       'No valid fields provided for update.'
     );
+  }
+
+  // Map onrollDate to effectiveAt if effectiveAt is not provided and onrollDate exists
+  // This ensures the date selected on frontend is stored in employeeHistory.effectiveAt
+  if ( validatedData.onrollDate) {
+    validatedData.effectiveAt = validatedData.onrollDate;
   }
 
   const currentUserId = req?.user?.id;
@@ -208,18 +221,48 @@ const updateUser = catchAsync(async (req, res) => {
 
   // sending mail
   if (oldUser?.status === 'probation' && updatedUser?.status === 'onroll') {
-    const today = moment();
-    const tomorrow = today.clone().add(1, 'days');   
+    // Use onrollDate from payload if provided, otherwise fetch from EmployeeHistory
+    let onrollDate = null;
+    
+    // First, check if onrollDate is provided in the request body
+    if (req.body?.onrollDate) {
+      onrollDate = new Date(req.body.onrollDate);
+      logger.info(`Using onrollDate from payload for user ${userId}: ${req.body.onrollDate}`);
+    } else {
+      // Fallback: Fetch onrollDate from EmployeeHistory
+      try {
+        const statusChangeRecord = await EmployeeHistory.findOne({
+          employeeId: userId,
+          entity: 'status',
+          previous: 'probation',
+          changed: 'onroll'
+        }).sort({ actionAt: -1, createdAt: -1 }); // Get the most recent record
+        
+        if (statusChangeRecord) {
+          onrollDate = statusChangeRecord.actionAt || statusChangeRecord.createdAt;
+          logger.info(`Found onrollDate from EmployeeHistory for user ${userId}: ${onrollDate}`);
+        } else {
+          // Fallback: if no history record found, use current date
+          logger.warn(`No EmployeeHistory record found for onroll status change for user ${userId}, using current date`);
+          onrollDate = new Date();
+        }
+      } catch (error) {
+        logger.error(`Error fetching onrollDate from EmployeeHistory for user ${userId}:`, error);
+        // Fallback to current date if there's an error
+        onrollDate = new Date();
+      }
+    }
 
-    const formattedDate = tomorrow.format('DD MMMM YYYY');
+    // Format the onrollDate
+    const formattedDate = moment(onrollDate).tz('Asia/Kolkata').format('DD MMMM YYYY');
     const sendMail = req?.body?.sendMail === true;
     if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
       logger.info(
-        `Conversion from probation to onroll ${updatedUser?.email}`
+        `Conversion from probation to onroll ${updatedUser?.email}, onrollDate: ${formattedDate}`
       );
       Helper.sendEmail({
         receiverEmails: [updatedUser?.email],
-        subject: `You’ve Earned Full-Time Status! Congratulations !!`,
+        subject: `You've Earned Full-Time Status! Congratulations !!`,
         message: Helper.fullTimeConversion(
           updatedUser?.firstName,
           formattedDate,

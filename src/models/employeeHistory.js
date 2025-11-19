@@ -22,6 +22,10 @@ const employeeHistorySchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    effectiveAt: {
+      type: Date,
+      required: false,
+    },
   },
   { timestamps: true }
 );

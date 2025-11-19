@@ -209,6 +209,21 @@ async function sendRegularizationStatusUpdateEmail(attendance, action, team, rej
     case 'new_request':
       // When apply then to TL, cc HR
       emailSubject = 'New Regularization Request';
+      
+      // Get regularization limits for the employee from API
+      // API returns: { total: 4, used: X, available: Y, monthlyRegularizations: [...] }
+      let regularizationTaken = 0;
+      let regularizationLeft = 4;
+      try {
+        const limits = await regularizationService.getRegularizationLimits(attendance.user);
+        // Using 'used' for taken count and 'available' for left count from API response
+        regularizationTaken = limits.used || 0;
+        regularizationLeft = limits.available || 4;
+      } catch (error) {
+        logger.error(`Error fetching regularization limits for user ${attendance.user}:`, error);
+        // Use default values if there's an error
+      }
+      
       emailMessage = Helper.regularizationNotificationEmail(
         employee.teamLeadId?.firstName || 'Team Lead',
         employee.firstName,
@@ -222,7 +237,9 @@ async function sendRegularizationStatusUpdateEmail(attendance, action, team, rej
         team,
         employee.employeeId,
         employee.jobTitle,
-        employee.department?.name || 'N/A'
+        employee.department?.name || 'N/A',
+        regularizationTaken,
+        regularizationLeft
       );
       receiverEmails = [employee.teamLeadId?.email].filter(Boolean);
       ccEmails = [configEmails.HR_EMAIL].filter(Boolean);
