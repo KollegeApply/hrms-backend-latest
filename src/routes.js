@@ -18,6 +18,7 @@ const aiTestRoutes = require('./routes/aiTestRoute');
 const personalEventRoutes = require('./routes/personalEventRoute');
 const announcementRoutes = require('./routes/announcementRoute');
 const kpiRoutes = require('./routes/kpiRoute');
+const biometricWebhookRoutes = require('./routes/biometricWebhookRoute');
 // const otherRoutes = require('./routes/otherRoutes'); // Example for future routes
 
 const router = express.Router();
@@ -108,5 +109,8 @@ const defaultRoutes = [
 defaultRoutes.forEach((route) => {
   router.use(route.path, route.route);
 });
+
+// Webhook routes (no API version prefix, public endpoints)
+router.use('/webhook', biometricWebhookRoutes);
 
 module.exports = router;
