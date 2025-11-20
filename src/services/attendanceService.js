@@ -403,12 +403,21 @@ async getTeamMembers(leaderId) {
       
       let query = { date: dateQuery };
 
-      if (['teamlead', 'subteamlead'].includes(role)) {
+      // Check if user is Finance department teamlead
+      let isFinanceTeamlead = false;
+      if (role === 'teamlead') {
+        const userWithDept = await User.findById(userId).populate('department', 'name').lean();
+        isFinanceTeamlead = userWithDept?.department?.name?.toLowerCase()?.trim() === 'finance';
+      }
+
+      // Finance teamlead should see all attendance data like HR/Admin
+      if (['teamlead', 'subteamlead'].includes(role) && !isFinanceTeamlead) {
         const teamMemberIds = await this.getTeamMembers(userId);
         query.user = { $in: [userId, ...teamMemberIds] };
-      } else if (!['hr', 'subadmin', 'admin'].includes(role)) {
+      } else if (!['hr', 'subadmin', 'admin'].includes(role) && !isFinanceTeamlead) {
         query.user = userId;
       }
+      // For HR/Admin/SubAdmin or Finance teamlead, no user filter is applied (they see all attendance)
 
       const attendance = await Attendance.find(query)
         .populate('user', '_id firstName lastName employeeId workType hireDate')
