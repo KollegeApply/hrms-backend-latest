@@ -5,7 +5,7 @@ const employeeHistorySchema = new mongoose.Schema(
     employeeId: {
       type: mongoose.Schema.Types.ObjectId,
       required: true,
-      ref: 'Employee',
+      ref: 'User',
     },
     entity: {
       type: String,
@@ -21,6 +21,10 @@ const employeeHistorySchema = new mongoose.Schema(
     actionAt: {
       type: Date,
       default: Date.now,
+    },
+    effectiveAt: {
+      type: Date,
+      required: false,
     },
   },
   { timestamps: true }

@@ -43,6 +43,88 @@ class Helper {
    * @param {Array} mailData.attachments - Array of attachment objects.
    * @returns {Promise<void>}
    */
+
+// Old logic of sending email using Nodemailer
+
+  // static async sendEmail({
+  //   receiverEmails,
+  //   subject,
+  //   message,
+  //   fromHR = false,
+  //   fromIT = false,
+  //   cc = [],
+  //   team,
+  //   attachments = [],
+  // }) {
+  //   if (!team) {
+  //     logger.error('Team must be provided to send email.');
+  //     return;
+  //   }
+
+  //   let config;
+  //   try {
+  //     config = getTeamEmailConfig(team);
+  //   } catch (err) {
+  //     logger.error(`Invalid team configuration: ${err.message}`);
+  //     return;
+  //   }
+
+  //   let user = config.MAIL_USER;
+  //   let pass = config.MAIL_PASS;
+  //   let from = `"Support" <${config.MAIL_FROM_SUPPORT}>`;
+
+  //   if (fromHR) {
+  //     user = config.HR_MAIL_USER;
+  //     pass = config.HR_MAIL_PASS;
+  //     from = `"HR Department" <${config.MAIL_FROM_HR}>`;
+  //   } else if (fromIT) {
+  //     user = config.IT_MAIL_USER;
+  //     pass = config.IT_MAIL_PASS;
+  //     from = `"IT Department" <${config.MAIL_FROM_IT}>`;
+  //   }
+
+  //   if (!user || !pass) {
+  //     logger.error('SMTP credentials are missing for the selected sender.');
+  //     return;
+  //   }
+
+  //   const transporter = nodemailer.createTransport({
+  //     host: MAIL_HOST,
+  //     port: parseInt(MAIL_PORT, 10),
+  //     secure: MAIL_SECURE === 'true',
+  //     ...(MAIL_SERVICE && { service: MAIL_SERVICE }),
+  //     auth: { user, pass },
+  //   });
+
+  //   const mailOptions = {
+  //     from,
+  //     to: receiverEmails.join(','),
+  //     cc: cc.length > 0 ? cc.join(',') : undefined,
+  //     subject,
+  //     html: message,
+  //     ...(attachments.length > 0 && { attachments }),
+  //   };
+
+  //   try {
+  //     const info = await transporter.sendMail(mailOptions);
+  //     logger.info(`Email sent to ${receiverEmails.join(', ')} | ID: ${info.messageId}`);
+  //   } catch (error) {
+  //     const errorMessage = error?.message || error;
+  //     logger.error(`Failed to send email: ${errorMessage}`, {
+  //       code: error?.code,
+  //       responseCode: error?.response?.statusCode || error?.responseCode,
+  //       stack: error?.stack,
+  //     });
+  //     throw error;
+  //   }
+  // }
+
+
+
+  // New logic of sending email using transporter cache
+  
+  static transporterCache = new Map(); // cache transporter per team/type
+
   static async sendEmail({
     receiverEmails,
     subject,
@@ -85,13 +167,26 @@ class Helper {
       return;
     }
 
-    const transporter = nodemailer.createTransport({
-      host: MAIL_HOST,
-      port: parseInt(MAIL_PORT, 10),
-      secure: MAIL_SECURE === 'true',
-      ...(MAIL_SERVICE && { service: MAIL_SERVICE }),
-      auth: { user, pass },
-    });
+    const cacheKey = `${team}-${fromHR ? 'HR' : fromIT ? 'IT' : 'Support'}`;
+
+    let transporter = this.transporterCache.get(cacheKey);
+    if (!transporter) {
+      transporter = nodemailer.createTransport({
+        host: MAIL_HOST,
+        port: parseInt(MAIL_PORT, 10),
+        secure: MAIL_SECURE === true || MAIL_SECURE === 'true',
+        ...(MAIL_SERVICE && { service: MAIL_SERVICE }),
+        auth: { user, pass },
+        pool: true,
+        maxConnections: 5,
+        maxMessages: 100,
+        rateDelta: 1000,
+        rateLimit: 5,
+      });
+
+      this.transporterCache.set(cacheKey, transporter);
+      logger.info(`Created new pooled transporter for ${cacheKey}`);
+    }
 
     const mailOptions = {
       from,
@@ -106,9 +201,17 @@ class Helper {
       const info = await transporter.sendMail(mailOptions);
       logger.info(`Email sent to ${receiverEmails.join(', ')} | ID: ${info.messageId}`);
     } catch (error) {
-      logger.error('Failed to send email:', error?.message || error);
+      const errorMessage = error?.message || error;
+      logger.error(`Failed to send email: ${errorMessage}`, {
+        code: error?.code,
+        responseCode: error?.response?.statusCode || error?.responseCode,
+        stack: error?.stack,
+      });
+
+      throw error;
     }
   }
+
 
 
   /**
@@ -344,7 +447,7 @@ class Helper {
     `;
   }
 
-  static fullTimeConversion(userName, tlName, date, jobTitle, team) {
+  static fullTimeConversion(userName, date, jobTitle, team) {
     const displayTeam = getTeamEmailConfig(team);
 
     const formattedDate = moment.tz(date, 'Asia/Kolkata').format('DD MMMM YYYY');
@@ -377,7 +480,7 @@ class Helper {
     </div>
 
     <p style="color: #555; font-size: 16px; line-height: 1.6;">
-      Thank you for your dedication and the contributions you’ve made thus far. We look forward to seeing your continued growth and success in your role.
+      Thank you for your dedication and the contributions you’ve made this far. We look forward to seeing your continued growth and success in your role.
     </p>
 
     <p style="color: #555; font-size: 16px; line-height: 1.6;">
@@ -465,6 +568,7 @@ class Helper {
               ${requestType === 'Leave' ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${displayLeaveType}</li>` : ''}
               <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Date:</strong> ${leaveMessage}</li>
               <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>
+              ${employeeInfo?.leaveBalance ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Remaining Leave Balance:</strong> ${employeeInfo.leaveBalance} days</li>` : ''}
             </ul>
           </div>
   
@@ -1990,7 +2094,7 @@ class Helper {
   /**
    * Email template for regularization notification to Team Lead
    */
-  static regularizationNotificationEmail(teamLeadName, employeeFirstName, employeeLastName, date, checkInTime, checkOutTime, reason, type, regularizationId, team = 'SD', employeeId = '', jobTitle = '', department = '') {
+  static regularizationNotificationEmail(teamLeadName, employeeFirstName, employeeLastName, date, checkInTime, checkOutTime, reason, type, regularizationId, team = 'SD', employeeId = '', jobTitle = '', department = '', regularizationTaken = 0, regularizationLeft = 4) {
     const displayTeam = getTeamEmailConfig(team);
 
     return `
@@ -2030,7 +2134,16 @@ class Helper {
               <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Requested Check-out Time:</strong> ${checkOutTime}</li>
               <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Type:</strong> ${type.charAt(0).toUpperCase() + type.slice(1)} Regularization</li>
               <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Reason:</strong> ${reason}</li>
-              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Status:</strong> <span style="color: #ffc107; font-weight: bold;">Pending TL Approval</span></li>
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Status:</strong> <span style="color: #ffc107; font-weight: bold;">Pending TL Approval</span></li>
+            </ul>
+          </div>
+
+          <!-- Regularization Count Section -->
+          <div style="background-color: #ffffff; padding: 16px 20px; border-radius: 6px; border: 1px solid #dee2e6; margin-bottom: 20px;">
+            <h3 style="color: #495057; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Monthly Regularization Status</h3>
+            <ul style="list-style: none; padding: 0; margin: 0;">
+              <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Regularizations Taken:</strong> <span style="color: #007bff; font-weight: bold;">${regularizationTaken}</span></li>
+              <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Regularizations Left:</strong> <span style="color: #28a745; font-weight: bold;">${regularizationLeft}</span></li>
             </ul>
           </div>
         </div>
@@ -2474,13 +2587,19 @@ class Helper {
    * @param {string} team - User team (SD or KAP)
    * @returns {string} HTML template for birthday email
    */
-  static getBirthdayEmailTemplate(user, department, team) {
+  static getBirthdayEmailTemplate(user, department, team, profilePhotoUrl = null) {
     const displayTeam = getTeamEmailConfig(team);
     return `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f5f5f5; padding: 40px 20px;">
         <div style="text-align: center; margin-bottom: 40px;">
           <h1 style="color: #333; font-size: 28px; margin-bottom: 30px;">Happy Birthday, ${user.firstName} ${user.lastName} 🎂</h1>
         </div>
+        
+        ${profilePhotoUrl ? `
+        <div style="text-align: center; margin-bottom: 40px;">
+          <img src="${profilePhotoUrl}" alt="${user.firstName} ${user.lastName}" style="width: 200px; height: 200px; border-radius: 50%; object-fit: cover; border: 4px solid #fff; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
+        </div>
+        ` : ''}
         
         <div style="text-align: center; margin-bottom: 40px;">
           <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 10px;">On this special day, the ${displayTeam?.TEAM_NAME || 'KollegeApply'} family celebrates you</p>
@@ -2513,9 +2632,10 @@ class Helper {
    * @param {string} yearText - 'year' or 'years'
    * @param {Date} today - Today's date
    * @param {string} team - User team (SD or KAP)
+   * @param {string} profilePhotoUrl - Profile photo URL (optional)
    * @returns {string} HTML template for work anniversary email
    */
-  static getWorkAnniversaryEmailTemplate(user, department, yearsOfService, yearText, today, team) {
+  static getWorkAnniversaryEmailTemplate(user, department, yearsOfService, yearText, today, team, profilePhotoUrl = null) {
     const displayTeam = getTeamEmailConfig(team);
     return `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f5f5f5; padding: 40px 20px;">
@@ -2523,6 +2643,12 @@ class Helper {
           <h1 style="color: #333; font-size: 24px; margin-bottom: 20px;">Another Year of Excellence🏆 with ${displayTeam?.TEAM_NAME || 'KollegeApply'} !</h1>
           <h2 style="color: #333; font-size: 20px; margin-bottom: 30px;">⭐Congratulations ${user.firstName} ${user.lastName}⭐</h2>
         </div>
+        
+        ${profilePhotoUrl ? `
+        <div style="text-align: center; margin-bottom: 30px;">
+          <img src="${profilePhotoUrl}" alt="${user.firstName} ${user.lastName}" style="width: 200px; height: 200px; border-radius: 50%; object-fit: cover; border: 4px solid #fff; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
+        </div>
+        ` : ''}
         
         <div style="text-align: center; margin-bottom: 30px;">
           <p style="color: #333; font-size: 18px; margin-bottom: 10px; font-weight: bold;">Today marks a special milestone</p>
@@ -2559,15 +2685,22 @@ class Helper {
    * @param {string} spouseName - Spouse name (optional)
    * @param {Date} today - Today's date
    * @param {string} team - User team (SD or KAP)
+   * @param {string} profilePhotoUrl - Profile photo URL (optional)
    * @returns {string} HTML template for marriage anniversary email
    */
-  static getMarriageAnniversaryEmailTemplate(user, departmentName, yearsOfMarriage, yearText, spouseName, today, team) {
+  static getMarriageAnniversaryEmailTemplate(user, departmentName, yearsOfMarriage, yearText, spouseName, today, team, profilePhotoUrl = null) {
     const displayTeam = getTeamEmailConfig(team);
     return `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #f5f5f5; padding: 40px 20px;">
         <div style="text-align: center; margin-bottom: 40px;">
           <h1 style="color: #333; font-size: 24px; margin-bottom: 30px;">Happy Marriage Anniversary, ${user.firstName} ${user.lastName} 💑</h1>
         </div>
+        
+        ${profilePhotoUrl ? `
+        <div style="text-align: center; margin-bottom: 40px;">
+          <img src="${profilePhotoUrl}" alt="${user.firstName} ${user.lastName}" style="width: 200px; height: 200px; border-radius: 50%; object-fit: cover; border: 4px solid #fff; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
+        </div>
+        ` : ''}
         
         <div style="text-align: center; margin-bottom: 40px;">
           <p style="color: #333; font-size: 16px; line-height: 1.6; margin-bottom: 20px;">On behalf of the ${displayTeam?.TEAM_NAME || 'KollegeApply'} Team, we warmly congratulate you and</p>
@@ -2728,6 +2861,176 @@ class Helper {
             <strong>${displayTeam?.TEAM_NAME || 'HRMS'} Team</strong>
           </p>
         </div>
+      </div>
+    </div>
+    `;
+  }
+
+  static getFeedbackReminderForTL(tlName, dashboardUrl, team) {
+    const displayTeam = getTeamEmailConfig(team);
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #333;">Team Feedback Required</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Dear <strong>${tlName}</strong>,
+        </p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          This is a gentle reminder to provide feedback for your team members. Regular feedback helps in professional growth and maintains transparent communication within the team.
+        </p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Please take a moment to provide constructive feedback that will help your team members understand their strengths and areas for improvement.
+        </p>
+        <div style="text-align: center; margin-top: 30px;">
+          <a href="${dashboardUrl}/feedbacks/management" style="background-color: #1976d2; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+            Provide Feedback
+          </a>
+        </div>
+        <p style="color: #777; font-size: 14px; line-height: 1.5; margin-top: 30px;">
+          Thank you for your commitment to team development.<br><br>
+          Best regards,<br>
+          <strong>Team ${displayTeam?.TEAM_NAME}</strong>
+        </p>
+      </div>
+    </div>
+    `;
+  }
+
+
+  static getRegularizationReminder(userName, dashboardUrl, team) {
+    const displayTeam = getTeamEmailConfig(team);
+  
+    return `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+        
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h1 style="color: #333;">Attendance Regularization Reminder</h1>
+        </div>
+  
+        <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+  
+          <p style="color: #555; font-size: 16px; line-height: 1.6;">
+            Hi <strong>${userName}</strong>,
+          </p>
+  
+          <p style="color: #555; font-size: 16px; line-height: 1.6;">
+            We request you to kindly review your recent attendance records and ensure that all entries are accurate and up to date. 
+            If there are any days where regularization is needed, please apply for it at your earliest convenience. 
+            Keeping your attendance updated helps avoid discrepancies and ensures a smooth monthly attendance process for you.
+          </p>
+  
+          <div style="text-align: center; margin-top: 30px;">
+            <a href="${dashboardUrl}/regularization" 
+               style="background-color: #ff9800; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+              Review Regularization
+            </a>
+          </div>
+  
+          <p style="color: #777; font-size: 14px; line-height: 1.5; margin-top: 30px;">
+            Best regards,<br>
+            <strong>Team ${displayTeam?.TEAM_NAME}</strong>
+          </p>
+  
+        </div>
+      </div>
+    `;
+  }
+  
+
+  static getTLLeaveActionReminder(tlName, dashboardUrl, team) {
+    const displayTeam = getTeamEmailConfig(team);
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #333;">Action Required</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Hi <strong>${tlName}</strong>,
+        </p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          You have pending items that require your attention:
+        </p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6; margin-top: 20px;">
+          1. <strong>Leave Requests:</strong> Please review and take appropriate action on pending leave requests.
+        </p>
+        <div style="text-align: center; margin-top: 15px;">
+          <a href="${dashboardUrl}/leave" style="background-color: #3f51b5; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+            Review Leave Requests
+          </a>
+        </div>
+        <p style="color: #555; font-size: 16px; line-height: 1.6; margin-top: 25px;">
+          2. <strong>Regularization Requests:</strong> Please review pending attendance regularization requests.
+        </p>
+        <div style="text-align: center; margin-top: 15px;">
+          <a href="${dashboardUrl}/regularization" style="background-color: #ff9800; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+            Review Regularizations
+          </a>
+        </div>
+        <p style="color: #777; font-size: 14px; line-height: 1.5; margin-top: 30px;">
+          Best regards,<br>
+          <strong>Team ${displayTeam?.TEAM_NAME}</strong>
+        </p>
+      </div>
+    </div>
+    `;
+  }
+
+  static getAttendanceCheckInReminder(userName, team) {
+    const displayTeam = getTeamEmailConfig(team);
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #333;">🕒 Check-in Reminder</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Good morning <strong>${userName}</strong>,
+        </p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          This is a friendly reminder that your workday is about to begin. Please remember to mark your attendance when you start your work.
+        </p>
+        <div style="background-color: #fafafa; padding: 15px; border-radius: 5px; margin-top: 20px;">
+          <p style="color: #666; font-size: 14px; margin: 0;">
+            <strong>Quick Reminder:</strong>
+            <ul style="margin: 10px 0 0 0; padding-left: 20px; color: #666;">
+              <li>Mark your attendance promptly at the start of your workday</li>
+              <li>Ensure you're ready for any scheduled morning meetings</li>
+              <li>Check your calendar for today's important tasks</li>
+            </ul>
+          </p>
+        </div>
+        <p style="color: #777; font-size: 14px; line-height: 1.5; margin-top: 30px;">
+          Have a productive day!<br><br>
+          Best regards,<br>
+          <strong>Team ${displayTeam?.TEAM_NAME}</strong>
+        </p>
+      </div>
+    </div>
+    `;
+  }
+
+  static getAttendanceCheckOutReminder(userName, team) {
+    const displayTeam = getTeamEmailConfig(team);
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #333;">🕒 Check-out Reminder</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Hi <strong>${userName}</strong>,
+        </p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          This is a friendly reminder to mark your check-out before ending your workday.
+        </p>
+        <p style="color: #777; font-size: 14px; line-height: 1.5; margin-top: 30px;">
+          Thank you for your hard work today!<br><br>
+          Best regards,<br>
+          <strong>Team ${displayTeam?.TEAM_NAME}</strong>
+        </p>
       </div>
     </div>
     `;

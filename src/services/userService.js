@@ -24,8 +24,67 @@ const employeeLeaveBalanceModel = require('../models/employeeLeaveBalanceModel')
 const leaveTypeModel = require('../models/leaveTypeModel');
 const { default: mongoose } = require('mongoose');
 const candidateModel = require('../models/candidateModel');
+const Feedback = require('../models/feedbackModel');
 
 class UserService {
+  /**
+   * Calculate average rating for a user from all feedback received
+   * @param {string} userId - The user's MongoDB ObjectId
+   * @returns {Promise<number>} - Average rating (0-5 scale) or 0 if no ratings
+   */
+  async calculateAverageRating(userId) {
+    try {
+      const mongoose = require('mongoose');
+      
+      let feedbacks = await Feedback.find({
+        givenTo: userId,
+        isDeleted: false
+      }).select('rating legacyRating');
+
+      if (!feedbacks || feedbacks.length === 0) {
+        return 0;
+      }
+
+      let totalRating = 0;
+      let ratingCount = 0;
+
+      feedbacks.forEach(feedback => {
+        if (feedback.rating && typeof feedback.rating === 'object') {
+          if (feedback.rating.overall !== undefined && typeof feedback.rating.overall === 'number') {
+            totalRating += feedback.rating.overall;
+            ratingCount++;
+          } else {
+            Object.entries(feedback.rating).forEach(([key, value]) => {
+              if (typeof value === 'number' && value > 0 && key !== 'overall') {
+                totalRating += value;
+                ratingCount++;
+              }
+            });
+          }
+        }
+        else if (feedback.legacyRating) {
+          if (feedback.legacyRating.overall !== undefined && typeof feedback.legacyRating.overall === 'number') {
+            totalRating += feedback.legacyRating.overall;
+            ratingCount++;
+          } else {
+            Object.entries(feedback.legacyRating).forEach(([key, value]) => {
+              if (typeof value === 'number' && value > 0 && key !== 'overall') {
+                totalRating += value;
+                ratingCount++;
+              }
+            });
+          }
+        }
+      });
+
+      const averageRating = ratingCount > 0 ? Math.round((totalRating / ratingCount) * 10) / 10 : 0;
+      return averageRating;
+    } catch (error) {
+      logger.error('Error calculating average rating:', error);
+      return 0;
+    }
+  }
+
   /**
    * Get users with pagination and filtering.
    *
@@ -50,9 +109,26 @@ class UserService {
       isAttendanceLog,
       teamLeadId,
       subTeamLeadId,
+      context,
     } = queryOptions;
 
+    // Fetch user with department to check if Finance teamlead (needed before query setup)
+    const userWithDept = await User.findById(currentUser.id).populate('department', 'name').lean();
+    
+    // Check if user is Finance department teamlead
+    const isFinanceTeamlead = 
+      currentUser?.role === 'teamlead' && 
+      userWithDept?.department?.name?.toLowerCase()?.trim() === 'finance';
+
+    // Check if user should see all users (HR/Admin/Subadmin or Finance teamlead)
+    const shouldSeeAllUsers = ['hr', 'subadmin', 'admin'].includes(currentUser?.role) || 
+                              (isFinanceTeamlead && isAttendanceLog);
+
+    const skipTeamScope = shouldSeeAllUsers || context === 'meeting';
+
     const query = {
+      // Skip team filter for HR/Admin/Subadmin or Finance teamlead when isAttendanceLog is true
+      // ...(skipTeamScope ? {} : { team: currentUser?.team }),
       team: currentUser?.team,
       status: status === null ? { $in: ['probation', 'onroll'] } : status,
       isDeleted: false,
@@ -69,12 +145,16 @@ class UserService {
       andConditions.push({ role });
     }
 
-    // Team-based filter
+    // Team-based filter (skip for Finance teamlead - same as HR)
     const teamFilter = [];
-    if (currentUser?.role === 'teamlead') {
-      teamFilter.push({ teamLeadId: currentUser.id });
+    if (currentUser?.role === 'teamlead' && !isFinanceTeamlead) {
+      if (context !== 'meeting') {
+        teamFilter.push({ teamLeadId: currentUser.id });
+      }
     } else if (currentUser?.role === 'subteamlead') {
-      teamFilter.push({ subTeamLeadId: currentUser.id });
+      if (context !== 'meeting') {
+        teamFilter.push({ subTeamLeadId: currentUser.id });
+      }
     }
 
     // Search filter
@@ -195,9 +275,25 @@ class UserService {
         null,
         populateOptions
       );
+      
+      // Add average rating to each user
+      if (paginatedResult.data && Array.isArray(paginatedResult.data)) {
+        for (let user of paginatedResult.data) {
+          user.averageRating = await this.calculateAverageRating(user._id);
+        }
+      }
+      
       return paginatedResult;
     } else {
       const users = await User.find(query).sort(sort).populate(populateOptions);
+      
+      // Add average rating to each user
+      if (users && Array.isArray(users)) {
+        for (let user of users) {
+          user.averageRating = await this.calculateAverageRating(user._id);
+        }
+      }
+      
       return { data: users };
     }
   }
@@ -595,6 +691,13 @@ async getUserById(id) {
       }
     }
 
+    // Extract effectiveAt from updateData if provided (for status changes)
+    // This should be extracted before Object.assign to avoid saving in user model
+    const effectiveAtDate = updateData.onrollDate || new Date();
+    
+    // Remove effectiveAt and onrollDate from updateData before saving to avoid storing in user model
+    delete updateData.onrollDate;
+
     // Apply updates
     Object.assign(user, updateData);
     const updatedUser = await user.save();
@@ -609,16 +712,23 @@ async getUserById(id) {
     );
 
     await Promise.all(
-      changedFields.map((field) =>
-        employeeHistory.create({
+      changedFields.map((field) => {
+        const historyData = {
           employeeId: updatedUser._id,
           entity: field,
           previous: oldUser[field] || null,
           changed: updatedUser[field] || null,
           changedBy: changedByUser._id,
           actionAt: new Date(),
-        })
-      )
+        };
+        
+        // Add effectiveAt only if provided and field is 'status'
+        if (effectiveAtDate && field === 'status') {
+          historyData.effectiveAt = new Date(effectiveAtDate);
+        }
+        
+        return employeeHistory.create(historyData);
+      })
     );
 
     return updatedUser.toJSON();
@@ -1158,7 +1268,7 @@ async getUserById(id) {
       };
       const commonSelectFields = '_id firstName lastName email role employeeId department';
 
-      // 🎯 NEW FEEDBACK HIERARCHY RULES:
+      // NEW FEEDBACK HIERARCHY RULES:
       if (userRole === 'admin' || userRole === 'subadmin') {
         // Admin/Subadmin → Anyone (HR, TL, STL, IT, Employee, Intern) - Direct, no approval
         user = await User.find(query).select(commonSelectFields).populate('department', 'name');

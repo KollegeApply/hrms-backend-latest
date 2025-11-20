@@ -12,6 +12,7 @@ const LeavePolicy = require('../models/leavePolicyModel');
 const LeavePolicyMapping = require('../models/leavePolicyMappingModel');
 const EmployeeLeaveBalance = require('../models/employeeLeaveBalanceModel');
 const moment = require('moment-timezone');
+const { paginate } = require('../utility/common');
 
 class leaveService {
   /**
@@ -23,45 +24,102 @@ class leaveService {
 
   /**
    * Get all Leave (excluding soft-deleted ones).
-   * @returns {Promise<Leave[]>} - List of all non-deleted Leaves, sorted by date.
+   * @param {string} team - Team code to filter by
+   * @param {number} page - Page number (default: 1)
+   * @param {number} limit - Items per page (default: 10)
+   * @returns {Promise<object>} - Paginated list of all non-deleted Leaves, sorted by date.
    */
-  async getAllLeave(team) {
+  async getAllLeave(team, page = 1, limit = 10) {
+    // Get all user IDs for the team
+    const teamUsers = await User.find({ team }).select('_id');
+    const teamUserIds = teamUsers.map(user => user._id);
 
-  const leaves = await LeaveApplication.find()
-      .sort({
-        createdAt: -1,
-      })
-       .populate({
-      path: 'userId',
-      match: { team },
-    })
-      .populate({
+    // Build query to filter by team users
+    const query = {
+      userId: { $in: teamUserIds },
+      isDeleted: { $ne: true }
+    };
+
+    const populateOptions = [
+      {
+        path: 'userId',
+        select: '_id firstName lastName employeeId workType hireDate',
+        populate: [
+          {
+            path: 'department',
+            select: 'name'
+          },
+          {
+            path: 'teamLeadId',
+            select: 'firstName lastName email employeeId'
+          }
+        ]
+      },
+      {
         path: 'leaveTypeId',
         select: 'name',
-      });
+      }
+    ];
 
-    if (!leaves || leaves?.length === 0) {
-      return leaves;
-    }
+    const paginationResult = await paginate(
+      LeaveApplication,
+      query,
+      page,
+      limit,
+      { createdAt: -1 },
+      null,
+      populateOptions
+    );
 
-     return leaves.filter(leave => leave.userId !== null);
+    return paginationResult;
   }
 
   /**
    * Get a Leave by UserID.
    * @param {Object} params - Object containing the leave ID.
    * @param {String} params.id - MongoDB ObjectId.
-   * @returns {Promise<Leave>} - The found leave.
-   * @throws {ApiError} - If no leave is found with the given ID.
+   * @param {number} page - Page number (default: 1)
+   * @param {number} limit - Items per page (default: 10)
+   * @returns {Promise<object>} - Paginated list of leaves for the user.
    */
-  async getLeaveById({ id }) {
-    const result = await LeaveApplication.find({ userId: id })
-      .sort({ createdAt: -1 })
-      .populate('userId');
-    if (!result) {
-      throw new ApiError(httpStatus.NOT_FOUND, 'No Leave for the given user');
-    }
-    return result;
+  async getLeaveById({ id }, page = 1, limit = 10) {
+    const query = {
+      userId: id,
+      isDeleted: { $ne: true }
+    };
+
+    const populateOptions = [
+      {
+        path: 'userId',
+        select: '_id firstName lastName employeeId workType hireDate',
+        populate: [
+          {
+            path: 'department',
+            select: 'name'
+          },
+          {
+            path: 'teamLeadId',
+            select: 'firstName lastName email employeeId'
+          }
+        ]
+      },
+      {
+        path: 'leaveTypeId',
+        select: 'name',
+      }
+    ];
+
+    const paginationResult = await paginate(
+      LeaveApplication,
+      query,
+      page,
+      limit,
+      { createdAt: -1 },
+      null,
+      populateOptions
+    );
+
+    return paginationResult;
   }
 
   /**
@@ -167,6 +225,78 @@ async updateLeaveStatus({ leaveId, action, editor }) {
             leave.halfDayType,
             leave.leaveTypeId.code
           );
+
+          // B.1 Smart late-approval handling for half-day leaves
+          // If the leave is half-day, handle existing attendance records appropriately
+          if (leave.isHalfDay && (leave.halfDayType === 'first' || leave.halfDayType === 'second')) {
+            // Iterate all leave dates and adjust if an attendance record already exists
+            for (const date of leave.dates || []) {
+              try {
+                const dayStartIST = moment(date).tz('Asia/Kolkata').startOf('day').toDate();
+                const attendance = await Attendance.findOne({ user: leave.userId, date: dayStartIST });
+                if (!attendance) {
+                  // No attendance record yet, bulkCreate will handle it
+                  continue;
+                }
+
+                // If attendance exists, handle based on check-in and checkout status
+                if (attendance.checkInTime && !attendance.checkOutTime) {
+                  // Checked in but not checked out yet
+                  // Keep original check-in status, just add leave linkage
+                  attendance.leaveId = leave._id;
+                  await attendance.save();
+                } else if (attendance.checkInTime && attendance.checkOutTime) {
+                  // Already checked out - apply 4.5h rule retroactively
+                  const checkInMoment = moment(attendance.checkInTime).tz('Asia/Kolkata');
+                  const checkOutMoment = moment(attendance.checkOutTime).tz('Asia/Kolkata');
+                  const workDurationHours = checkOutMoment.diff(checkInMoment) / (1000 * 60 * 60);
+                  
+                  const halfDayWorkHours = 4.5;
+                  let newStatus = attendance.status;
+
+                  if (workDurationHours < halfDayWorkHours) {
+                    // Worked less than 4.5 hours
+                    if (attendance.status === 'present') {
+                      newStatus = 'early_out';
+                    } else if (attendance.status === 'late_in') {
+                      newStatus = 'late_in_early_out';
+                    }
+                  }
+                  // If worked >= 4.5 hours, keep original status
+
+                  attendance.status = newStatus;
+                  attendance.leaveId = leave._id;
+                  await attendance.save();
+                } else if (!attendance.checkInTime) {
+                  // No check-in yet, apply normal half-day logic
+                  const checkInMoment = moment(attendance.checkInTime).tz('Asia/Kolkata');
+                  const checkInMinutes = checkInMoment.hours() * 60 + checkInMoment.minutes();
+
+                  // Cutoffs
+                  const firstHalfCutoff = 14 * 60 + 30; // 2:30 PM
+                  const normalCutoff = 10 * 60 + 15; // 10:15 AM
+
+                  let normalizedStatus = attendance.status;
+
+                  if (leave.halfDayType === 'first') {
+                    // For first-half leave, being checked-in by 2:30 PM counts as on-time (present), else late_in
+                    normalizedStatus = checkInMinutes <= firstHalfCutoff ? 'present' : 'late_in';
+                  } else if (leave.halfDayType === 'second') {
+                    // For second-half leave, apply the normal morning cutoff (10:15 AM)
+                    normalizedStatus = checkInMinutes <= normalCutoff ? 'present' : 'late_in';
+                  }
+
+                  attendance.status = normalizedStatus;
+                  attendance.leaveId = leave._id;
+                  await attendance.save();
+                }
+              } catch (normErr) {
+                // Best-effort normalization; do not block approval on failure
+                // Consider logging via central logger if available
+                // console.error('Failed to normalize attendance after late approval:', normErr);
+              }
+            }
+          }
           
           // C. Update the leave status
           leave.status = 'approved';
@@ -224,7 +354,7 @@ async updateLeaveStatus({ leaveId, action, editor }) {
   return await leave.save();
 }
 
-  async getLeaveTl({ id, team }) {
+  async getLeaveTl({ id, team }, page = 1, limit = 10) {
     const leadUsers = await User.find(
       {
         $or: [{ teamLeadId: id }, { subTeamLeadId: id }],
@@ -235,14 +365,43 @@ async updateLeaveStatus({ leaveId, action, editor }) {
     const userIds = leadUsers.map((user) => user._id.toString());
     userIds.push(id);
 
-    const leaveEntries = await LeaveApplication.find({
+    const query = {
       userId: { $in: userIds },
-    })
-      .sort({ createdAt: -1 })
-      .populate('userId')
-      .populate('leaveTypeId');
+      isDeleted: { $ne: true }
+    };
 
-    return leaveEntries;
+    const populateOptions = [
+      {
+        path: 'userId',
+        select: '_id firstName lastName employeeId workType hireDate',
+        populate: [
+          {
+            path: 'department',
+            select: 'name'
+          },
+          {
+            path: 'teamLeadId',
+            select: 'firstName lastName email employeeId'
+          }
+        ]
+      },
+      {
+        path: 'leaveTypeId',
+        select: 'name',
+      }
+    ];
+
+    const paginationResult = await paginate(
+      LeaveApplication,
+      query,
+      page,
+      limit,
+      { createdAt: -1 },
+      null,
+      populateOptions
+    );
+
+    return paginationResult;
   }
   /**
    * Soft delete a Leave Application by its ID.
@@ -301,7 +460,7 @@ async updateLeaveStatus({ leaveId, action, editor }) {
     }
   }
 
-async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = false) {
+async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = false, halfDayType = null) {
     try {
       const today = moment().tz('Asia/Kolkata').startOf('day').toDate();
 
@@ -494,19 +653,21 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
             const attendanceRecord = existingAttendance.find(att => formatDateOnly(att.date) === dateStr);
             if (attendanceRecord) {
               const status = attendanceRecord.status;
-              if (status === 'leave_applied_full' || status === 'present') {
-                addReason('Attendance already marked', dateStr);
+              if (status === 'leave_applied_full') {
+                addReason('Cannot apply half-day leave. You already have a full-day leave applied on this date', dateStr);
               } else if (status === 'leave_applied_first_half' && halfDayType === 'first') {
                 addReason('Already applied first half leave', dateStr);
               } else if (status === 'leave_applied_second_half' && halfDayType === 'second') {
                 addReason('Already applied second half leave', dateStr);
               } else {
-                // Different half-day or compatible status, allow it
+                // Allow post-check-in leave applications (present, late_in, early_out, etc.)
+                // or different half-day types
                 const dateInKolkata = moment.tz(pointer.format('YYYY-MM-DD'), 'Asia/Kolkata').startOf('day').toDate();
                 validDates.push(dateInKolkata);
               }
             }
           } else {
+            // For full-day leaves, block if attendance already marked
             addReason('Attendance already marked', dateStr);
           }
         } else {
@@ -948,7 +1109,8 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
         startDate,
         endDate,
         leaveType,
-        isHalfDay
+        isHalfDay,
+        halfDayType
       );
       
       ('validationResult:', validationResult);

@@ -146,7 +146,7 @@ const roomsData = [
     image: 'https://thumbs.dreamstime.com/b/futuristic-meeting-room-blue-lighting-high-tech-digital-screen-overlooking-cityscape-night-futuristic-meeting-room-358645817.jpg'
   },
   {
-    name: 'Tejasprabhananda',
+    name: 'Tejasprabhananda (Sanjay Sir Cabin)',
     type: 'conference', // Changed from "Sanjay Sir Room" to "Conference Room"
     capacity: 1, // Set to 1 since original was "-"
     location: 'Office',

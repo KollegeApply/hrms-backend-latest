@@ -279,7 +279,7 @@ class FeedbacksService {
         return feedback;
     }
 
-    // 🎯 TL Approve/Edit STL Feedback
+    //  TL Approve/Edit STL Feedback
     async approveFeedbackByTL(feedbackId, tlUserId, approvalData) {
         try {
             const feedback = await Feedback.findById(feedbackId)
@@ -346,70 +346,114 @@ class FeedbacksService {
     const teamUserIds = teamUsers.map(user => user._id);
 
     const isAdmin = ['admin', 'subadmin', 'hr'].includes(userRole);
+    const tab = filters.tab || 'all';
+    
+    // Base filter based on tab selection
+    let baseFilter = {};
 
-    // Base filter for admin/HR users
-    let baseFilter = isAdmin
-        ? {
+    if (tab === 'given') {
+        // Show only feedback given by the current user
+        baseFilter = { givenBy: userId };
+    } else if (tab === 'received') {
+        // Show only feedback received by the current user (excluding pending TL approval)
+        baseFilter = { 
+            givenTo: userId,
             $or: [
-                { givenBy: { $in: teamUserIds } }, // Feedback given by team members
-                { 
-                    givenTo: { $in: teamUserIds }, // Feedback given to team members
-                    $or: [
-                        { approvalStatus: { $ne: 'pending_tl_approval' } }, // Not pending approval
-                        { approvalStatus: { $exists: false } }, // Legacy feedback without approval status
-                        { approvalStatus: 'approved' }, // TL-approved STL feedback
-                        { approvalStatus: 'direct' } // Direct feedback
-                    ]
-                }
-            ]
-        }
-        : {
-            $or: [
-                { givenBy: userId },          
-                // For received feedback, exclude pending TL approval unless user is TL
-                { 
-                    givenTo: userId,
-                    $or: [
-                        { approvalStatus: { $ne: 'pending_tl_approval' } }, // Not pending approval
-                        { approvalStatus: { $exists: false } }, // Legacy feedback without approval status
-                        { approvalStatus: 'approved' }, // Already approved
-                        { approvalStatus: 'direct' } // Direct feedback
-                    ]
-                },   
-                { givenBy: { $in: teamUserIds } }
+                { approvalStatus: { $exists: false } }, // Legacy feedback without approval status
+                { approvalStatus: 'approved' }, // Already approved
+                { approvalStatus: 'direct' }, // Direct feedback
+                { approvalStatus: { $ne: 'pending_tl_approval' } } // Not pending approval
             ]
         };
-
-    // Special case: TL can see focused team feedback
-    if (userRole === 'teamlead') {
+    } else if (tab === 'team-feedbacks' && userRole === 'teamlead') {
+        // Show all feedback given to team members (for team leads)
         const directReports = await User.find({ teamLeadId: userId }, '_id');
+        const directReportIds = directReports.map(user => user._id);
+        baseFilter = { givenTo: { $in: directReportIds } };
+    } else if (tab === 'edit-request') {
+        // Show only feedback with edit requests
+        baseFilter = { 'editRequest.requested': true };
+    } else {
+        // Default: show feedback based on user role
+        if (isAdmin) {
+            // Admin/HR/SubAdmin can see all team feedback
+            baseFilter = {
+                $or: [
+                    { givenBy: { $in: teamUserIds } }, // Feedback given by team members
+                    { 
+                        givenTo: { $in: teamUserIds }, // Feedback given to team members
+                        $or: [
+                            { approvalStatus: { $ne: 'pending_tl_approval' } }, // Not pending approval
+                            { approvalStatus: { $exists: false } }, // Legacy feedback without approval status
+                            { approvalStatus: 'approved' }, // TL-approved STL feedback
+                            { approvalStatus: 'direct' } // Direct feedback
+                        ]
+                    }
+                ]
+            };
+        } else if (userRole === 'teamlead') {
+            // Team leads can see their team feedback
+            const directReports = await User.find({ teamLeadId: userId }, '_id');
+            const stlUsers = await User.find({ 
+                teamLeadId: userId, 
+                role: 'subteamlead' 
+            }, '_id');
+            
+            const directReportIds = directReports.map(user => user._id);
+            const stlIds = stlUsers.map(user => user._id);
+            
+            baseFilter = {
+                $or: [
+                    { givenBy: userId },           // Feedback given by TL
+                    { givenTo: userId },           // Feedback received by TL
+                    // STL ↔ Employee within team hierarchy only
+                    {
+                        givenBy: { $in: stlIds },
+                        givenTo: { $in: directReportIds }
+                    },
+                    {
+                        givenBy: { $in: directReportIds },
+                        givenTo: { $in: stlIds }
+                    },
+                    // TL can see STL feedback pending their approval
+                    { 
+                        approvalStatus: 'pending_tl_approval',
+                        givenBy: { $in: stlIds } // From their team STLs only
+                    }
+                ]
+            };
+        } else {
+            // Employees, IT, Interns can only see their own feedback (given and received)
+            // They cannot see feedback from/to other users
+            baseFilter = {
+                $or: [
+                    { givenBy: userId },          // Feedback given by the user
+                    { 
+                        givenTo: userId,          // Feedback received by the user
+                        $or: [
+                            { approvalStatus: { $ne: 'pending_tl_approval' } }, // Not pending approval
+                            { approvalStatus: { $exists: false } }, // Legacy feedback without approval status
+                            { approvalStatus: 'approved' }, // Already approved
+                            { approvalStatus: 'direct' } // Direct feedback
+                        ]
+                    }
+                ]
+            };
+        }
+    }
+
+    // Special case: TL can see STL feedback pending their approval (for stl-approvals tab)
+    if (userRole === 'teamlead' && tab === 'stl-approvals') {
         const stlUsers = await User.find({ 
             teamLeadId: userId, 
             role: 'subteamlead' 
         }, '_id');
         
-        const directReportIds = directReports.map(user => user._id);
         const stlIds = stlUsers.map(user => user._id);
         
-        baseFilter = {
-            $or: [
-                { givenBy: userId },           // Feedback given by TL
-                { givenTo: userId },           // Feedback received by TL
-                // STL ↔ Employee within team hierarchy only
-                {
-                    givenBy: { $in: stlIds },
-                    givenTo: { $in: directReportIds }
-                },
-                {
-                    givenBy: { $in: directReportIds },
-                    givenTo: { $in: stlIds }
-                },
-                // TL can see STL feedback pending their approval
-                { 
-                    approvalStatus: 'pending_tl_approval',
-                    givenBy: { $in: stlIds } // From their team STLs only
-                }
-            ]
+        baseFilter = { 
+            approvalStatus: 'pending_tl_approval',
+            givenBy: { $in: stlIds } // From their team STLs only
         };
     }
 
@@ -545,8 +589,126 @@ class FeedbacksService {
     // Get total count for pagination
     const totalCount = await Feedback.countDocuments(finalFilter);
 
+    // Fetch logged-in user's teamLeadId if user is TL or subTL (to check if feedback is from their own TL)
+    let userTeamLeadId = null;
+    if (userRole === 'teamlead' || userRole === 'subteamlead') {
+        const loggedInUser = await User.findById(userId).select('teamLeadId');
+        userTeamLeadId = loggedInUser?.teamLeadId ? String(loggedInUser.teamLeadId).trim() : null;
+    }
+
+    // Fetch logged-in user's teamLeadId and team lead's role if user is HR (to check if feedback is from their HR TL)
+    let hrUserTeamLeadId = null;
+    let hrUserTeamLeadRole = null;
+    if (userRole === 'hr') {
+        const loggedInHrUser = await User.findById(userId).select('teamLeadId');
+        hrUserTeamLeadId = loggedInHrUser?.teamLeadId ? String(loggedInHrUser.teamLeadId).trim() : null;
+        if (hrUserTeamLeadId) {
+            const teamLeadUser = await User.findById(hrUserTeamLeadId).select('role');
+            hrUserTeamLeadRole = teamLeadUser?.role || null;
+        }
+    }
+
+    // Remove givenBy field when TL receives feedback (except when feedback is from their own TL)
+    // Also remove givenBy field when HR receives feedback from their HR team lead
+    const processedFeedbacks = feedbacks.map(feedback => {
+        const feedbackObj = feedback.toObject();
+        // If TL is viewing received feedback (tab=received), check each feedback
+        if ((userRole === 'teamlead' || userRole === 'subteamlead') && filters.tab === 'received') {
+            // Check if feedback is from their own TL - if yes, keep givenBy, else remove it
+            try {
+                const givenById = feedbackObj.givenBy?._id || feedbackObj.givenBy?.id || feedbackObj.givenBy;
+                const givenByIdStr = givenById ? String(givenById).trim() : null;
+                
+                // If feedback is NOT from their own TL, remove givenBy
+                if (!userTeamLeadId || !givenByIdStr || givenByIdStr !== userTeamLeadId) {
+                    delete feedbackObj.givenBy;
+                }
+                // If feedback IS from their own TL, keep givenBy (don't delete)
+            } catch (error) {
+                // If there's any error, remove givenBy to be safe
+                delete feedbackObj.givenBy;
+                logger.error('Error processing feedback for TL:', error);
+            }
+        } else if (userRole === 'teamlead' && feedbackObj.givenTo && userId) {
+            // For other cases, check if givenTo matches the logged-in TL
+            try {
+                // Check if givenTo is populated (object with _id or id) or just ObjectId
+                // Mongoose virtual 'id' field is also available after toObject()
+                const givenToId = feedbackObj.givenTo._id || feedbackObj.givenTo.id || feedbackObj.givenTo;
+                const givenToIdStr = givenToId ? String(givenToId).trim() : null;
+                const userIdStr = userId ? String(userId).trim() : null;
+                
+                // If givenTo matches the logged-in TL, check if feedback is from their own TL
+                if (givenToIdStr && userIdStr && givenToIdStr === userIdStr) {
+                    const givenById = feedbackObj.givenBy?._id || feedbackObj.givenBy?.id || feedbackObj.givenBy;
+                    const givenByIdStr = givenById ? String(givenById).trim() : null;
+                    
+                    // If feedback is NOT from their own TL, remove givenBy
+                    if (!userTeamLeadId || !givenByIdStr || givenByIdStr !== userTeamLeadId) {
+                        delete feedbackObj.givenBy;
+                    }
+                    // If feedback IS from their own TL, keep givenBy (don't delete)
+                }
+            } catch (error) {
+                // If there's any error in processing, continue without removing givenBy
+                logger.error('Error processing feedback for TL:', error);
+            }
+        }
+        
+        // HR logic: Keep givenBy when HR receives feedback from their HR team lead (direct report)
+        // But remove givenBy if feedback is from other HR (not their team lead)
+        if (userRole === 'hr' && filters.tab === 'received') {
+            // If HR is viewing received feedback (tab=received), check each feedback
+            try {
+                const givenById = feedbackObj.givenBy?._id || feedbackObj.givenBy?.id || feedbackObj.givenBy;
+                const givenByIdStr = givenById ? String(givenById).trim() : null;
+                const givenByRole = feedbackObj.givenBy?.role || null;
+                
+                // Check if feedback is from their HR team lead
+                if (hrUserTeamLeadId && givenByIdStr && givenByIdStr === hrUserTeamLeadId && hrUserTeamLeadRole === 'hr' && givenByRole === 'hr') {
+                    // Feedback is from HR's HR team lead - keep givenBy (don't remove)
+                    // Do nothing, keep givenBy
+                } else if (givenByRole === 'hr') {
+                    // Feedback is from other HR (not their team lead) - remove givenBy
+                    delete feedbackObj.givenBy;
+                }
+            } catch (error) {
+                // If there's any error, continue without removing givenBy
+                logger.error('Error processing feedback for HR:', error);
+            }
+        } else if (userRole === 'hr' && feedbackObj.givenTo && userId) {
+            // For other cases, check if givenTo matches the logged-in HR
+            try {
+                const givenToId = feedbackObj.givenTo._id || feedbackObj.givenTo.id || feedbackObj.givenTo;
+                const givenToIdStr = givenToId ? String(givenToId).trim() : null;
+                const userIdStr = userId ? String(userId).trim() : null;
+                
+                // If givenTo matches the logged-in HR, check if feedback is from their HR team lead
+                if (givenToIdStr && userIdStr && givenToIdStr === userIdStr) {
+                    const givenById = feedbackObj.givenBy?._id || feedbackObj.givenBy?.id || feedbackObj.givenBy;
+                    const givenByIdStr = givenById ? String(givenById).trim() : null;
+                    const givenByRole = feedbackObj.givenBy?.role || null;
+                    
+                    // Check if feedback is from their team lead who is also HR
+                    if (hrUserTeamLeadId && givenByIdStr && givenByIdStr === hrUserTeamLeadId && hrUserTeamLeadRole === 'hr' && givenByRole === 'hr') {
+                        // Feedback is from HR's HR team lead - keep givenBy (don't remove)
+                        // Do nothing, keep givenBy
+                    } else if (givenByRole === 'hr') {
+                        // Feedback is from other HR (not their team lead) - remove givenBy
+                        delete feedbackObj.givenBy;
+                    }
+                }
+            } catch (error) {
+                // If there's any error in processing, continue without removing givenBy
+                logger.error('Error processing feedback for HR:', error);
+            }
+        }
+        
+        return feedbackObj;
+    });
+
     return {
-        feedbacks,
+        feedbacks: processedFeedbacks,
         pagination: {
             currentPage: page,
             totalPages: Math.ceil(totalCount / limit),
@@ -575,7 +737,72 @@ class FeedbacksService {
             return null;
         }
 
-        return feedback;
+        // Remove givenBy field when TL receives feedback (except when feedback is from their own TL)
+        // Also remove givenBy field when HR receives feedback from their HR team lead
+        const feedbackObj = feedback.toObject();
+        try {
+            if ((userRole === 'teamlead' || userRole === 'subteamlead') && feedbackObj.givenTo && userId) {
+                // Check if givenTo is populated (object with _id or id) or just ObjectId
+                // Mongoose virtual 'id' field is also available after toObject()
+                const givenToId = feedbackObj.givenTo._id || feedbackObj.givenTo.id || feedbackObj.givenTo;
+                const givenToIdStr = givenToId ? String(givenToId).trim() : null;
+                const userIdStr = userId ? String(userId).trim() : null;
+                
+                // If givenTo matches the logged-in TL/subTL, check if feedback is from their own TL
+                if (givenToIdStr && userIdStr && givenToIdStr === userIdStr) {
+                    // Fetch logged-in user's teamLeadId
+                    const loggedInUser = await User.findById(userId).select('teamLeadId');
+                    const userTeamLeadId = loggedInUser?.teamLeadId ? String(loggedInUser.teamLeadId).trim() : null;
+                    
+                    const givenById = feedbackObj.givenBy?._id || feedbackObj.givenBy?.id || feedbackObj.givenBy;
+                    const givenByIdStr = givenById ? String(givenById).trim() : null;
+                    
+                    // If feedback is NOT from their own TL, remove givenBy
+                    if (!userTeamLeadId || !givenByIdStr || givenByIdStr !== userTeamLeadId) {
+                        delete feedbackObj.givenBy;
+                    }
+                    // If feedback IS from their own TL, keep givenBy (don't delete)
+                }
+            }
+            
+            // HR logic: Keep givenBy when HR receives feedback from their HR team lead (direct report)
+            // But remove givenBy if feedback is from other HR (not their team lead)
+            if (userRole === 'hr' && feedbackObj.givenTo && userId) {
+                const givenToId = feedbackObj.givenTo._id || feedbackObj.givenTo.id || feedbackObj.givenTo;
+                const givenToIdStr = givenToId ? String(givenToId).trim() : null;
+                const userIdStr = userId ? String(userId).trim() : null;
+                
+                // If givenTo matches the logged-in HR, check if feedback is from their HR team lead
+                if (givenToIdStr && userIdStr && givenToIdStr === userIdStr) {
+                    // Fetch logged-in HR user's teamLeadId and team lead's role
+                    const loggedInHrUser = await User.findById(userId).select('teamLeadId');
+                    const hrUserTeamLeadId = loggedInHrUser?.teamLeadId ? String(loggedInHrUser.teamLeadId).trim() : null;
+                    let hrUserTeamLeadRole = null;
+                    if (hrUserTeamLeadId) {
+                        const teamLeadUser = await User.findById(hrUserTeamLeadId).select('role');
+                        hrUserTeamLeadRole = teamLeadUser?.role || null;
+                    }
+                    
+                    const givenById = feedbackObj.givenBy?._id || feedbackObj.givenBy?.id || feedbackObj.givenBy;
+                    const givenByIdStr = givenById ? String(givenById).trim() : null;
+                    const givenByRole = feedbackObj.givenBy?.role || null;
+                    
+                    // Check if feedback is from their team lead who is also HR
+                    if (hrUserTeamLeadId && givenByIdStr && givenByIdStr === hrUserTeamLeadId && hrUserTeamLeadRole === 'hr' && givenByRole === 'hr') {
+                        // Feedback is from HR's HR team lead - keep givenBy (don't remove)
+                        // Do nothing, keep givenBy
+                    } else if (givenByRole === 'hr') {
+                        // Feedback is from other HR (not their team lead) - remove givenBy
+                        delete feedbackObj.givenBy;
+                    }
+                }
+            }
+        } catch (error) {
+            // If there's any error in processing, continue without removing givenBy
+            logger.error('Error processing feedback for TL/HR in getFeedbackById:', error);
+        }
+
+        return feedbackObj;
     };
 
     async raiseConcern(feedbackId, userId, role, reason) {

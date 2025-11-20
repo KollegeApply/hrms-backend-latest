@@ -8,7 +8,7 @@ const ticketSchema = new mongoose.Schema({
   },
   ticketType: {
     type: String,
-    enum: ["Payroll and Salary query","HR & Grievance query","Expenses & Reimbursements","Admin & IT","Backdated attendance","Miscellaneous"],
+    enum: ["Payroll and Salary query","HR & Grievance query","Expenses & Reimbursements","Admin & IT","Backdated attendance","HRMS Query","Miscellaneous"],
     required: true,
   },
   subject: {
@@ -40,6 +40,10 @@ const ticketSchema = new mongoose.Schema({
   },
   resolvedAt: {
     type: Date,
+  },
+  imageUrl: {
+    type: String,
+    default: null,
   },
   createdAt: {
     type: Date,

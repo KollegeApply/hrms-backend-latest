@@ -4,10 +4,28 @@ const UserDetails = require('../models/userDetailsModel');
 const Department = require('../models/departmentModel');
 const logger = require('../config/logger');
 const Helper = require('../utility/helper');
+const { transformDocumentPaths } = require('../utility/common');
 const moment = require('moment-timezone');
 require('dotenv').config({ path: './.env.production' });
 
 const MONGO_URI = process.env.MONGO_URI;
+
+const getProfilePhotoUrl = (user) => {
+  if (!user) return null;
+
+  if (user.profilePhoto) {
+    const transformed = transformDocumentPaths({ profilePhoto: user.profilePhoto });
+    return transformed.profilePhoto;
+  }
+
+  const documentsPhoto = user.userDetails?.documents?.photograph;
+  if (documentsPhoto) {
+    const transformed = transformDocumentPaths({ photograph: documentsPhoto });
+    return transformed.photograph;
+  }
+
+  return null;
+};
 
 /**
  * Anniversary Scheduler - Sends Anniversary Emails
@@ -45,8 +63,8 @@ function getKolkataEndOfDay() {
     return moment().tz('Asia/Kolkata').endOf('day').toDate();
 }
 
-async function runAnniversaryScheduler() {
-  logger.info('🚀 Anniversary Scheduler Started:', new Date().toISOString());
+async function runAnniversaryScheduler(isTestMode = false) {
+  logger.info(`🚀 Anniversary Scheduler Started${isTestMode ? ' (TEST MODE)' : ''}:`, new Date().toISOString());
   
   try {
     // Connect to database
@@ -72,30 +90,37 @@ async function runAnniversaryScheduler() {
       logger.info('🎂 Processing birthday emails...');
       
       const birthdayUsers = await User.find({
-        // $expr: {
-        //   $and: [
-        //     { $eq: [{ $month: "$dateOfBirth" }, todayMonth] },
-        //     { $eq: [{ $dayOfMonth: "$dateOfBirth" }, todayDay] }
-        //   ]
-        // },
-        // isDeleted: false,
-        // dateOfBirth: { $exists: true, $ne: null }
-        email: "lokesh.kumar@sportsdunia.com"
-      }).select('firstName lastName email employeeId dateOfBirth department team jobTitle')
-        .populate('department', 'name');
+        $expr: {
+          $and: [
+            { $eq: [{ $month: "$dateOfBirth" }, todayMonth] },
+            { $eq: [{ $dayOfMonth: "$dateOfBirth" }, todayDay] }
+          ]
+        },
+        isDeleted: false,
+        dateOfBirth: { $exists: true, $ne: null }
+      }).select('firstName lastName email employeeId dateOfBirth department team jobTitle profilePhoto userDetails')
+        .populate('department', 'name')
+        .populate('userDetails', 'documents');
 
       for (const user of birthdayUsers) {
         try {
           const age = currentYear - new Date(user.dateOfBirth).getFullYear();
           
+          const profilePhotoUrl = getProfilePhotoUrl(user);
+          
           // Send birthday email to the user
-          await Helper.sendEmail({
-            receiverEmails: ['lokesh.kumar@sportsdunia.com'],
-            subject: `🎂 Happy Birthday ${user.firstName}! 🎉`,
-            message: Helper.getBirthdayEmailTemplate(user, user.department, user.team),
-            fromHR: false,
-            team: user?.team || 'SD'
-          });
+          if (isTestMode) {
+            logger.info(`   🧪 TEST MODE: Would send birthday email to ${user.firstName} ${user.lastName} (${user.email})`);
+            logger.info(`   📧 Subject: 🎂 Happy Birthday ${user.firstName}! 🎉`);
+          } else {
+            await Helper.sendEmail({
+              receiverEmails: [user.email],
+              subject: `🎂 Happy Birthday ${user.firstName}! 🎉`,
+              message: Helper.getBirthdayEmailTemplate(user, user.department, user.team, profilePhotoUrl),
+              fromHR: false,
+              team: user?.team || 'SD'
+            });
+          }
 
           results.birthdayEmails++;
           totalEmailsSent++;
@@ -116,32 +141,39 @@ async function runAnniversaryScheduler() {
       logger.info('🏆 Processing work anniversary emails...');
       
       const workAnniversaryUsers = await User.find({
-        // $expr: {
-        //   $and: [
-        //     { $eq: [{ $month: "$hireDate" }, todayMonth] },
-        //     { $eq: [{ $dayOfMonth: "$hireDate" }, todayDay] },
-        //     { $lt: [{ $year: "$hireDate" }, currentYear] }
-        //   ]
-        // },
-        // isDeleted: false,
-        // hireDate: { $exists: true, $ne: null }
-         email: "lokesh.kumar@sportsdunia.com"
-      }).select('firstName lastName email employeeId hireDate department team jobTitle')
-        .populate('department', 'name');
+        $expr: {
+          $and: [
+            { $eq: [{ $month: "$hireDate" }, todayMonth] },
+            { $eq: [{ $dayOfMonth: "$hireDate" }, todayDay] },
+            { $lt: [{ $year: "$hireDate" }, currentYear] }
+          ]
+        },
+        isDeleted: false,
+        hireDate: { $exists: true, $ne: null }
+      }).select('firstName lastName email employeeId hireDate department team jobTitle profilePhoto userDetails')
+        .populate('department', 'name')
+        .populate('userDetails', 'documents');
 
       for (const user of workAnniversaryUsers) {
         try {
           const yearsOfService = currentYear - new Date(user.hireDate).getFullYear();
           const yearText = yearsOfService === 1 ? 'year' : 'years';
 
+          const profilePhotoUrl = getProfilePhotoUrl(user);
+
           // Send work anniversary email to the user
-          await Helper.sendEmail({
-            receiverEmails: ['lokesh.kumar@sportsdunia.com'],
-            subject: `🏆 Congratulations on Your ${yearsOfService}-Year Work Anniversary!`,
-            message: Helper.getWorkAnniversaryEmailTemplate(user, user.department, yearsOfService, yearText, today, user.team),
-            fromHR: false,
-            team: user?.team || 'SD'
-          });
+          if (isTestMode) {
+            logger.info(`   🧪 TEST MODE: Would send work anniversary email to ${user.firstName} ${user.lastName} (${user.email})`);
+            logger.info(`   📧 Subject: 🏆 Congratulations on Your ${yearsOfService}-Year Work Anniversary!`);
+          } else {
+            await Helper.sendEmail({
+              receiverEmails: [user.email],
+              subject: `🏆 Congratulations on Your ${yearsOfService}-Year Work Anniversary!`,
+              message: Helper.getWorkAnniversaryEmailTemplate(user, user.department, yearsOfService, yearText, today, user.team, profilePhotoUrl),
+              fromHR: false,
+              team: user?.team || 'SD'
+            });
+          }
 
           results.workAnniversaryEmails++;
           totalEmailsSent++;
@@ -163,14 +195,13 @@ async function runAnniversaryScheduler() {
       
       // Get marriage anniversary users using a simpler approach to avoid BSON conversion issues
       const allUsersWithMarriageData = await User.find({
-        // isDeleted: false,
-        // userDetails: { $exists: true, $ne: null }
-         email: "lokesh.kumar@sportsdunia.com"
+        isDeleted: false,
+        userDetails: { $exists: true, $ne: null }
       }).populate({
         path: 'userDetails',
-        select: 'personalInfo'
+        select: 'personalInfo documents'
       }).populate('department', 'name')
-        .select('firstName lastName email employeeId team userDetails department jobTitle');
+        .select('firstName lastName email employeeId team userDetails department jobTitle profilePhoto');
 
       const marriageAnniversaryUsers = allUsersWithMarriageData.filter(user => {
         const marriageDate = user.userDetails?.personalInfo?.marriageDate;
@@ -193,14 +224,21 @@ async function runAnniversaryScheduler() {
           const spouseName = user.userDetails.personalInfo.spouseName;
           const departmentName = user.department?.name;
 
+          const profilePhotoUrl = getProfilePhotoUrl(user);
+
           // Send marriage anniversary email to the user
-          await Helper.sendEmail({
-            receiverEmails: ["lokesh.kumar@sportsdunia.com"],
-            subject: `💑 Happy ${yearsOfMarriage}-Year Marriage Anniversary!`,
-            message: Helper.getMarriageAnniversaryEmailTemplate(user, departmentName, yearsOfMarriage, yearText, spouseName, today, user.team),
-            fromHR: false,
-            team: user?.team || 'SD'
-          });
+          if (isTestMode) {
+            logger.info(`   🧪 TEST MODE: Would send marriage anniversary email to ${user.firstName} ${user.lastName} (${user.email})`);
+            logger.info(`   📧 Subject: 💑 Happy ${yearsOfMarriage}-Year Marriage Anniversary!`);
+          } else {
+            await Helper.sendEmail({
+              receiverEmails: [user.email],
+              subject: `💑 Happy ${yearsOfMarriage}-Year Marriage Anniversary!`,
+              message: Helper.getMarriageAnniversaryEmailTemplate(user, departmentName, yearsOfMarriage, yearText, spouseName, today, user.team, profilePhotoUrl),
+              fromHR: false,
+              team: user?.team || 'SD'
+            });
+          }
 
           results.marriageAnniversaryEmails++;
           totalEmailsSent++;
@@ -218,13 +256,13 @@ async function runAnniversaryScheduler() {
 
     // FINAL SUMMARY
     logger.info('');
-    logger.info('📊 ANNIVERSARY EMAIL SCHEDULER SUMMARY');
+    logger.info(`📊 ANNIVERSARY EMAIL SCHEDULER SUMMARY${isTestMode ? ' (TEST MODE)' : ''}`);
     logger.info('======================================');
     logger.info(`📅 Date: ${today.toDateString()}`);
-    logger.info(`🎂 Birthday Emails Sent: ${results.birthdayEmails}`);
-    logger.info(`🏆 Work Anniversary Emails Sent: ${results.workAnniversaryEmails}`);
-    logger.info(`💑 Marriage Anniversary Emails Sent: ${results.marriageAnniversaryEmails}`);
-    logger.info(`📧 Total Emails Sent: ${totalEmailsSent}`);
+    logger.info(`🎂 Birthday Emails ${isTestMode ? 'Would Be Sent' : 'Sent'}: ${results.birthdayEmails}`);
+    logger.info(`🏆 Work Anniversary Emails ${isTestMode ? 'Would Be Sent' : 'Sent'}: ${results.workAnniversaryEmails}`);
+    logger.info(`💑 Marriage Anniversary Emails ${isTestMode ? 'Would Be Sent' : 'Sent'}: ${results.marriageAnniversaryEmails}`);
+    logger.info(`📧 Total Emails ${isTestMode ? 'Would Be Sent' : 'Sent'}: ${totalEmailsSent}`);
     logger.info(`❌ Errors: ${results.errors.length}`);
     
     if (results.errors.length > 0) {
@@ -242,6 +280,7 @@ async function runAnniversaryScheduler() {
       success: true,
       timestamp: new Date().toISOString(),
       date: today.toDateString(),
+      isTestMode,
       totalEmailsSent,
       ...results
     };
@@ -270,14 +309,19 @@ module.exports = runAnniversaryScheduler;
 
 // If this file is run directly (for testing)
 if (require.main === module) {
-  console.log('🧪 Running Anniversary Scheduler in test mode...');
-  runAnniversaryScheduler()
+  const isTestMode = process.argv[2] === 'test';
+  console.log(`🧪 Running Anniversary Scheduler${isTestMode ? ' in TEST mode' : ' in normal mode'}...`);
+  
+  runAnniversaryScheduler(isTestMode)
     .then(result => {
-      console.log('🎯 Test completed:', result.success ? 'SUCCESS' : 'FAILED');
+      console.log(`🎯 ${isTestMode ? 'Test' : 'Execution'} completed:`, result.success ? 'SUCCESS' : 'FAILED');
+      if (isTestMode) {
+        console.log(`📊 Test Results: ${result.totalEmailsSent} emails would be sent`);
+      }
       process.exit(result.success ? 0 : 1);
     })
     .catch(error => {
-      console.error('🚨 Test failed with error:', error);
+      console.error('🚨 Failed with error:', error);
       process.exit(1);
     });
 }

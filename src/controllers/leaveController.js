@@ -10,10 +10,13 @@ const User = require('../models/userModel');
 const { formatDateToKolkata } = require('../utility/common');
 const LeaveApplication = require('../models/leaveApplicationModel');
 const leaveTypeModel = require('../models/leaveTypeModel');
+const EmployeeLeaveBalance = require('../models/employeeLeaveBalanceModel');
 const moment = require("moment-timezone");
 
 const getAllLeave = catchAsync(async (req, res) => {
   const currentUser = req.user;
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
   let leaves;
 
   if (
@@ -21,20 +24,21 @@ const getAllLeave = catchAsync(async (req, res) => {
     currentUser.role === 'subadmin' ||
     currentUser.role === 'hr'
   ) {
-    leaves = await leaveService?.getAllLeave(currentUser.team);
+    leaves = await leaveService?.getAllLeave(currentUser.team, page, limit);
   } else if (
     currentUser.role === 'teamlead' ||
     currentUser.role === 'subteamlead'
   ) {
-    leaves = await leaveService?.getLeaveTl({ id: currentUser.id, team:currentUser.team });
+    leaves = await leaveService?.getLeaveTl({ id: currentUser.id, team:currentUser.team }, page, limit);
   } else {
-    leaves = await leaveService?.getLeaveById({ id: currentUser.id });
+    leaves = await leaveService?.getLeaveById({ id: currentUser.id }, page, limit);
   }
 
   res?.status(httpStatus.OK).json({
     status: true,
     message: 'Leave retrieved successfully.',
-    data: leaves,
+    data: leaves.data,
+    pagination: leaves.pagination,
   });
 });
 
@@ -306,11 +310,20 @@ const applyForLeave = catchAsync(async (req, res) => {
 
     const configEmails = getTeamEmailConfig(team);
 
+    // Get leave balance
+    const leaveBalance = await EmployeeLeaveBalance.findOne({
+      userId,
+      leaveTypeId: result?.data?.leaveTypeId
+    });
+
+    const totalAvailable = leaveBalance ? (leaveBalance.total - leaveBalance.used) : 0;
+
     // Prepare employee information for email templates
     const employeeInfo = {
       employeeId: user.employeeId || 'N/A',
       jobTitle: user.jobTitle || 'N/A',
-      department: user.department?.name || 'N/A'
+      department: user.department?.name || 'N/A',
+      leaveBalance: totalAvailable
     };
 
     const sendMail = req?.body?.sendMail === true;
