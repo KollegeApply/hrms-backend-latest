@@ -307,6 +307,7 @@ const getUserHistorySchema = Joi.object({
 const getUserByTlIdSchema = Joi.object({
   userId: Joi.string().trim().required(),
   userRole: Joi.string().trim().valid(...VALID_USER_ROLES).required(),
+  isTeamDetail: Joi.boolean().optional().default(false),
 });
 
 
