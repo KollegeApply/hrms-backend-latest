@@ -1271,10 +1271,10 @@ async getUserById(id) {
       // NEW FEEDBACK HIERARCHY RULES:
       if (userRole === 'admin' || userRole === 'subadmin') {
         // Admin/Subadmin → Anyone (HR, TL, STL, IT, Employee, Intern) - Direct, no approval
-        user = await User.find(query).select(commonSelectFields).populate('department', 'name');
+        user = await buildQuery(query);
       } else if (userRole === 'hr') {
         // HR → STL, TL, Employee, Intern, IT - Direct, no approval
-        user = await User.find({
+        user = await buildQuery({
           ...query,
           role: { $in: ['subteamlead', 'teamlead', 'employee', 'intern', 'IT'] },
         }).select(commonSelectFields).populate('department', 'name');
@@ -1363,6 +1363,94 @@ async getUserById(id) {
       };
     } catch (error) {
       console.error('Error in getUserByTlId service:', error);
+      return {
+        status: false,
+        statusCode: 500,
+        message: 'An unexpected server error occurred.',
+      };
+    }
+  }
+
+  /**
+   * Get team details with all fields for TL and SubTL only
+   * This API only returns their own team members (no HR, no flag needed)
+   * @param {string} userId - The logged-in user's ID
+   * @param {string} userRole - The logged-in user's role (must be teamlead or subteamlead)
+   * @param {string} userTeam - The logged-in user's team
+   * @returns {Promise<Object>} - Response with team members data
+   */
+  async getTeamDetails(userId, userRole, userTeam) {
+    try {
+      // Only allow TL and SubTL
+      if (userRole !== 'teamlead' && userRole !== 'subteamlead') {
+        return {
+          status: false,
+          statusCode: 403,
+          message: 'Access denied. Only Team Leads and Sub Team Leads can access this endpoint.',
+        };
+      }
+
+      const query = {
+        status: { $in: ['probation', 'onroll'] },
+        team: userTeam,
+      };
+
+      // Select all required fields
+      const selectFields = '_id firstName lastName email role employeeId department phoneNumber hireDate workType status jobTitle formStatus teamLeadId subTeamLeadId';
+
+      let users;
+
+      if (userRole === 'teamlead') {
+        // TL → Only their direct team members (no HR, no STL's teams)
+        users = await User.find({
+          $and: [
+            query,
+            {
+              teamLeadId: userId, // Only direct reports under this TL
+            },
+          ],
+        })
+          .select(selectFields)
+          .populate('department', 'name')
+          .populate('teamLeadId', 'firstName lastName email id')
+          .populate('subTeamLeadId', 'firstName lastName email id');
+      } else if (userRole === 'subteamlead') {
+        // SubTL → Only their direct team members (no HR, no TL)
+        users = await User.find({
+          $and: [
+            query,
+            {
+              subTeamLeadId: userId, // Only direct reports under this SubTL
+            },
+          ],
+        })
+          .select(selectFields)
+          .populate('department', 'name')
+          .populate('teamLeadId', 'firstName lastName email id')
+          .populate('subTeamLeadId', 'firstName lastName email id');
+      } else {
+        users = [];
+      }
+
+      // Filter out the current user
+      let filteredUsers = users.filter((u) => u.id.toString() !== userId.toString());
+
+      // Calculate averageRating for each user
+      filteredUsers = await Promise.all(
+        filteredUsers.map(async (u) => {
+          const avgRating = await this.calculateAverageRating(u._id);
+          u.averageRating = avgRating;
+          return u;
+        })
+      );
+
+      return {
+        status: true,
+        statusCode: 200,
+        data: filteredUsers,
+      };
+    } catch (error) {
+      console.error('Error in getTeamDetails service:', error);
       return {
         status: false,
         statusCode: 500,

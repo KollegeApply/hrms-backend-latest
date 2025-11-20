@@ -560,6 +560,22 @@ const getUserByTlId = async (req, res) => {
   }
 };
 
+const getTeamDetails = async (req, res) => {
+  try {
+    const userId = req?.user?.id;
+    const userRole = req?.user?.role;
+    const userTeam = req?.user?.team;
+
+    const result = await userService.getTeamDetails(userId, userRole, userTeam);
+    return res.status(result.statusCode).json(result);
+  } catch (error) {
+    console.error('Error in getTeamDetails controller:', error);
+    return res
+      .status(500)
+      .json({ message: 'An unexpected server error occurred.' });
+  }
+};
+
 const approveUser = async (req, res) => {
   try {
     const { id } = req.params;
@@ -847,6 +863,7 @@ module.exports = {
   bulkUpload,
   getUserHistory,
   getUserByTlId,
+  getTeamDetails,
   approveUser,
   updateUserCifForm,
   requestSectionApproval,
