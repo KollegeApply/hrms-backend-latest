@@ -122,6 +122,11 @@ function getTeamEmailConfig(team) {
       .split(',')
       .map(e => e.trim())
       .filter(Boolean),
+
+      GROUP_EMAILS: (process.env[`GROUP_EMAILS_${normalizedTeam}`] || '')
+      .split(',')
+      .map(e => e.trim())
+      .filter(Boolean),
   };
 
   const requiredKeys = [

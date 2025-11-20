@@ -6,6 +6,7 @@ const logger = require('../config/logger');
 const Helper = require('../utility/helper');
 const { transformDocumentPaths } = require('../utility/common');
 const moment = require('moment-timezone');
+const { getTeamEmailConfig } = require('../utility/constants');
 require('dotenv').config({ path: './.env.production' });
 
 const MONGO_URI = process.env.MONGO_URI;
@@ -107,6 +108,7 @@ async function runAnniversaryScheduler(isTestMode = false) {
           const age = currentYear - new Date(user.dateOfBirth).getFullYear();
           
           const profilePhotoUrl = getProfilePhotoUrl(user);
+          const ccEmails = getTeamEmailConfig(user?.team || 'SD').GROUP_EMAILS;
           
           // Send birthday email to the user
           if (isTestMode) {
@@ -118,6 +120,7 @@ async function runAnniversaryScheduler(isTestMode = false) {
               subject: `🎂 Happy Birthday ${user.firstName}! 🎉`,
               message: Helper.getBirthdayEmailTemplate(user, user.department, user.team, profilePhotoUrl),
               fromHR: false,
+              cc:ccEmails,
               team: user?.team || 'SD'
             });
           }
@@ -160,7 +163,7 @@ async function runAnniversaryScheduler(isTestMode = false) {
           const yearText = yearsOfService === 1 ? 'year' : 'years';
 
           const profilePhotoUrl = getProfilePhotoUrl(user);
-
+          const ccEmails = getTeamEmailConfig(user?.team || 'SD').GROUP_EMAILS;
           // Send work anniversary email to the user
           if (isTestMode) {
             logger.info(`   🧪 TEST MODE: Would send work anniversary email to ${user.firstName} ${user.lastName} (${user.email})`);
@@ -171,6 +174,7 @@ async function runAnniversaryScheduler(isTestMode = false) {
               subject: `🏆 Congratulations on Your ${yearsOfService}-Year Work Anniversary!`,
               message: Helper.getWorkAnniversaryEmailTemplate(user, user.department, yearsOfService, yearText, today, user.team, profilePhotoUrl),
               fromHR: false,
+              cc:ccEmails,
               team: user?.team || 'SD'
             });
           }
@@ -225,7 +229,7 @@ async function runAnniversaryScheduler(isTestMode = false) {
           const departmentName = user.department?.name;
 
           const profilePhotoUrl = getProfilePhotoUrl(user);
-
+          const ccEmails = getTeamEmailConfig(user?.team || 'SD').GROUP_EMAILS;
           // Send marriage anniversary email to the user
           if (isTestMode) {
             logger.info(`   🧪 TEST MODE: Would send marriage anniversary email to ${user.firstName} ${user.lastName} (${user.email})`);
@@ -236,6 +240,7 @@ async function runAnniversaryScheduler(isTestMode = false) {
               subject: `💑 Happy ${yearsOfMarriage}-Year Marriage Anniversary!`,
               message: Helper.getMarriageAnniversaryEmailTemplate(user, departmentName, yearsOfMarriage, yearText, spouseName, today, user.team, profilePhotoUrl),
               fromHR: false,
+              cc:ccEmails,
               team: user?.team || 'SD'
             });
           }

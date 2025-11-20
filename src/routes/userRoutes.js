@@ -38,6 +38,9 @@ router.get('/meeting-attendees', authenticateUser, userController?.getAllUsersFo
 
 router.get('/tl-id', authenticateUser, userController?.getUserByTlId);
 
+// Get Team Details: Only for TL and SubTL, returns full team details without flag
+router.get('/team-details', authenticateUser, userController?.getTeamDetails);
+
 // Get Specific User: Allow self-access, plus HR/Admin/Manager access
 router.get(
   '/:id',
