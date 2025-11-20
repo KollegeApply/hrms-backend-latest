@@ -484,7 +484,7 @@ class Helper {
     </p>
 
     <p style="color: #555; font-size: 16px; line-height: 1.6;">
-      Should you have any questions regarding your full-time employment status, benefits, or other updates, feel free to contact <a href="mailto:${process?.env?.HR_EMAIL}" style="color: #007bff;">${process?.env?.HR_EMAIL}</a>.
+      Should you have any questions regarding your full-time employment status, benefits, or other updates, feel free to contact <a href="mailto:${displayTeam?.HR_EMAIL}" style="color: #007bff;">${displayTeam?.HR_EMAIL}</a>.
     </p>
 
     <p style="color: #555; font-size: 16px; line-height: 1.6;">
