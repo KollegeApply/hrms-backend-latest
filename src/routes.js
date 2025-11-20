@@ -98,6 +98,10 @@ const defaultRoutes = [
   {
     path: `/api/${apiVersion}/kpis`,
     route: kpiRoutes,
+  },
+  {
+    path: `/api/${apiVersion}/webhook`,
+    route: biometricWebhookRoutes,
   }
   // Add other route configurations here
   // {
@@ -110,7 +114,5 @@ defaultRoutes.forEach((route) => {
   router.use(route.path, route.route);
 });
 
-// Webhook routes (no API version prefix, public endpoints)
-router.use('/webhook', biometricWebhookRoutes);
 
 module.exports = router;
