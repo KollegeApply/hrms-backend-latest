@@ -16,7 +16,7 @@ const regularizationService = {
         user: userId,
         'regularization.type': 'standard',
         'regularization.status': { $in: ['tl-pending', 'hr-pending', 'approved'] },
-        date: {
+        createdAt: {
           $gte: startOfMonth.toDate(),
           $lte: endOfMonth.toDate()
         }
