@@ -990,6 +990,70 @@ class Helper {
   `;
   }
 
+  static getAssetAcknowledgmentReminderEmail(
+    firstName,
+    employeeId,
+    dashboardUrl,
+    assetName,
+    assetType,
+    jobTitle,
+  ) {
+    return `
+  <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 24px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+    <div style="text-align: center; margin-bottom: 24px;">
+      <h2 style="color: #ff9800; font-size: 22px;">Asset Acknowledgment Reminder</h2>
+    </div>
+
+    <div style="background-color: #fff; padding: 28px 24px; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);">
+      <p style="font-size: 16px; color: #333; line-height: 1.5; margin-bottom: 16px;">
+        Hello <strong>${firstName}</strong>,
+      </p>
+
+      <p style="font-size: 15px; color: #555; line-height: 1.5; margin-bottom: 16px;">
+        This is a reminder that you have <strong>not yet acknowledged</strong> the assets assigned to you.
+        Please review and confirm receipt of your assigned assets at the earliest.
+      </p>
+
+      <!-- Asset Information Section -->
+      <div style="background-color: #f8f9fa; padding: 16px 20px; border-radius: 6px; border: 1px solid #dee2e6; margin: 20px 0;">
+        <h3 style="color: #495057; font-size: 15px; margin: 0 0 10px 0; font-weight: 600;">Asset Information</h3>
+        <ul style="list-style: none; padding: 0; margin: 0;">
+          <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Asset Name:</strong> ${assetName || 'N/A'}</li>
+          <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Asset Type:</strong> ${assetType || 'N/A'}</li>
+          <li style="color: #495057; margin-bottom: 10px; font-size: 14px;"><strong>Employee:</strong> ${firstName} (${employeeId})</li>
+          <li style="color: #495057; margin-bottom: 0; font-size: 14px;"><strong>Designation:</strong> ${jobTitle || 'N/A'}</li>
+        </ul>
+      </div>
+
+      <div style="background-color: #fff3cd; padding: 16px 20px; border-radius: 6px; border: 1px solid #ffeaa7; margin: 20px 0;">
+        <p style="color: #856404; margin: 0; font-size: 14px; line-height: 1.5; font-weight: 600;">
+          ⚠️ Action Required: Please acknowledge your assigned assets to complete the process.
+        </p>
+      </div>
+
+      <p style="font-size: 15px; color: #555; line-height: 1.5; margin-bottom: 20px;">
+        Click the button below to view and acknowledge your assigned assets:
+      </p>
+
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="${dashboardUrl}/assigned-assets" style="background-color: #007bff; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+          View Assigned Assets
+        </a>
+      </div>
+
+      <p style="font-size: 14px; color: #777; line-height: 1.5; margin-bottom: 24px;">
+        If you have any questions or concerns, please feel free to contact the IT department.
+      </p>
+
+      <p style="font-size: 15px; color: #555; line-height: 1.6; margin-bottom: 8px;">
+        Thanks & regards,<br>
+        <strong>IT Department</strong>
+      </p>
+    </div>
+  </div>
+  `;
+  }
+
   static getFeedbackEmail({ givenByUser, givenToUser, dashboardUrl, feedbackId, team }) {
     const displayTeam = getTeamEmailConfig(team);
     return `
