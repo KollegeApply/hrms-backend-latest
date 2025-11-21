@@ -111,6 +111,7 @@ const fetchAssignedAssets = catchAsync(async (req, res) => {
 const updateAssignedAsset = catchAsync(async (req, res) => {
   const { id } = req.params;
   const data = req.body;
+  console.log(req, "reqreqreq")
 
   // 1. Validate the request using the schema
   const validatedData =
@@ -123,6 +124,59 @@ const updateAssignedAsset = catchAsync(async (req, res) => {
   );
 
   const sendMail = req?.body?.sendMail === true;
+  const isAssignedMail = req?.body?.IsAssignedMail === true;
+
+  // Check for IsAssignedMail flag to send acknowledgment reminder
+  if (isAssignedMail && process.env.HRMS_FRONTEND_URL) {
+    const employee = await User.findById(updatedRequest.assignee)
+      .populate('teamLeadId', 'firstName lastName email')
+      .populate('department', 'name');
+    if (employee) {
+      // Construct full names
+      const employeeFullName = `${employee?.firstName || ''} ${employee?.lastName || ''}`.trim();
+      const teamLeadName = employee?.teamLeadId ? 
+        `${employee.teamLeadId.firstName || ''} ${employee.teamLeadId.lastName || ''}`.trim() : 
+        (employee?.subTeamLeadId ? 
+          `${employee.subTeamLeadId.firstName || ''} ${employee.subTeamLeadId.lastName || ''}`.trim() : 
+          'N/A');
+        // const displayTeam = getTeamEmailConfig(req.user.team);
+      
+      const emailSubject = `Asset Acknowledgment Reminder - Action Required`;
+      const emailMessage = Helper.getAssetAcknowledgmentReminderEmail(
+        employeeFullName,
+        employee.employeeId,
+        process.env.HRMS_FRONTEND_URL,
+        updatedRequest?.assetName,
+        updatedRequest?.assetType,
+        employee?.jobTitle,
+        );
+
+      const configEmails = getTeamEmailConfig(req.user.team);
+
+      const receiverEmails = [employee?.email];
+
+      const ccEmails = [
+       configEmails?.IT_EMAIL,
+      ].filter(Boolean);
+
+      logger.info(`Sending asset acknowledgment reminder email to ${employee.email}`);
+
+      Helper.sendEmail({
+        receiverEmails,
+        subject: emailSubject,
+        message: emailMessage,
+        fromHR: false,
+        fromIT: true,
+        cc: ccEmails,
+        team: req.user.team,
+      }).catch((err) => {
+        logger.error(
+          `Failed to send asset acknowledgment reminder email to ${employee.email}:`,
+          err
+        );
+      });
+    }
+  }
 
   if (
     updatedRequest?.status === 'returned' &&
@@ -267,11 +321,13 @@ const acknowledgeAsset = catchAsync(async (req, res) => {
 
     const configEmails = getTeamEmailConfig(req.user.team);
 
-    const receiverEmails = [configEmails?.HR_EMAIL, poc.email, configEmails?.IT_EMAIL, employee?.email];
+    const receiverEmails = [configEmails?.IT_EMAIL];
 
     const ccEmails = [
-      req.user?.email !== employee?.email ? req.user?.email : null,
       employee?.teamLeadId?.email,
+      configEmails?.HR_EMAIL,
+      poc.email,
+      employee?.email,
       ...configEmails?.ADMIN_EMAILS,
     ].filter(Boolean);
 
