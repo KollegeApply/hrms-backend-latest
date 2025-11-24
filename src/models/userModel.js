@@ -152,6 +152,11 @@ const userSchema = new Schema(
       type: String,
       required: true
     },
+    shiftTime: {
+      type: String,
+      trim: true,
+      required: false,
+    },
   },
   {
     timestamps: true, // Adds createdAt and updatedAt automatically

@@ -132,4 +132,22 @@ router.post(
   userController.uploadProfilePhoto
 );
 
+// Update Shift Time: Only TL/SubTL can update for their team members
+router.put(
+  '/:id/shift-time',
+  authenticateUser,
+  (req, res, next) => {
+    // Allow TL and SubTL
+    const allowedRoles = [
+      USER_ROLES?.TEAMLEAD,
+      USER_ROLES?.SUBTEAMLEAD,
+    ];
+    if (allowedRoles.includes(req?.user?.role)) {
+      return next();
+    }
+    return authorizeRole([])(req, res, next); // Trigger forbidden error
+  },
+  userController.updateShiftTime
+);
+
 module.exports = router;
