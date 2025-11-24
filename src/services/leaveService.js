@@ -229,6 +229,37 @@ async updateLeaveStatus({ leaveId, action, editor }) {
           // B.1 Smart late-approval handling for half-day leaves
           // If the leave is half-day, handle existing attendance records appropriately
           if (leave.isHalfDay && (leave.halfDayType === 'first' || leave.halfDayType === 'second')) {
+            // Fetch user's shiftTime from user model
+            const user = await User.findById(leave.userId).select('shiftTime').lean();
+            const shiftTime = user?.shiftTime || null;
+
+            // Calculate shiftTime in minutes (similar to normalCutoff calculation)
+            let shiftTimeInMinutes = null;
+            if (shiftTime) {
+              // Parse shiftTime string (format: "HH:MM" or "H:MM")
+              const timeParts = shiftTime.split(':');
+              if (timeParts.length === 2) {
+                const hours = parseInt(timeParts[0], 10);
+                const minutes = parseInt(timeParts[1], 10);
+                if (!isNaN(hours) && !isNaN(minutes)) {
+                  shiftTimeInMinutes = hours * 60 + minutes;
+                }
+              }
+            }
+
+            // Normal cutoff time (10:15 AM) - default fallback
+            const normalCutoff = 10 * 60 + 15; // 10:15 AM in minutes
+            
+            // Use shiftTimeInMinutes if available, otherwise fallback to normalCutoff
+            const cutoffTime = shiftTimeInMinutes !== null ? shiftTimeInMinutes : normalCutoff;
+
+            // First half leave cutoff: shiftTime + 4 hours 15 minutes, or default 2:30 PM
+            const defaultFirstHalfLeaveCutoff = 14 * 60 + 30; // 2:30 PM in minutes (default)
+            const fourHoursFifteenMinutes = 4 * 60 + 15; // 4 hours 15 minutes in minutes
+            const firstHalfLeaveCutoff = shiftTimeInMinutes !== null 
+              ? shiftTimeInMinutes + fourHoursFifteenMinutes 
+              : defaultFirstHalfLeaveCutoff;
+
             // Iterate all leave dates and adjust if an attendance record already exists
             for (const date of leave.dates || []) {
               try {
@@ -272,18 +303,14 @@ async updateLeaveStatus({ leaveId, action, editor }) {
                   const checkInMoment = moment(attendance.checkInTime).tz('Asia/Kolkata');
                   const checkInMinutes = checkInMoment.hours() * 60 + checkInMoment.minutes();
 
-                  // Cutoffs
-                  const firstHalfCutoff = 14 * 60 + 30; // 2:30 PM
-                  const normalCutoff = 10 * 60 + 15; // 10:15 AM
-
                   let normalizedStatus = attendance.status;
 
                   if (leave.halfDayType === 'first') {
-                    // For first-half leave, being checked-in by 2:30 PM counts as on-time (present), else late_in
-                    normalizedStatus = checkInMinutes <= firstHalfCutoff ? 'present' : 'late_in';
+                    // For first-half leave, being checked-in by firstHalfLeaveCutoff counts as on-time (present), else late_in
+                    normalizedStatus = checkInMinutes <= firstHalfLeaveCutoff ? 'present' : 'late_in';
                   } else if (leave.halfDayType === 'second') {
-                    // For second-half leave, apply the normal morning cutoff (10:15 AM)
-                    normalizedStatus = checkInMinutes <= normalCutoff ? 'present' : 'late_in';
+                    // For second-half leave, apply the cutoff time (shiftTimeInMinutes or normalCutoff)
+                    normalizedStatus = checkInMinutes <= cutoffTime ? 'present' : 'late_in';
                   }
 
                   attendance.status = normalizedStatus;
