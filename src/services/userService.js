@@ -486,6 +486,7 @@ async getUserById(id) {
       }
       candidate.status = 'completed';
       user.userDetails = candidate.userDetails;
+      user.phoneNumber = candidate.phoneNumber;
       await candidate.save();
       await user.save();
     }

@@ -19,10 +19,18 @@ const getAllLeave = catchAsync(async (req, res) => {
   const limit = parseInt(req.query.limit) || 10;
   let leaves;
 
+  // Check if user is Finance department teamlead
+  let isFinanceTeamlead = false;
+  if (currentUser.role === 'teamlead') {
+    const userWithDept = await User.findById(currentUser.id).populate('department', 'name').lean();
+    isFinanceTeamlead = userWithDept?.department?.name?.toLowerCase()?.trim() === 'finance';
+  }
+
   if (
     currentUser.role === 'admin' ||
     currentUser.role === 'subadmin' ||
-    currentUser.role === 'hr'
+    currentUser.role === 'hr' ||
+    isFinanceTeamlead
   ) {
     leaves = await leaveService?.getAllLeave(currentUser.team, page, limit);
   } else if (
