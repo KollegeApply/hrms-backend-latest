@@ -97,6 +97,7 @@ async function runAnniversaryScheduler(isTestMode = false) {
             { $eq: [{ $dayOfMonth: "$dateOfBirth" }, todayDay] }
           ]
         },
+        status: { $in: ["probation", "onroll"] },
         isDeleted: false,
         dateOfBirth: { $exists: true, $ne: null }
       }).select('firstName lastName email employeeId dateOfBirth department team jobTitle profilePhoto userDetails')
@@ -151,6 +152,7 @@ async function runAnniversaryScheduler(isTestMode = false) {
             { $lt: [{ $year: "$hireDate" }, currentYear] }
           ]
         },
+        status: { $in: ["probation", "onroll"] },
         isDeleted: false,
         hireDate: { $exists: true, $ne: null }
       }).select('firstName lastName email employeeId hireDate department team jobTitle profilePhoto userDetails')
@@ -199,6 +201,7 @@ async function runAnniversaryScheduler(isTestMode = false) {
       
       // Get marriage anniversary users using a simpler approach to avoid BSON conversion issues
       const allUsersWithMarriageData = await User.find({
+        status: { $in: ["probation", "onroll"] },
         isDeleted: false,
         userDetails: { $exists: true, $ne: null }
       }).populate({
