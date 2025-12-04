@@ -32,7 +32,9 @@ const getAllLeave = catchAsync(async (req, res) => {
     currentUser.role === 'hr' ||
     isFinanceTeamlead
   ) {
-    leaves = await leaveService?.getAllLeave(currentUser.team, page, limit);
+    // Pass financeTeamLeadId if user is Finance TL to prioritize their team members
+    const financeTeamLeadId = isFinanceTeamlead ? currentUser.id : null;
+    leaves = await leaveService?.getAllLeave(currentUser.team, page, limit, financeTeamLeadId);
   } else if (
     currentUser.role === 'teamlead' ||
     currentUser.role === 'subteamlead'

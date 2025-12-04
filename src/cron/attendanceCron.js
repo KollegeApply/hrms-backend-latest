@@ -506,6 +506,10 @@ const weeklyReport = async (isTestMode = false) => {
                                 data.noCheckOuts.push(dayName);
                             }
                             break;
+                        case 'missed_checkout':
+                            // Explicitly track missed checkouts
+                            data.noCheckOuts.push(dayName);
+                            break;
                         case 'absent':
                             data.noAttendances.push(dayName);
                             break;
@@ -754,11 +758,11 @@ const updateIncompleteAttendance = async (isTestMode = false) => {
                 const oldStatus = attendance.status;
                 
                 if (isTestMode) {
-                    logger.info(`   🧪 TEST MODE: Would mark user ${user.email} as absent (checked in but no checkout)`);
-                    logger.info(`   📝 Status change: ${oldStatus} → absent`);
+                    logger.info(`   🧪 TEST MODE: Would mark user ${user.email} as missed_checkout (checked in but no checkout)`);
+                    logger.info(`   📝 Status change: ${oldStatus} → missed_checkout`);
                 } else {
-                    // Always mark as absent when user has checked in but not checked out
-                    attendance.status = 'absent';
+                    // Mark as missed_checkout when user has checked in but not checked out
+                    attendance.status = 'missed_checkout';
                     await attendance.save();
                 }
 
@@ -770,16 +774,16 @@ const updateIncompleteAttendance = async (isTestMode = false) => {
                     checkInTime: attendance.checkInTime ? 
                         moment(attendance.checkInTime).tz('Asia/Kolkata').format('DD-MM-YYYY HH:mm:ss') : 'No check-in',
                     oldStatus,
-                    newStatus: 'absent'
+                    newStatus: 'missed_checkout'
                 });
 
-                logger.info(`${isTestMode ? 'Would mark' : 'Marked'} user ${user.email} as absent - checked in but no checkout`);
+                logger.info(`${isTestMode ? 'Would mark' : 'Marked'} user ${user.email} as missed_checkout - checked in but no checkout`);
             }
         }
 
         // Log summary of marked users
         if (markedAbsentCount > 0) {
-            logger.info(`Summary: ${markedAbsentCount} users marked as absent for ${formatDateYMD(todayStart.toDate())}`);
+            logger.info(`Summary: ${markedAbsentCount} users marked as missed_checkout for ${formatDateYMD(todayStart.toDate())}`);
             markedUsers.forEach(user => {
                 logger.info(`- ${user.name} (${user.email}): ${user.oldStatus} → ${user.newStatus}`);
             });

@@ -347,6 +347,25 @@ class FeedbacksService {
 
     const isAdmin = ['admin', 'subadmin', 'hr'].includes(userRole);
     const tab = filters.tab || 'all';
+
+    // ✅ Map selected month/year (from UI) to our internal periodId for monthly feedbacks
+    // Frontend sends 0-based month (0 = Jan, 11 = Dec)
+    if (
+        filters.selectedYear &&
+        (filters.selectedMonth || filters.selectedMonth === 0) && // allow 0
+        !filters.periodId // don't override if a specific periodId is already passed
+    ) {
+        const monthNum = parseInt(filters.selectedMonth, 10);
+        const yearNum = parseInt(filters.selectedYear, 10);
+
+        if (!Number.isNaN(monthNum) && !Number.isNaN(yearNum) && monthNum >= 0 && monthNum <= 11) {
+            const mm = String(monthNum + 1).padStart(2, '0'); // convert to 1–12 with leading zero
+            // Since ab feedback monthly-wise hai, ek hi periodId hoga per month:
+            // e.g. 2025-12-monthly
+            filters.periodType = 'monthly';
+            filters.periodId = `${yearNum}-${mm}-monthly`;
+        }
+    }
     
     // Base filter based on tab selection
     let baseFilter = {};

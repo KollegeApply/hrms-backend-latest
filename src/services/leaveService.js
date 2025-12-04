@@ -29,7 +29,7 @@ class leaveService {
    * @param {number} limit - Items per page (default: 10)
    * @returns {Promise<object>} - Paginated list of all non-deleted Leaves, sorted by date.
    */
-  async getAllLeave(team, page = 1, limit = 10) {
+  async getAllLeave(team, page = 1, limit = 10, financeTeamLeadId = null) {
     // Get all user IDs for the team
     const teamUsers = await User.find({ team }).select('_id');
     const teamUserIds = teamUsers.map(user => user._id);
@@ -61,6 +61,91 @@ class leaveService {
       }
     ];
 
+    // If Finance TL, get their team members and prioritize them
+    let teamMemberIds = [];
+    let financeLeaderObjectId = null;
+    if (financeTeamLeadId) {
+      financeLeaderObjectId = new mongoose.Types.ObjectId(financeTeamLeadId);
+
+      const teamMembers = await User.find({
+        teamLeadId: financeLeaderObjectId
+      }).select('_id');
+      teamMemberIds = teamMembers.map((u) => u._id);
+    }
+
+    // Use aggregation to add priority field and sort
+    if (financeLeaderObjectId && teamMemberIds.length > 0) {
+      const skip = (page - 1) * limit;
+      
+      const pipeline = [
+        { $match: query },
+        {
+          $addFields: {
+            priority: {
+              $switch: {
+                branches: [
+                  // 0: TL's own leave applications
+                  {
+                    case: { $eq: ['$userId', financeLeaderObjectId] },
+                    then: 0,
+                  },
+                  // 1: Team members whose status is 'tl-pending'
+                  {
+                    case: {
+                      $and: [
+                        { $in: ['$userId', teamMemberIds] },
+                        { $eq: ['$status', 'tl-pending'] },
+                      ],
+                    },
+                    then: 1,
+                  },
+                  // 2: Remaining team members
+                  {
+                    case: { $in: ['$userId', teamMemberIds] },
+                    then: 2,
+                  },
+                ],
+                // 3: Everyone else
+                default: 3,
+              },
+            }
+          }
+        },
+        { $sort: { priority: 1, createdAt: -1 } },
+        { $skip: skip },
+        { $limit: limit }
+      ];
+
+      // Get total count for pagination
+      const totalDocs = await LeaveApplication.countDocuments(query);
+
+      // Execute aggregation with population
+      let leaves = await LeaveApplication.aggregate(pipeline);
+
+      // Manually populate the fields
+      leaves = await LeaveApplication.populate(leaves, populateOptions);
+
+      const totalPages = Math.ceil(totalDocs / limit);
+      const hasNextPage = page < totalPages;
+      const hasPrevPage = page > 1;
+
+      return {
+        data: leaves,
+        pagination: {
+          totalDocs,
+          limit,
+          totalPages,
+          currentPage: page,
+          pagingCounter: skip + 1,
+          hasPrevPage,
+          hasNextPage,
+          prevPage: hasPrevPage ? page - 1 : null,
+          nextPage: hasNextPage ? page + 1 : null,
+        },
+      };
+    }
+
+    // Default pagination for non-Finance TL users
     const paginationResult = await paginate(
       LeaveApplication,
       query,
