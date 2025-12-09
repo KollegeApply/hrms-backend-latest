@@ -110,7 +110,10 @@ const getAllFeedbacks = catchAsync(async (req, res) => {
     page: req.query.page,
     limit: req.query.limit,
     search: req.query.search,
-    tab: req.query.tab
+    tab: req.query.tab,
+    // Month-Year dropdown (0-based month from frontend: 0=Jan, 11=Dec)
+    selectedMonth: req.query.selectedMonth,
+    selectedYear: req.query.selectedYear,
   };
 
   const result = await feedbackService.getAllFeedbacks(userId, userRole, req.user.team, filters);

@@ -22,6 +22,26 @@ const attendanceService = {
       const now = moment().tz('Asia/Kolkata');
       const today = now.clone().startOf('day'); 
 
+      // Fetch user's shiftTime from user model
+      const user = await User.findById(userId).select('shiftTime').lean();
+      const shiftTime = user?.shiftTime || null; // Store shiftTime in variable
+      console.log(shiftTime, "shiftTime")
+
+      // Calculate shiftTime in minutes (similar to normalCutoff calculation)
+      let shiftTimeInMinutes = null;
+      if (shiftTime) {
+        // Parse shiftTime string (format: "HH:MM" or "H:MM")
+        const timeParts = shiftTime.split(':');
+        if (timeParts.length === 2) {
+          const hours = parseInt(timeParts[0], 10);
+          const minutes = parseInt(timeParts[1], 10);
+          if (!isNaN(hours) && !isNaN(minutes)) {
+            shiftTimeInMinutes = hours * 60 + minutes;
+          }
+        }
+      }
+      console.log(shiftTimeInMinutes, "shiftTimeInMinutes")
+
       // Check for any existing attendance record for today
       const existingAttendance = await Attendance.findOne({
         user: userId,
@@ -51,11 +71,20 @@ const attendanceService = {
       const checkInMinute = now.minute();
       const checkInTimeInMinutes = checkInHour * 60 + checkInMinute;
 
-      // Check if it's a first half leave (check-in after 2:30 PM)
-      const firstHalfLeaveCutoff = 14 * 60 + 30; // 2:30 PM in minutes
-      
-      // Normal cutoff time (10:15 AM)
+      // Normal cutoff time (10:15 AM) - default fallback
       const normalCutoff = 10 * 60 + 15; // 10:15 AM in minutes
+      
+      // Use shiftTimeInMinutes if available, otherwise fallback to normalCutoff
+      const cutoffTime = shiftTimeInMinutes !== null ? shiftTimeInMinutes : normalCutoff;
+      console.log(cutoffTime, "cutoffTime (shiftTimeInMinutes or normalCutoff)")
+
+      // First half leave cutoff: shiftTime + 4 hours 15 minutes, or default 2:30 PM
+      const defaultFirstHalfLeaveCutoff = 14 * 60 + 30; // 2:30 PM in minutes (default)
+      const fourHoursFifteenMinutes = 4 * 60 + 15; // 4 hours 15 minutes in minutes
+      const firstHalfLeaveCutoff = shiftTimeInMinutes !== null 
+        ? shiftTimeInMinutes + fourHoursFifteenMinutes 
+        : defaultFirstHalfLeaveCutoff;
+      console.log(firstHalfLeaveCutoff, "firstHalfLeaveCutoff")
 
       if (leaveAttendance) {
         // User has leave applied
@@ -65,8 +94,8 @@ const attendanceService = {
             status = 'late_in';
           }
         } else if (leaveAttendance.status === 'leave_applied_second_half') {
-          // Second half leave - check-in after 10:15 AM = late_in
-          if (checkInTimeInMinutes > normalCutoff) {
+          // Second half leave - check-in after cutoff time = late_in
+          if (checkInTimeInMinutes > cutoffTime) {
             status = 'late_in';
           }
         } else if (leaveAttendance.status === 'leave_applied_full') {
@@ -75,8 +104,8 @@ const attendanceService = {
         }
       } else {
         // No leave applied
-        if (checkInTimeInMinutes > normalCutoff) {
-          // Check-in after 10:15 AM without leave = late_in
+        if (checkInTimeInMinutes > cutoffTime) {
+          // Check-in after cutoff time without leave = late_in
           status = 'late_in';
         }
       }

@@ -158,45 +158,77 @@ const regularizationService = {
         query['regularization.type'] = type;
       }
 
-      // Add department filter
+      // Get department users if department filter is applied
+      let departmentUserIds = null;
       if (department) {
         const departmentUsers = await User.find({ department }).select('_id');
-        query.user = { $in: departmentUsers.map(u => u._id) };
+        departmentUserIds = departmentUsers.map(u => u._id.toString());
       }
 
-      // Role-based filtering with log filter
+      // Role-based filtering with log filter - collect user IDs first
+      let roleBasedUserIds = null;
       if (logFilter === 'my-log') {
         // Show only user's own requests
-        query.user = userId;
+        roleBasedUserIds = [userId.toString()];
       } else if (logFilter === 'all-log') {
         // Show all requests based on role
         if (userRole === 'teamlead') {
           // Team leads can see their team members' requests
           const teamMembers = await this.getTeamMembers(userId);
-          query.user = { $in: teamMembers };
+          roleBasedUserIds = teamMembers.map(id => id.toString());
         } else if (['hr', 'subadmin', 'admin'].includes(userRole)) {
           // HR/Admin/SubAdmin can see all requests by default
           // No additional filtering needed - they can see all regularization requests
           const teamMembers = await User.find({ team }).select('_id');
-          query.user = { $in: teamMembers.map(u => u._id) };
+          roleBasedUserIds = teamMembers.map(u => u._id.toString());
         } else if (userRole === 'employee') {
           // Employees can only see their own requests (same as my-log)
-          query.user = userId;
+          roleBasedUserIds = [userId.toString()];
         }
       } else {
         // Default behavior (backward compatibility)
         if (userRole === 'teamlead') {
           // Team leads can see their team members' requests
           const teamMembers = await this.getTeamMembers(userId);
-          query.user = { $in: teamMembers };
+          roleBasedUserIds = teamMembers.map(id => id.toString());
         } else if (['hr', 'subadmin', 'admin'].includes(userRole)) {
           // HR/Admin/SubAdmin can see all requests by default
           // No additional filtering needed
-           const teamMembers = await User.find({ team }).select('_id');
-          query.user = { $in: teamMembers.map(u => u._id) };
+          const teamMembers = await User.find({ team }).select('_id');
+          roleBasedUserIds = teamMembers.map(u => u._id.toString());
         } else if (userRole === 'employee') {
           // Employees can only see their own requests
-          query.user = userId;
+          roleBasedUserIds = [userId.toString()];
+        }
+      }
+
+      // Combine role-based filtering with department filter
+      let finalUserIds = roleBasedUserIds;
+      if (departmentUserIds && roleBasedUserIds) {
+        // Intersect: only users that match both role-based filter AND department filter
+        finalUserIds = roleBasedUserIds.filter(id => departmentUserIds.includes(id));
+      } else if (departmentUserIds) {
+        // Only department filter is applied
+        finalUserIds = departmentUserIds;
+      }
+
+      // Set query.user with final filtered user IDs
+      if (finalUserIds) {
+        if (finalUserIds.length === 0) {
+          // No matching users, return empty result
+          query.user = { $in: [] };
+        } else if (finalUserIds.length === 1) {
+          // Single user ID, use direct comparison for better performance
+          query.user = finalUserIds[0];
+        } else {
+          query.user = { $in: finalUserIds };
+        }
+      } else if (roleBasedUserIds) {
+        // Fallback to role-based filtering if no department filter was applied
+        if (roleBasedUserIds.length === 1) {
+          query.user = roleBasedUserIds[0];
+        } else {
+          query.user = { $in: roleBasedUserIds };
         }
       }
 

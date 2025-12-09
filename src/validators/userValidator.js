@@ -151,6 +151,9 @@ const updateUserSchema = Joi.object({
     'date.format': 'Onroll date must be in YYYY-MM-DD format',
     'date.base': 'Onroll date must be a valid date',
   }),
+  shiftTime: Joi.string().trim().optional().allow('', null).messages({
+    'string.base': 'Shift time must be a string',
+  }),
 })
   .min(1)
   .options({ stripUnknown: true }); // Require at least one field to update
@@ -310,6 +313,19 @@ const getUserByTlIdSchema = Joi.object({
   isTeamDetail: Joi.boolean().optional().default(false),
 });
 
+// Schema for updating shift time (TL only)
+const updateShiftTimeSchema = Joi.object({
+  shiftTime: Joi.string()
+    .trim()
+    .pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .required()
+    .messages({
+      'string.pattern.base': 'Shift time must be in HH:MM format (24-hour)',
+      'string.empty': 'Shift time is required',
+      'any.required': 'Shift time is required',
+    }),
+}).options({ stripUnknown: true });
+
 
 module.exports = {
   createUserSchema,
@@ -323,4 +339,5 @@ module.exports = {
   bulkCreateUserRowSchema,
   getUserHistorySchema,
   getUserByTlIdSchema,
+  updateShiftTimeSchema,
 };

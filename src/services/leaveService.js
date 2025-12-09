@@ -29,7 +29,7 @@ class leaveService {
    * @param {number} limit - Items per page (default: 10)
    * @returns {Promise<object>} - Paginated list of all non-deleted Leaves, sorted by date.
    */
-  async getAllLeave(team, page = 1, limit = 10) {
+  async getAllLeave(team, page = 1, limit = 10, financeTeamLeadId = null) {
     // Get all user IDs for the team
     const teamUsers = await User.find({ team }).select('_id');
     const teamUserIds = teamUsers.map(user => user._id);
@@ -61,6 +61,91 @@ class leaveService {
       }
     ];
 
+    // If Finance TL, get their team members and prioritize them
+    let teamMemberIds = [];
+    let financeLeaderObjectId = null;
+    if (financeTeamLeadId) {
+      financeLeaderObjectId = new mongoose.Types.ObjectId(financeTeamLeadId);
+
+      const teamMembers = await User.find({
+        teamLeadId: financeLeaderObjectId
+      }).select('_id');
+      teamMemberIds = teamMembers.map((u) => u._id);
+    }
+
+    // Use aggregation to add priority field and sort
+    if (financeLeaderObjectId && teamMemberIds.length > 0) {
+      const skip = (page - 1) * limit;
+      
+      const pipeline = [
+        { $match: query },
+        {
+          $addFields: {
+            priority: {
+              $switch: {
+                branches: [
+                  // 0: TL's own leave applications
+                  {
+                    case: { $eq: ['$userId', financeLeaderObjectId] },
+                    then: 0,
+                  },
+                  // 1: Team members whose status is 'tl-pending'
+                  {
+                    case: {
+                      $and: [
+                        { $in: ['$userId', teamMemberIds] },
+                        { $eq: ['$status', 'tl-pending'] },
+                      ],
+                    },
+                    then: 1,
+                  },
+                  // 2: Remaining team members
+                  {
+                    case: { $in: ['$userId', teamMemberIds] },
+                    then: 2,
+                  },
+                ],
+                // 3: Everyone else
+                default: 3,
+              },
+            }
+          }
+        },
+        { $sort: { priority: 1, createdAt: -1 } },
+        { $skip: skip },
+        { $limit: limit }
+      ];
+
+      // Get total count for pagination
+      const totalDocs = await LeaveApplication.countDocuments(query);
+
+      // Execute aggregation with population
+      let leaves = await LeaveApplication.aggregate(pipeline);
+
+      // Manually populate the fields
+      leaves = await LeaveApplication.populate(leaves, populateOptions);
+
+      const totalPages = Math.ceil(totalDocs / limit);
+      const hasNextPage = page < totalPages;
+      const hasPrevPage = page > 1;
+
+      return {
+        data: leaves,
+        pagination: {
+          totalDocs,
+          limit,
+          totalPages,
+          currentPage: page,
+          pagingCounter: skip + 1,
+          hasPrevPage,
+          hasNextPage,
+          prevPage: hasPrevPage ? page - 1 : null,
+          nextPage: hasNextPage ? page + 1 : null,
+        },
+      };
+    }
+
+    // Default pagination for non-Finance TL users
     const paginationResult = await paginate(
       LeaveApplication,
       query,
@@ -229,6 +314,37 @@ async updateLeaveStatus({ leaveId, action, editor }) {
           // B.1 Smart late-approval handling for half-day leaves
           // If the leave is half-day, handle existing attendance records appropriately
           if (leave.isHalfDay && (leave.halfDayType === 'first' || leave.halfDayType === 'second')) {
+            // Fetch user's shiftTime from user model
+            const user = await User.findById(leave.userId).select('shiftTime').lean();
+            const shiftTime = user?.shiftTime || null;
+
+            // Calculate shiftTime in minutes (similar to normalCutoff calculation)
+            let shiftTimeInMinutes = null;
+            if (shiftTime) {
+              // Parse shiftTime string (format: "HH:MM" or "H:MM")
+              const timeParts = shiftTime.split(':');
+              if (timeParts.length === 2) {
+                const hours = parseInt(timeParts[0], 10);
+                const minutes = parseInt(timeParts[1], 10);
+                if (!isNaN(hours) && !isNaN(minutes)) {
+                  shiftTimeInMinutes = hours * 60 + minutes;
+                }
+              }
+            }
+
+            // Normal cutoff time (10:15 AM) - default fallback
+            const normalCutoff = 10 * 60 + 15; // 10:15 AM in minutes
+            
+            // Use shiftTimeInMinutes if available, otherwise fallback to normalCutoff
+            const cutoffTime = shiftTimeInMinutes !== null ? shiftTimeInMinutes : normalCutoff;
+
+            // First half leave cutoff: shiftTime + 4 hours 15 minutes, or default 2:30 PM
+            const defaultFirstHalfLeaveCutoff = 14 * 60 + 30; // 2:30 PM in minutes (default)
+            const fourHoursFifteenMinutes = 4 * 60 + 15; // 4 hours 15 minutes in minutes
+            const firstHalfLeaveCutoff = shiftTimeInMinutes !== null 
+              ? shiftTimeInMinutes + fourHoursFifteenMinutes 
+              : defaultFirstHalfLeaveCutoff;
+
             // Iterate all leave dates and adjust if an attendance record already exists
             for (const date of leave.dates || []) {
               try {
@@ -272,18 +388,14 @@ async updateLeaveStatus({ leaveId, action, editor }) {
                   const checkInMoment = moment(attendance.checkInTime).tz('Asia/Kolkata');
                   const checkInMinutes = checkInMoment.hours() * 60 + checkInMoment.minutes();
 
-                  // Cutoffs
-                  const firstHalfCutoff = 14 * 60 + 30; // 2:30 PM
-                  const normalCutoff = 10 * 60 + 15; // 10:15 AM
-
                   let normalizedStatus = attendance.status;
 
                   if (leave.halfDayType === 'first') {
-                    // For first-half leave, being checked-in by 2:30 PM counts as on-time (present), else late_in
-                    normalizedStatus = checkInMinutes <= firstHalfCutoff ? 'present' : 'late_in';
+                    // For first-half leave, being checked-in by firstHalfLeaveCutoff counts as on-time (present), else late_in
+                    normalizedStatus = checkInMinutes <= firstHalfLeaveCutoff ? 'present' : 'late_in';
                   } else if (leave.halfDayType === 'second') {
-                    // For second-half leave, apply the normal morning cutoff (10:15 AM)
-                    normalizedStatus = checkInMinutes <= normalCutoff ? 'present' : 'late_in';
+                    // For second-half leave, apply the cutoff time (shiftTimeInMinutes or normalCutoff)
+                    normalizedStatus = checkInMinutes <= cutoffTime ? 'present' : 'late_in';
                   }
 
                   attendance.status = normalizedStatus;

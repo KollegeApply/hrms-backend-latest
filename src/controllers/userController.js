@@ -189,7 +189,6 @@ const updateUser = catchAsync(async (req, res) => {
   const validatedData = await userValidator?.updateUserSchema?.validateAsync(
     req?.body
   );
-  console.log(validatedData, "validatedData")
   if (Object.keys(validatedData).length === 0) {
     throw new ApiError(
       httpStatus.BAD_REQUEST,
@@ -851,6 +850,65 @@ const uploadProfilePhoto = catchAsync(async (req, res) => {
   }
 });
 
+// Update shift time (TL only - can update for their team members)
+const updateShiftTime = catchAsync(async (req, res) => {
+  // 1. Validate ID parameter
+  await userValidator?.mongoIdSchema?.validateAsync(req.params);
+  const userId = req?.params?.id;
+  
+  if (!Helper.isValidMongoId(userId)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid user ID format.');
+  }
+
+  // 2. Validate request body
+  const validatedData = await userValidator?.updateShiftTimeSchema?.validateAsync(req?.body);
+
+  // 3. Check if current user is TL or SubTL
+  const currentUser = req?.user;
+  const isTeamLead = ['teamlead', 'subteamlead'].includes(currentUser?.role);
+
+  if (!isTeamLead) {
+    throw new ApiError(
+      httpStatus.FORBIDDEN,
+      'Only Team Leads and Sub Team Leads can update shift time.'
+    );
+  }
+
+  // 4. Get the target user
+  const targetUser = await User.findById(userId);
+  if (!targetUser) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
+  }
+
+  // 5. If TL/SubTL, verify they are the team lead of this user
+  if (isTeamLead) {
+    const isTeamMember = 
+      targetUser.teamLeadId?.toString() === currentUser.id ||
+      targetUser.subTeamLeadId?.toString() === currentUser.id;
+    
+    if (!isTeamMember) {
+      throw new ApiError(
+        httpStatus.FORBIDDEN,
+        'You can only update shift time for your team members.'
+      );
+    }
+  }
+
+  // 6. Update shift time
+  targetUser.shiftTime = validatedData.shiftTime;
+  await targetUser.save();
+
+  // 7. Send response
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Shift time updated successfully.',
+    data: {
+      id: targetUser.id,
+      shiftTime: targetUser.shiftTime,
+    },
+  });
+});
+
 module.exports = {
   createUser,
   getAllUsers,
@@ -872,6 +930,7 @@ module.exports = {
   sectionApprovalByToken,
   uploadProfilePhoto,
   getAllUsersForMeeting,
+  updateShiftTime,
 };
 
 // --- Utility: catchAsync (Place in src/utility/catchAsync.js) ---

@@ -568,7 +568,7 @@ class Helper {
               ${requestType === 'Leave' ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Type:</strong> ${displayLeaveType}</li>` : ''}
               <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Date:</strong> ${leaveMessage}</li>
               <li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Reason:</strong> ${reason}</li>
-              ${employeeInfo?.leaveBalance ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Remaining Leave Balance:</strong> ${employeeInfo.leaveBalance} days</li>` : ''}
+              ${employeeInfo?.leaveBalance ? `<li style="color: #555; margin-bottom: 10px; font-size: 15px;"><strong>Remaining Leave Balance:</strong> ${employeeInfo.leaveBalance.toFixed(2)} days</li>` : ''}
             </ul>
           </div>
   
