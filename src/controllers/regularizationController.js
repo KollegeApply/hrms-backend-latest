@@ -5,7 +5,7 @@ const User = require('../models/userModel');
 const moment = require('moment-timezone');
 const { getTeamEmailConfig } = require('../utility/constants');
 const logger = require('../config/logger');
-const { uploadToAzure } = require('../utility/azureBlob');
+const { uploadToAWS } = require('../utility/awsBlob');
 
 const regularizationController = {
   // Get regularization limits for user
@@ -34,7 +34,7 @@ const regularizationController = {
           .replace(/_+/g, '_') // Replace multiple underscores with single underscore
           .replace(/^_+|_+$/g, ''); // Remove leading/trailing underscores
         
-        const relativePath = await uploadToAzure(req.file.buffer, cleanFileName, 'hrms-regularization-documents/');
+        const relativePath = await uploadToAWS(req.file.buffer, cleanFileName, 'hrms-regularization-documents/');
         regularizationData.evidence = relativePath;
       } catch (error) {
         logger.error('Error uploading file to Azure:', error);

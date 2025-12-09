@@ -6,7 +6,7 @@ const logger = require('../config/logger');
 const User = require('../models/userModel');
 const { HR_EMAIL, IT_EMAIL, getTeamEmailConfig } = require('../utility/constants');
 const Helper = require('../utility/helper');
-const { uploadToAzure } = require('../utility/azureBlob');
+const { uploadToAWS } = require('../utility/awsBlob');
 const { transformDocumentPaths } = require('../utility/common');
 
 const createTicket = catchAsync(async (req, res) => {
@@ -31,7 +31,7 @@ const createTicket = catchAsync(async (req, res) => {
   let imageUrl = null;
   if (req.file) {
     try {
-      imageUrl = await uploadToAzure(req.file.buffer, req.file.originalname, 'hrms-tickets/');
+      imageUrl = await uploadToAWS(req.file.buffer, req.file.originalname, 'hrms-tickets/');
       logger.info(`Image uploaded successfully for ticket: ${imageUrl}`);
     } catch (error) {
       logger.error('Failed to upload image:', error);
