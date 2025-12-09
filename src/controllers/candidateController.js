@@ -7,7 +7,7 @@ const UserDetails = require('../models/userDetailsModel');
 const Helper = require('../utility/helper');
 const { validateCIFToken, transformDocumentPaths, generateCIFToken } = require('../utility/common');
 const candidateModel = require('../models/candidateModel');
-const { uploadToAzure } = require('../utility/azureBlob');
+const { uploadToAWS } = require('../utility/awsBlob');
 const { HR_EMAIL, getTeamEmailConfig } = require('../utility/constants');
 const logger = require('../config/logger');
 const User = require('../models/userModel');
@@ -143,7 +143,7 @@ const finalSubmit = catchAsync(async (req, res) => {
     files.map(async (file) => {
     if (file) {
       const simpleField = file.fieldname.replace('documents.', '');
-      const relativePath = await uploadToAzure(file.buffer, file.originalname, 'hrms-cif-documents/');
+      const relativePath = await uploadToAWS(file.buffer, file.originalname, 'hrms-cif-documents/');
       return [simpleField, relativePath];
     }
     return null;
@@ -222,7 +222,7 @@ const reviewUpdateCandidate = catchAsync(async (req, res) => {
   const uploadedPaths = {};
   for (const file of files) {
     if (file) {
-      const relativePath = await uploadToAzure(file.buffer, file.originalname, 'hrms-cif-documents/');
+      const relativePath = await uploadToAWS(file.buffer, file.originalname, 'hrms-cif-documents/');
       const simpleField = file.fieldname.replace('documents.', '');
       uploadedPaths[simpleField] = relativePath;
     }

@@ -19,7 +19,7 @@
   },
   "homepage": "https://github.com/SportsduniaTech/hrms-backend#readme",
   "dependencies": {
-    "@azure/storage-blob": "^12.28.0",
+    "aws-sdk": "^2.1692.0",
     "axios": "^1.9.0",
     "axios-cache-interceptor": "^1.8.0",
     "bcrypt": "^5.1.1",

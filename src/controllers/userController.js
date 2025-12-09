@@ -11,7 +11,7 @@ const { CSV_TYPES, RANK, TEAM_SD, TEAM_KAP, getTeamEmailConfig } = require('../u
 const User = require('../models/userModel');
 const UserDetails = require('../models/userDetailsModel');
 const candidateValidator = require('../validators/candidateValidator');
-const { uploadToAzure } = require('../utility/azureBlob');
+const { uploadToAWS } = require('../utility/awsBlob');
 const { transformDocumentPaths } = require('../utility/common');
 const EmployeeHistory = require('../models/employeeHistory');
 const crypto = require('crypto');
@@ -630,7 +630,7 @@ const updateUserCifForm = async (req, res) => {
       if (file) {
         ('Uploading file:', file.originalname, 'field:', file.fieldname);
         try {
-          const relativePath = await uploadToAzure(file.buffer, file.originalname, 'hrms-cif-documents/');
+          const relativePath = await uploadToAWS(file.buffer, file.originalname, 'hrms-cif-documents/');
           const simpleField = file.fieldname.replace('documents.', '');
           uploadedPaths[simpleField] = relativePath;
           ('File uploaded successfully:', relativePath);
@@ -817,7 +817,7 @@ const uploadProfilePhoto = catchAsync(async (req, res) => {
 
     // Upload to Azure
     ('Uploading to Azure...');
-    const relativePath = await uploadToAzure(req.file.buffer, req.file.originalname, 'hrms-profile-photos/');
+    const relativePath = await uploadToAWS(req.file.buffer, req.file.originalname, 'hrms-profile-photos/');
     ('File uploaded to:', relativePath);
 
     ('Relative path:', relativePath);

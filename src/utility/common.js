@@ -243,7 +243,7 @@ function cleanEmptyFields(obj) {
 }
 
 const transformDocumentPaths = (documents) => {
-  const baseUrl = process.env.IMAGE_BASE_URL;
+  const baseUrl = process.env.AWS_S3_BASE_URL.replace(/\/$/, '');
 
   if (!documents || typeof documents !== 'object' || !baseUrl) {
     return documents || {};
