@@ -17,9 +17,7 @@ exports.handleBiometricWebhook = async (req, res) => {
     const result = await biometricWebhookService.processBiometricWebhook(req.body);
 
     // Return the required response format
-    return res.status(200).json({
-      Success: true,
-    });
+    return res.status(200).send("Success");
   } catch (error) {
     logger.error('Biometric webhook error:', {
       error: error.message,
@@ -30,9 +28,7 @@ exports.handleBiometricWebhook = async (req, res) => {
     // Even on error, return Success: true to prevent device retries
     // (or return false if you want device to retry)
     // Based on requirements, returning true to acknowledge receipt
-    return res.status(200).json({
-      Success: true,
-    });
+    return res.status(200).send("Success");
   }
 };
 
