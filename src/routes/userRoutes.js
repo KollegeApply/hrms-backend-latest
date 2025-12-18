@@ -137,10 +137,11 @@ router.put(
   '/:id/shift-time',
   authenticateUser,
   (req, res, next) => {
-    // Allow TL and SubTL
+    // Allow TL, SubTL and HR
     const allowedRoles = [
       USER_ROLES?.TEAMLEAD,
       USER_ROLES?.SUBTEAMLEAD,
+      USER_ROLES?.HR,
     ];
     if (allowedRoles.includes(req?.user?.role)) {
       return next();
