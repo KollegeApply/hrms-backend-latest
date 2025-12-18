@@ -863,16 +863,10 @@ const updateShiftTime = catchAsync(async (req, res) => {
   // 2. Validate request body
   const validatedData = await userValidator?.updateShiftTimeSchema?.validateAsync(req?.body);
 
-  // 3. Check if current user is TL or SubTL
+  // 3. Check if current user is TL, SubTL or HR
   const currentUser = req?.user;
   const isTeamLead = ['teamlead', 'subteamlead'].includes(currentUser?.role);
-
-  if (!isTeamLead) {
-    throw new ApiError(
-      httpStatus.FORBIDDEN,
-      'Only Team Leads and Sub Team Leads can update shift time.'
-    );
-  }
+  const isHr = currentUser?.role === 'hr';
 
   // 4. Get the target user
   const targetUser = await User.findById(userId);
@@ -880,12 +874,14 @@ const updateShiftTime = catchAsync(async (req, res) => {
     throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
   }
 
-  // 5. If TL/SubTL, verify they are the team lead of this user
-  if (isTeamLead) {
-    const isTeamMember = 
+  // 4. Authorization rules:
+  // - TL/SubTL: can update only for their team members
+  // - HR: can update for anyone
+  if (isTeamLead && !isHr) {
+    const isTeamMember =
       targetUser.teamLeadId?.toString() === currentUser.id ||
       targetUser.subTeamLeadId?.toString() === currentUser.id;
-    
+
     if (!isTeamMember) {
       throw new ApiError(
         httpStatus.FORBIDDEN,
@@ -894,17 +890,24 @@ const updateShiftTime = catchAsync(async (req, res) => {
     }
   }
 
-  // 6. Update shift time
-  targetUser.shiftTime = validatedData.shiftTime;
+  // 6. Update fields
+  if (Object.prototype.hasOwnProperty.call(validatedData, 'shiftTime')) {
+    targetUser.shiftTime = validatedData.shiftTime;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(validatedData, 'isEmergencyRegularizationAllowed')) {
+    targetUser.isEmergencyRegularizationAllowed = validatedData.isEmergencyRegularizationAllowed;
+  }
   await targetUser.save();
 
   // 7. Send response
   res.status(httpStatus.OK).json({
     status: true,
-    message: 'Shift time updated successfully.',
+    message: 'User settings updated successfully.',
     data: {
       id: targetUser.id,
       shiftTime: targetUser.shiftTime,
+      isEmergencyRegularizationAllowed: targetUser.isEmergencyRegularizationAllowed,
     },
   });
 });

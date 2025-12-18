@@ -2935,7 +2935,7 @@ class Helper {
     return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
       <div style="text-align: center; margin-bottom: 20px;">
-        <h1 style="color: #333;">Team Feedback Required</h1>
+        <h1 style="color: #333;">Feedback Required</h1>
       </div>
       <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
         <p style="color: #555; font-size: 16px; line-height: 1.6;">

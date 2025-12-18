@@ -75,8 +75,29 @@ class AssetsService {
 async fetchAssignedAssets(page, limit, search, team) {
     const query = {};
 
-     if (search) {
-      query.$text = { $search: search };
+    if (search) {
+      const searchTerm = search.trim();
+
+      // Search by employee name (firstName, lastName) and employeeId only
+      const searchUsers = await User.find({
+        $or: [
+          { firstName: { $regex: searchTerm, $options: 'i' } },
+          { lastName: { $regex: searchTerm, $options: 'i' } },
+          { employeeId: { $regex: searchTerm, $options: 'i' } }
+        ]
+      }).select('_id');
+
+      const userIds = searchUsers.map(user => user._id);
+
+      if (userIds.length > 0) {
+        query.$or = [
+          { assignee: { $in: userIds } },
+          { assignedBy: { $in: userIds } }
+        ];
+      } else {
+        // If no users found, return empty result
+        query._id = { $in: [] };
+      }
     }
 
     if (team) {

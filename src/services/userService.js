@@ -192,31 +192,47 @@ class UserService {
     }
 
     if (isAttendanceLog) {
-      // Only users who are onroll or probation or the current user
-      const statusFilter = {
-        status: { $in: ['onroll', 'probation'] },
-      };
+      // Attendance log special handling:
+      // - For normal employees/interns/IT → ONLY their own record
+      // - For TL / SubTL / HR / Admin → team members (onroll/probation) + themselves
+      const employeeLikeRoles = ['employee', 'intern', 'IT'];
 
-      const attendanceConditions = [];
+      if (employeeLikeRoles.includes(currentUser?.role)) {
+        // Self-only view for employees
+        andConditions.push({ _id: currentUser.id });
 
-      if (teamFilter.length > 0) {
-        attendanceConditions.push({ ...statusFilter, ...teamFilter[0] });
+        if (searchFilters.length > 0) {
+          andConditions.push({
+            $or: searchFilters,
+          });
+        }
       } else {
-        attendanceConditions.push(statusFilter);
-      }
+        // Manager / HR style view
+        const statusFilter = {
+          status: { $in: ['onroll', 'probation'] },
+        };
 
-      // Always include current user
-      attendanceConditions.push({ _id: currentUser.id });
+        const attendanceConditions = [];
 
-      if (searchFilters.length > 0) {
+        if (teamFilter.length > 0) {
+          attendanceConditions.push({ ...statusFilter, ...teamFilter[0] });
+        } else {
+          attendanceConditions.push(statusFilter);
+        }
+
+        // Always include current user as well
+        attendanceConditions.push({ _id: currentUser.id });
+
+        if (searchFilters.length > 0) {
+          andConditions.push({
+            $or: searchFilters,
+          });
+        }
+
         andConditions.push({
-          $or: searchFilters,
+          $or: attendanceConditions,
         });
       }
-
-      andConditions.push({
-        $or: attendanceConditions,
-      });
     } else {
       // Normal flow (non-attendance)
       if (teamFilter.length > 0) {

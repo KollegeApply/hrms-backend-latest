@@ -98,6 +98,7 @@ const createUserSchema = Joi.object({
     'string.empty': 'Work type is required',
     'any.required': 'Work type is required',
   }),
+  isEmergencyRegularizationAllowed: Joi.boolean().optional().default(false),
   candidateId: Joi.string().trim().allow('', null).optional(),
   dateOfBirth: Joi.date().iso().optional().allow(null).messages({
     'date.format': 'Date of Birth must be in YYYY-MM-DD format',
@@ -143,6 +144,7 @@ const updateUserSchema = Joi.object({
   workType: Joi.string().trim().optional().allow('', null).messages({
     'string.empty': 'Work type cannot be empty',
   }),
+  isEmergencyRegularizationAllowed: Joi.boolean().optional(),
   dateOfBirth: Joi.date().iso().optional().allow(null).messages({
     'date.format': 'Date of Birth must be in YYYY-MM-DD format',
     'date.base': 'Date of Birth must be a valid date',
@@ -313,18 +315,24 @@ const getUserByTlIdSchema = Joi.object({
   isTeamDetail: Joi.boolean().optional().default(false),
 });
 
-// Schema for updating shift time (TL only)
 const updateShiftTimeSchema = Joi.object({
-  shiftTime: Joi.string()
-    .trim()
-    .pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
-    .required()
-    .messages({
-      'string.pattern.base': 'Shift time must be in HH:MM format (24-hour)',
-      'string.empty': 'Shift time is required',
-      'any.required': 'Shift time is required',
-    }),
-}).options({ stripUnknown: true });
+  shiftTime: Joi.alternatives()
+    .try(
+      Joi.string()
+        .trim()
+        .pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/)
+        .messages({
+          'string.pattern.base': 'Shift time must be in HH:MM format (24-hour)',
+          'string.empty': 'Shift time is required',
+        }),
+      Joi.valid(null, '')
+    )
+    .optional(),
+  isEmergencyRegularizationAllowed: Joi.boolean().optional(),
+})
+  // At least one of the fields must be provided
+  .or('shiftTime', 'isEmergencyRegularizationAllowed')
+  .options({ stripUnknown: true });
 
 
 module.exports = {
