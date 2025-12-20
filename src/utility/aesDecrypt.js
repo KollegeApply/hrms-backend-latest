@@ -34,7 +34,15 @@ function decryptAES256CBC(encryptedData, key) {
 
     return decrypted.toString('utf8');
   } catch (error) {
-    logger.error('AES Decryption Error:', error.message);
+    logger.error(
+      {
+        err: error,
+        errorMessage: error.message,
+        encryptedDataLength: encryptedData ? encryptedData.length : 0,
+        keyLength: key ? key.length : 0,
+      },
+      'AES Decryption Error'
+    );
     throw new Error(`Decryption failed: ${error.message}`);
   }
 }
