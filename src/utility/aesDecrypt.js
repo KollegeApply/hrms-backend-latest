@@ -18,6 +18,17 @@ function decryptAES256CBC(encryptedData, key) {
       symmetricKey = key.substring(0, 32);
     }
 
+    // Basic sanity checks & debug info (without logging full secrets)
+    const encryptedLength = encryptedData ? encryptedData.length : 0;
+    const looksLikeBase64 = /^[A-Za-z0-9+/=]+$/.test(encryptedData || '');
+
+    logger.debug &&
+      logger.debug('Starting AES decryption debug info', {
+        encryptedDataLength: encryptedLength,
+        looksLikeBase64,
+        keyLength: key ? key.length : 0,
+      });
+
     // Decode base64 encrypted data
     const encryptedBuffer = Buffer.from(encryptedData, 'base64');
 
@@ -32,7 +43,14 @@ function decryptAES256CBC(encryptedData, key) {
     let decrypted = decipher.update(ciphertext);
     decrypted = Buffer.concat([decrypted, decipher.final()]);
 
-    return decrypted.toString('utf8');
+    const decryptedString = decrypted.toString('utf8');
+
+    logger.debug &&
+      logger.debug('AES decryption successful (preview)', {
+        decryptedPreview: decryptedString.substring(0, 100),
+      });
+
+    return decryptedString;
   } catch (error) {
     logger.error(
       {

@@ -40,11 +40,14 @@ async function processBiometricWebhook(payload) {
       payloadKeys: processedPayload && !Array.isArray(processedPayload) ? Object.keys(processedPayload) : 'N/A (array)',
       hasDataField: processedPayload && !Array.isArray(processedPayload) && processedPayload.data ? true : false,
       decryptionKeyExists: !!DECRYPTION_KEY,
+      decryptionKeyLength: DECRYPTION_KEY ? DECRYPTION_KEY.length : 0,
+      // Only log a safe preview of the key for debugging (do NOT log full key)
+      decryptionKeyPreview: DECRYPTION_KEY ? `${DECRYPTION_KEY.slice(0, 4)}****` : null,
     });
 
     // Handle array of records
     if (Array.isArray(processedPayload)) {
-      logger.info(`Processing array of ${payload.length} biometric records`);
+      logger.info(`Processing array of ${processedPayload.length} biometric records`);
       const results = [];
       let successCount = 0;
       let errorCount = 0;
@@ -118,6 +121,7 @@ async function processSingleBiometricRecord(payload) {
     if (isEncrypted(payload)) {
       logger.info('Received encrypted biometric data', {
         dataLength: payload.data ? payload.data.length : 0,
+        sampleDataStart: payload.data ? payload.data.substring(0, 20) : null,
       });
       
       if (!DECRYPTION_KEY) {
@@ -126,10 +130,29 @@ async function processSingleBiometricRecord(payload) {
       
       // Decrypt the data
       const decryptedString = decryptAES256CBC(payload.data, DECRYPTION_KEY);
-      logger.debug('Decryption successful, parsing JSON');
-      biometricData = JSON.parse(decryptedString);
+      logger.debug('Decryption successful, raw decrypted string preview', {
+        decryptedPreview: decryptedString.substring(0, 200),
+      });
+
+      // Parse JSON with explicit error logging
+      try {
+        biometricData = JSON.parse(decryptedString);
+      } catch (parseError) {
+        logger.error(
+          {
+            err: parseError,
+            errorMessage: parseError.message,
+            decryptedPreview: decryptedString.substring(0, 500),
+          },
+          'Failed to parse decrypted biometric JSON'
+        );
+        throw new Error(`Decrypted JSON parse failed: ${parseError.message}`);
+      }
       
-      logger.debug('Decrypted biometric data:', { employeeCode: biometricData.EmployeeCode });
+      logger.debug('Decrypted biometric data object keys', {
+        biometricDataKeys: biometricData ? Object.keys(biometricData) : [],
+        employeeCode: biometricData.EmployeeCode,
+      });
     } else {
       logger.info('Received plain biometric data', {
         employeeCode: payload?.EmployeeCode,
