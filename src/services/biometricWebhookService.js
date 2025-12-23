@@ -117,17 +117,21 @@ async function processSingleBiometricRecord(payload) {
   try {
     let biometricData;
 
-    // Check if data is encrypted
-    if (isEncrypted(payload)) {
+    // Toggle to enable/disable decryption logic.
+    // For now, encryption is disabled so that we can test plain JSON payloads from ESSL.
+    const ENCRYPTION_ENABLED = false;
+
+    // Check if data is encrypted (only when encryption handling is enabled)
+    if (ENCRYPTION_ENABLED && isEncrypted(payload)) {
       logger.info('Received encrypted biometric data', {
         dataLength: payload.data ? payload.data.length : 0,
         sampleDataStart: payload.data ? payload.data.substring(0, 20) : null,
       });
-      
+
       if (!DECRYPTION_KEY) {
         throw new Error('BIOMETRIC_DECRYPTION_KEY is not set in environment variables');
       }
-      
+
       // Decrypt the data
       const decryptedString = decryptAES256CBC(payload.data, DECRYPTION_KEY);
       logger.debug('Decryption successful, raw decrypted string preview', {
@@ -148,14 +152,17 @@ async function processSingleBiometricRecord(payload) {
         );
         throw new Error(`Decrypted JSON parse failed: ${parseError.message}`);
       }
-      
+
       logger.debug('Decrypted biometric data object keys', {
         biometricDataKeys: biometricData ? Object.keys(biometricData) : [],
         employeeCode: biometricData.EmployeeCode,
       });
     } else {
-      logger.info('Received plain biometric data', {
+      // TEMPORARY: Treat all payloads as plain biometric JSON (no decryption)
+      logger.info('Received plain biometric data (encryption handling disabled)', {
         employeeCode: payload?.EmployeeCode,
+        payloadKeys: payload ? Object.keys(payload) : [],
+        hasDataField: !!payload?.data,
       });
       biometricData = payload;
     }
