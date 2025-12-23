@@ -263,8 +263,11 @@ async function processSingleBiometricRecord(payload) {
  * @returns {string|null} - Error message or null if valid
  */
 function validateBiometricData(data) {
+  // Core fields required for a valid biometric log.
+  // Note: EmployeeCode is intentionally NOT in this list anymore,
+  // because some device logs may not include it. In that case we
+  // still want to store the raw log and just keep user association null.
   const requiredFields = [
-    'EmployeeCode',
     'DownloadDate',
     'LogDate',
     'DeviceName',
@@ -278,6 +281,17 @@ function validateBiometricData(data) {
     if (!data[field]) {
       return `Missing required field: ${field}`;
     }
+  }
+
+  // EmployeeCode is optional: log a warning if it's missing, but don't fail validation.
+  if (!data.EmployeeCode) {
+    logger.warn &&
+      logger.warn(
+        {
+          biometricDataKeys: Object.keys(data || {}),
+        },
+        'Biometric data has no EmployeeCode; log will be stored without user mapping'
+      );
   }
 
   // Validate Direction - Commented out temporarily
