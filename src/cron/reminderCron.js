@@ -245,13 +245,13 @@ async function processBulkEmails(emailQueue, emailType) {
  */
 async function sendFeedbackReminders() {
   try {
-    const teamLeads = await User.find({
-      role: { $in: ['teamlead', 'subteamlead'] },
+    const userFeedback = await User.find({
+      // role: { $in: ['teamlead', 'subteamlead'] },
       status: { $in: ['probation','onroll'] },
       isDeleted: false
     });
 
-    if (teamLeads.length === 0) {
+    if (userFeedback.length === 0) {
       logger.info('No team leads found for feedback reminders.');
       return;
     }
@@ -260,7 +260,7 @@ async function sendFeedbackReminders() {
 
     // Prepare email queue
     const emailQueue = [];
-    teamLeads.forEach(tl => {
+    userFeedback.forEach(tl => {
       if (!tl.team) {
         logger.warn(`Skipping team lead ${tl.email} - missing team information`);
         return;

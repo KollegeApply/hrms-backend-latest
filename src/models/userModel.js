@@ -148,9 +148,14 @@ const userSchema = new Schema(
       ref: 'UserDetails',
       required: false,
     },
-    team:{
+    team: {
       type: String,
-      required: true
+      required: true,
+    },
+    // Flag to control whether user is allowed for emergency regularization
+    isEmergencyRegularizationAllowed: {
+      type: Boolean,
+      default: false,
     },
     shiftTime: {
       type: String,

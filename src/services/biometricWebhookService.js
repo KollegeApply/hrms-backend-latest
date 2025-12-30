@@ -8,41 +8,193 @@ const DECRYPTION_KEY =
   process.env.BIOMETRIC_DECRYPTION_KEY;
 
 /**
- * Processes biometric webhook data (encrypted or plain)
- * @param {object} payload - Request payload
+ * Processes biometric webhook data (encrypted or plain, single or array)
+ * @param {object|array} payload - Request payload (can be single object or array)
  * @returns {object} - Result object with success status
  */
 async function processBiometricWebhook(payload) {
   try {
+    // Handle string payload (should be parsed by express.json, but just in case)
+    let processedPayload = payload;
+    if (typeof payload === 'string') {
+      logger.info('Payload is string, attempting to parse JSON');
+      try {
+        processedPayload = JSON.parse(payload);
+      } catch (parseError) {
+        logger.error(
+          {
+            err: parseError,
+            errorMessage: parseError.message,
+            payloadString: payload.substring(0, 200), // First 200 chars
+          },
+          'Failed to parse string payload as JSON'
+        );
+        throw new Error(`Invalid JSON payload: ${parseError.message}`);
+      }
+    }
+
+    logger.info('Processing biometric webhook', {
+      payloadType: typeof processedPayload,
+      isArray: Array.isArray(processedPayload),
+      payloadLength: Array.isArray(processedPayload) ? processedPayload.length : (processedPayload ? Object.keys(processedPayload).length : 0),
+      payloadKeys: processedPayload && !Array.isArray(processedPayload) ? Object.keys(processedPayload) : 'N/A (array)',
+      hasDataField: processedPayload && !Array.isArray(processedPayload) && processedPayload.data ? true : false,
+      decryptionKeyExists: !!DECRYPTION_KEY,
+      decryptionKeyLength: DECRYPTION_KEY ? DECRYPTION_KEY.length : 0,
+      // Only log a safe preview of the key for debugging (do NOT log full key)
+      decryptionKeyPreview: DECRYPTION_KEY ? `${DECRYPTION_KEY.slice(0, 4)}****` : null,
+    });
+
+    // Handle array of records
+    if (Array.isArray(processedPayload)) {
+      logger.info(`Processing array of ${processedPayload.length} biometric records`);
+      const results = [];
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (let i = 0; i < processedPayload.length; i++) {
+        try {
+          logger.debug(`Processing record ${i + 1} of ${processedPayload.length}`);
+          const result = await processSingleBiometricRecord(processedPayload[i]);
+          results.push(result);
+          successCount++;
+        } catch (error) {
+          errorCount++;
+          logger.error(
+            {
+              err: error,
+              errorMessage: error.message,
+              recordIndex: i,
+              record: processedPayload[i],
+            },
+            `Error processing record ${i + 1} of ${processedPayload.length}`
+          );
+          // Continue processing other records even if one fails
+        }
+      }
+
+      logger.info('Finished processing array', {
+        total: processedPayload.length,
+        success: successCount,
+        errors: errorCount,
+      });
+
+      return {
+        success: true,
+        message: `Processed ${successCount} of ${processedPayload.length} records`,
+        data: {
+          total: processedPayload.length,
+          success: successCount,
+          errors: errorCount,
+        },
+      };
+    }
+
+    // Handle single record
+    return await processSingleBiometricRecord(processedPayload);
+  } catch (error) {
+    logger.error(
+      {
+        err: error,
+        errorMessage: error.message,
+        errorStack: error.stack,
+        payload: payload,
+        payloadType: typeof payload,
+        isArray: Array.isArray(payload),
+      },
+      'Error processing biometric webhook'
+    );
+    throw error;
+  }
+}
+
+/**
+ * Processes a single biometric record (encrypted or plain)
+ * @param {object} payload - Single biometric record
+ * @returns {object} - Result object with success status
+ */
+async function processSingleBiometricRecord(payload) {
+  try {
     let biometricData;
 
-    // Check if data is encrypted
-    if (isEncrypted(payload)) {
-      logger.info('Received encrypted biometric data');
-      
+    // Toggle to enable/disable decryption logic.
+    // For now, encryption is disabled so that we can test plain JSON payloads from ESSL.
+    const ENCRYPTION_ENABLED = false;
+
+    // Check if data is encrypted (only when encryption handling is enabled)
+    if (ENCRYPTION_ENABLED && isEncrypted(payload)) {
+      logger.info('Received encrypted biometric data', {
+        dataLength: payload.data ? payload.data.length : 0,
+        sampleDataStart: payload.data ? payload.data.substring(0, 20) : null,
+      });
+
+      if (!DECRYPTION_KEY) {
+        throw new Error('BIOMETRIC_DECRYPTION_KEY is not set in environment variables');
+      }
+
       // Decrypt the data
       const decryptedString = decryptAES256CBC(payload.data, DECRYPTION_KEY);
-      biometricData = JSON.parse(decryptedString);
-      
-      logger.debug('Decrypted biometric data:', { employeeCode: biometricData.EmployeeCode });
+      logger.debug('Decryption successful, raw decrypted string preview', {
+        decryptedPreview: decryptedString.substring(0, 200),
+      });
+
+      // Parse JSON with explicit error logging
+      try {
+        biometricData = JSON.parse(decryptedString);
+      } catch (parseError) {
+        logger.error(
+          {
+            err: parseError,
+            errorMessage: parseError.message,
+            decryptedPreview: decryptedString.substring(0, 500),
+          },
+          'Failed to parse decrypted biometric JSON'
+        );
+        throw new Error(`Decrypted JSON parse failed: ${parseError.message}`);
+      }
+
+      logger.debug('Decrypted biometric data object keys', {
+        biometricDataKeys: biometricData ? Object.keys(biometricData) : [],
+        employeeCode: biometricData.EmployeeCode,
+      });
     } else {
-      logger.info('Received plain biometric data');
+      // TEMPORARY: Treat all payloads as plain biometric JSON (no decryption)
+      logger.info('Received plain biometric data (encryption handling disabled)', {
+        employeeCode: payload?.EmployeeCode,
+        payloadKeys: payload ? Object.keys(payload) : [],
+        hasDataField: !!payload?.data,
+      });
       biometricData = payload;
     }
 
     // Validate required fields
     const validationError = validateBiometricData(biometricData);
     if (validationError) {
-      logger.error('Biometric data validation failed:', validationError);
+      logger.error('Biometric data validation failed', {
+        validationError,
+        biometricDataKeys: Object.keys(biometricData || {}),
+        biometricData,
+      });
       throw new Error(validationError);
     }
 
     // Parse dates
+    logger.debug('Parsing dates', {
+      logDate: biometricData.LogDate,
+      downloadDate: biometricData.DownloadDate,
+    });
+    
     const logDate = parseDate(biometricData.LogDate);
     const downloadDate = parseDate(biometricData.DownloadDate);
 
     if (!logDate || !downloadDate) {
-      throw new Error('Invalid date format in biometric data');
+      logger.error('Invalid date format in biometric data', {
+        logDate: biometricData.LogDate,
+        downloadDate: biometricData.DownloadDate,
+        parsedLogDate: logDate,
+        parsedDownloadDate: downloadDate,
+      });
+      throw new Error(`Invalid date format in biometric data. LogDate: ${biometricData.LogDate}, DownloadDate: ${biometricData.DownloadDate}`);
     }
 
     // Find user by employeeCode (matching employeeId in User model)
@@ -75,6 +227,10 @@ async function processBiometricWebhook(payload) {
     });
 
     // Save to database
+    logger.debug('Attempting to save biometric log to database', {
+      employeeCode: biometricData.EmployeeCode,
+    });
+    
     await biometricLog.save();
 
     logger.info('Biometric log saved successfully', {
@@ -82,6 +238,7 @@ async function processBiometricWebhook(payload) {
       direction: biometricData.Direction,
       logDate: logDate,
       userId: user ? user._id : null,
+      logId: biometricLog._id,
     });
 
     return {
@@ -94,10 +251,15 @@ async function processBiometricWebhook(payload) {
       },
     };
   } catch (error) {
-    logger.error('Error processing biometric webhook:', {
-      error: error.message,
-      stack: error.stack,
-    });
+    logger.error(
+      {
+        err: error,
+        errorMessage: error.message,
+        errorStack: error.stack,
+        payload: payload,
+      },
+      'Error processing single biometric record'
+    );
     throw error;
   }
 }
@@ -108,8 +270,11 @@ async function processBiometricWebhook(payload) {
  * @returns {string|null} - Error message or null if valid
  */
 function validateBiometricData(data) {
+  // Core fields required for a valid biometric log.
+  // Note: EmployeeCode is intentionally NOT in this list anymore,
+  // because some device logs may not include it. In that case we
+  // still want to store the raw log and just keep user association null.
   const requiredFields = [
-    'EmployeeCode',
     'DownloadDate',
     'LogDate',
     'DeviceName',
@@ -123,6 +288,17 @@ function validateBiometricData(data) {
     if (!data[field]) {
       return `Missing required field: ${field}`;
     }
+  }
+
+  // EmployeeCode is optional: log a warning if it's missing, but don't fail validation.
+  if (!data.EmployeeCode) {
+    logger.warn &&
+      logger.warn(
+        {
+          biometricDataKeys: Object.keys(data || {}),
+        },
+        'Biometric data has no EmployeeCode; log will be stored without user mapping'
+      );
   }
 
   // Validate Direction - Commented out temporarily
@@ -155,7 +331,14 @@ function parseDate(dateString) {
     }
     return date;
   } catch (error) {
-    logger.error('Date parsing error:', error.message);
+    logger.error(
+      {
+        err: error,
+        errorMessage: error.message,
+        dateString: dateString,
+      },
+      'Date parsing error'
+    );
     return null;
   }
 }

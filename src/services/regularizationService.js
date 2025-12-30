@@ -3,6 +3,17 @@ const User = require('../models/userModel');
 const moment = require('moment-timezone');
 const { transformDocumentPaths } = require('../utility/common');
 
+// Helper to get a consistent public base URL for images (Azure/S3)
+// Prefer IMAGE_BASE_URL, but gracefully fall back to AWS_S3_BASE_URL
+const getImageBaseUrl = () => {
+  const raw =
+    process.env.IMAGE_BASE_URL ||
+    process.env.AWS_S3_BASE_URL ||
+    '';
+
+  return raw ? raw.replace(/\/$/, '') : '';
+};
+
 const regularizationService = {
   // Get regularization limits and usage for a user
   async getRegularizationLimits(userId) {
@@ -118,7 +129,7 @@ const regularizationService = {
 
       // Transform evidence URL to include base URL for the response
       if (attendance.regularization && attendance.regularization.evidence && attendance.regularization.evidence.url) {
-        const baseUrl = process.env.IMAGE_BASE_URL;
+        const baseUrl = getImageBaseUrl();
         if (baseUrl && !attendance.regularization.evidence.url.startsWith('http')) {
           attendance.regularization.evidence.url = `${baseUrl}/${attendance.regularization.evidence.url}`;
         }
@@ -260,7 +271,7 @@ const regularizationService = {
       // Transform evidence URLs to include base URL
       const transformedAttendances = attendances.map(attendance => {
         if (attendance.regularization && attendance.regularization.evidence && attendance.regularization.evidence.url) {
-          const baseUrl = process.env.IMAGE_BASE_URL;
+          const baseUrl = getImageBaseUrl();
           if (baseUrl && !attendance.regularization.evidence.url.startsWith('http')) {
             attendance.regularization.evidence.url = `${baseUrl}/${attendance.regularization.evidence.url}`;
           }
@@ -303,7 +314,7 @@ const regularizationService = {
 
       // Transform evidence URL to include base URL
       if (attendance.regularization && attendance.regularization.evidence && attendance.regularization.evidence.url) {
-        const baseUrl = process.env.IMAGE_BASE_URL;
+        const baseUrl = getImageBaseUrl();
         if (baseUrl && !attendance.regularization.evidence.url.startsWith('http')) {
           attendance.regularization.evidence.url = `${baseUrl}/${attendance.regularization.evidence.url}`;
         }
@@ -499,7 +510,7 @@ const regularizationService = {
       // Transform evidence URLs to include base URL
       const transformedAttendances = attendances.map(attendance => {
         if (attendance.regularization && attendance.regularization.evidence && attendance.regularization.evidence.url) {
-          const baseUrl = process.env.IMAGE_BASE_URL;
+          const baseUrl = getImageBaseUrl();
           if (baseUrl && !attendance.regularization.evidence.url.startsWith('http')) {
             attendance.regularization.evidence.url = `${baseUrl}/${attendance.regularization.evidence.url}`;
           }

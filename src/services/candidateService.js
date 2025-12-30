@@ -42,7 +42,12 @@ class CandidateService {
     const query = { isDeleted: false };
 
     if (status) {
-      query.status = status;
+      // Handle both 'resent' and 'resended' for backward compatibility with old records
+      if (status === 'resent') {
+        query.status = { $in: ['resent', 'resended'] };
+      } else {
+        query.status = status;
+      }
     }
 
     if (search) {
@@ -104,8 +109,16 @@ class CandidateService {
       Candidate.countDocuments(query),
     ]);
 
+    // Transform 'resended' status to 'resent' in response
+    const transformedCandidates = candidates.map(candidate => {
+      if (candidate.status === 'resended') {
+        candidate.status = 'resent';
+      }
+      return candidate;
+    });
+
     return {
-      candidates,
+      candidates: transformedCandidates,
       total,
       page: pageInt,
       pageSize: limitInt,
@@ -159,7 +172,7 @@ class CandidateService {
         candidate.formStatus = 'draft';
       }
     }
-    if (candidate.status === 'resended' || candidate.status === 'redraft') {
+    if (candidate.status === 'resent' || candidate.status === 'redraft') {
       candidate.status = 'redraft';
     }
 
@@ -284,7 +297,7 @@ async finalSubmit(email, data) {
       await candidate.userDetails.save();
     }
 
-    candidate.status = 'resended';
+    candidate.status = 'resent';
 
     const token = jwt.sign(
       { email: candidate.personalEmail, exp: Math.floor(Date.now() / 1000) + (3 * 24 * 60 * 60) },

@@ -26,27 +26,51 @@ const runYearEndLeaveReset = async () => {
   logger.info('📅 Starting year-end leave reset job...');
 
   try {
-    const users = await User.find({
-      isDeleted: false,
-      status: 'onroll',
-      leavePolicyId: { $exists: true },
-    }).select('_id leavePolicyId');
+    let users;
+    try {
+      users = await User.find({
+        isDeleted: false,
+        status: { $in: ['onroll', 'probation'] },
+        leavePolicyId: { $exists: true },
+      }).select('_id leavePolicyId');
+    } catch (err) {
+      logger.error('❌ Error fetching users:', { error: err.message, stack: err.stack });
+      throw err;
+    }
     const userIds = users.map((u) => u._id.toString());
 
     const leavePolicyIds = users.map((u) => u.leavePolicyId).filter(Boolean);
-    const mappings = await LeavePolicyMapping.find({
-      leavePolicyId: { $in: leavePolicyIds },
-    });
+    let mappings;
+    try {
+      mappings = await LeavePolicyMapping.find({
+        leavePolicyId: { $in: leavePolicyIds },
+      });
+    } catch (err) {
+      logger.error('❌ Error fetching leave policy mappings:', { error: err.message, stack: err.stack });
+      throw err;
+    }
 
     const leaveTypeIds = mappings.map((m) => m.leaveTypeId.toString());
-    const leaveTypes = await LeaveType.find({ _id: { $in: leaveTypeIds } });
+    let leaveTypes;
+    try {
+      leaveTypes = await LeaveType.find({ _id: { $in: leaveTypeIds } });
+    } catch (err) {
+      logger.error('❌ Error fetching leave types:', { error: err.message, stack: err.stack });
+      throw err;
+    }
 
     const leaveTypeMap = new Map();
     leaveTypes.forEach((lt) => leaveTypeMap.set(lt._id.toString(), lt));
 
-    const balances = await EmployeeLeaveBalance.find({
-      userId: { $in: userIds },
-    });
+    let balances;
+    try {
+      balances = await EmployeeLeaveBalance.find({
+        userId: { $in: userIds },
+      });
+    } catch (err) {
+      logger.error('❌ Error fetching employee leave balances:', { error: err.message, stack: err.stack });
+      throw err;
+    }
 
     const balancesMap = new Map();
     balances.forEach((b) => {
@@ -92,7 +116,8 @@ const runYearEndLeaveReset = async () => {
         let accrued = 0;
 
         if (accrualType === 'monthly') {
-          if (maxCarryForward > 0 && balance.total > balance.used) {
+          // CASUAL leaves with monthly accrual should not be carry forwarded
+          if (leaveType.code !== 'CASUAL' && maxCarryForward > 0 && balance.total > balance.used) {
             carryForwarded = Math.min(
               balance.total - balance.used,
               maxCarryForward
@@ -117,7 +142,18 @@ const runYearEndLeaveReset = async () => {
         balance.carryForwarded = carryForwarded;
         balance.total = accrued + carryForwarded;
 
-        await balance.save();
+        try {
+          await balance.save();
+        } catch (err) {
+          logger.error('❌ Error saving balance:', {
+            error: err.message,
+            stack: err.stack,
+            userId: user._id,
+            leaveTypeId: leaveTypeId,
+            leaveTypeCode: leaveType.code
+          });
+          throw err;
+        }
       }
     }
 
@@ -133,7 +169,7 @@ if (require.main === module) {
       process.exit(0);
     })
     .catch((err) => {
-      console.error('Error running year-end leave reset:', err);
+      logger.error('❌ Fatal error running year-end leave reset:', { error: err.message, stack: err.stack });
       process.exit(1);
     });
 }
