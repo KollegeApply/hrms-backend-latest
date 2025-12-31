@@ -144,11 +144,14 @@ async function runAnniversaryScheduler(isTestMode = false) {
     try {
       logger.info('🏆 Processing work anniversary emails...');
       
+      // IST offset: 5 hours 30 minutes = 19800000 milliseconds
+      const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+      
       const workAnniversaryUsers = await User.find({
         $expr: {
           $and: [
-            { $eq: [{ $month: "$hireDate" }, todayMonth] },
-            { $eq: [{ $dayOfMonth: "$hireDate" }, todayDay] },
+            { $eq: [{ $month: { $add: ["$hireDate", IST_OFFSET_MS] } }, todayMonth] },
+            { $eq: [{ $dayOfMonth: { $add: ["$hireDate", IST_OFFSET_MS] } }, todayDay] },
             { $lt: [{ $year: "$hireDate" }, currentYear] }
           ]
         },
