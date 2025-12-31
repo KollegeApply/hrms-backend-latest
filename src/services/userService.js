@@ -818,6 +818,8 @@ async getUserById(id) {
       return null; // Incorrect password
     }
 
+    // Populate department with _id and name before returning
+    await user.populate('department', '_id name');
     logger.info(`Authentication successful for user: ${user.id}`);
     // Return user object without the password field
     return user.toJSON();
