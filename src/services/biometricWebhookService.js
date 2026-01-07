@@ -1,7 +1,9 @@
 const BiometricLog = require('../models/biometricLogModel');
 const User = require('../models/userModel');
+const Attendance = require('../models/attendanceModel');
 const { decryptAES256CBC, isEncrypted } = require('../utility/aesDecrypt');
 const logger = require('../config/logger');
+const moment = require('moment-timezone');
 
 // Get decryption key from environment or use default
 const DECRYPTION_KEY =
@@ -198,12 +200,40 @@ async function processSingleBiometricRecord(payload) {
     }
 
     // Find user by employeeCode (matching employeeId in User model)
+    // Convert employeeCode format (SD116) to employeeId format (SD_116)
+    // Handle both EmployeeCode (capital E) and employeeCode (lowercase e) from payload
     let user = null;
-    if (biometricData.EmployeeCode) {
+    const employeeCode = biometricData.EmployeeCode || biometricData.employeeCode;
+    
+    if (employeeCode) {
+      const convertedEmployeeId = convertEmployeeCodeToEmployeeId(employeeCode);
+      logger.info('Converting employeeCode to employeeId format', {
+        originalEmployeeCode: employeeCode,
+        convertedEmployeeId: convertedEmployeeId,
+        payloadKeys: Object.keys(biometricData),
+      });
+
       user = await User.findOne({
-        employeeId: biometricData.EmployeeCode,
+        employeeId: convertedEmployeeId,
         isDeleted: { $ne: true },
       }).select('_id employeeId');
+      
+      if (!user) {
+        logger.warn('User not found for employeeCode', {
+          employeeCode: employeeCode,
+          convertedEmployeeId: convertedEmployeeId,
+        });
+      } else {
+        logger.info('User found successfully', {
+          userId: user._id,
+          employeeId: user.employeeId,
+          employeeCode: employeeCode,
+        });
+      }
+    } else {
+      logger.warn('No employeeCode found in biometric data', {
+        payloadKeys: Object.keys(biometricData),
+      });
     }
 
     // Parse GPS coordinates
@@ -240,6 +270,29 @@ async function processSingleBiometricRecord(payload) {
       userId: user ? user._id : null,
       logId: biometricLog._id,
     });
+
+    // Sync biometric data with attendance record
+    // Use employeeCode to find biometric logs, not user field (which is always null)
+    const employeeCodeForSync = biometricData.EmployeeCode || biometricData.employeeCode;
+    
+    if (user && logDate && employeeCodeForSync) {
+      logger.info('Calling syncBiometricWithAttendance', {
+        userId: user._id,
+        employeeId: user.employeeId,
+        employeeCode: employeeCodeForSync,
+        logDate: logDate,
+      });
+      await syncBiometricWithAttendance(user, employeeCodeForSync, logDate, logDate);
+    } else {
+      logger.warn('Skipping attendance sync - missing user, logDate, or employeeCode', {
+        hasUser: !!user,
+        hasLogDate: !!logDate,
+        hasEmployeeCode: !!employeeCodeForSync,
+        userId: user?._id,
+        employeeCode: employeeCodeForSync,
+        payloadKeys: Object.keys(biometricData),
+      });
+    }
 
     return {
       success: true,
@@ -361,6 +414,247 @@ function parseGPS(gpsString) {
     return { latitude, longitude };
   } catch (error) {
     return null;
+  }
+}
+
+/**
+ * Converts employeeCode format (SD116, KAPP123) to employeeId format (SD_116, KAPP_123)
+ * Adds underscore before the first sequence of digits
+ * @param {string} employeeCode - Employee code from biometric logs (e.g., "SD116", "KAPP123")
+ * @returns {string} - Converted employee ID format (e.g., "SD_116", "KAPP_123")
+ */
+function convertEmployeeCodeToEmployeeId(employeeCode) {
+  if (!employeeCode || typeof employeeCode !== 'string') {
+    return employeeCode;
+  }
+
+  // Find the first occurrence of digits and insert underscore before them
+  // Match pattern: letters followed by digits
+  // Example: "SD116" -> "SD_116", "KAPP123" -> "KAPP_123"
+  return employeeCode.replace(/([A-Za-z]+)(\d+)/, '$1_$2');
+}
+
+/**
+ * Syncs biometric log with attendance record
+ * Sets biometricCheckIn for first check-in of the day
+ * Updates biometricCheckOut for every subsequent log (always keeps the latest)
+ * @param {object} user - User object with _id
+ * @param {string} employeeCode - Employee code from biometric log (e.g., "SD116")
+ * @param {Date} logDate - Date of the biometric log
+ * @param {Date} logDateTime - Full date-time of the biometric log
+ */
+async function syncBiometricWithAttendance(user, employeeCode, logDate, logDateTime) {
+  if (!user || !user._id) {
+    logger.warn('No user found, skipping attendance sync', {
+      user: user,
+      hasId: user?._id ? true : false,
+    });
+    return;
+  }
+
+  try {
+    // Calculate attendance date based on logDate
+    // Attendance date format: IST start of day converted to UTC
+    // Example: For 3rd Jan 2026, attendance date = 2026-01-02T18:30:00.000Z (which is 2026-01-03 00:00:00 IST)
+    const logDateIST = moment(logDate).tz('Asia/Kolkata');
+    const attendanceDateIST = logDateIST.clone().startOf('day');
+    
+    // Convert IST start of day to UTC (this matches attendance record date format)
+    // IST is UTC+5:30, so 00:00 IST = 18:30 UTC (previous day)
+    const attendanceDate = attendanceDateIST.utc().toDate();
+    
+    // End of day in IST, converted to UTC
+    const endOfDayIST = attendanceDateIST.clone().add(1, 'day');
+    const endOfDay = endOfDayIST.utc().toDate();
+
+    logger.info('Syncing biometric with attendance - Date calculation', {
+      userId: user._id,
+      employeeCode: employeeCode,
+      originalLogDate: logDate,
+      logDateIST: logDateIST.format('YYYY-MM-DD HH:mm:ss'),
+      attendanceDateIST: attendanceDateIST.format('YYYY-MM-DD HH:mm:ss'),
+      attendanceDate: attendanceDate,
+      endOfDay: endOfDay,
+      attendanceDateIST_UTC: attendanceDateIST.utc().format('YYYY-MM-DD HH:mm:ss'),
+    });
+
+    // Find or get attendance record for this user and date
+    // Attendance records use IST start of day converted to UTC
+    let attendance = await Attendance.findOne({
+      user: user._id,
+      date: attendanceDate,
+    });
+
+    // If not found with exact match, try range query (handles timezone differences)
+    if (!attendance) {
+      attendance = await Attendance.findOne({
+        user: user._id,
+        date: {
+          $gte: attendanceDate,
+          $lt: endOfDay,
+        },
+      });
+    }
+
+    logger.debug('Attendance record lookup', {
+      userId: user._id,
+      attendanceDate: attendanceDate,
+      found: !!attendance,
+      attendanceId: attendance?._id,
+    });
+
+    if (!attendance) {
+      // If no attendance record exists, create one (minimal record)
+      attendance = new Attendance({
+        user: user._id,
+        date: attendanceDate,
+      });
+      await attendance.save();
+      logger.info('Created new attendance record for biometric sync', {
+        userId: user._id,
+        attendanceId: attendance._id,
+        date: attendanceDate,
+      });
+    }
+
+    // Get all biometric logs for this employeeCode on this date, ordered by createdAt
+    // Use employeeCode to query, not user field (which is always null in biometric logs)
+    // Query logs for the same date (IST date, not UTC) using createdAt
+    // Use attendanceDate (IST start of day converted to UTC) and endOfDay as UTC bounds
+    const createdAtStartUTC = attendanceDate;
+    const createdAtEndUTC = endOfDay;
+    
+    const biometricLogsForDay = await BiometricLog.find({
+      employeeCode: { $regex: new RegExp(`^${employeeCode}$`, 'i') },
+      createdAt: {
+        $gte: createdAtStartUTC,
+        $lt: createdAtEndUTC,
+      },
+    })
+      .sort({ createdAt: 1 })
+      .select('logDate createdAt direction employeeCode')
+      .lean();
+
+    logger.info('Biometric logs query result', {
+      userId: user._id,
+      employeeCode: employeeCode,
+      attendanceDate: attendanceDate,
+      attendanceDateIST: attendanceDateIST.format('YYYY-MM-DD'),
+      dateRange: {
+        startUTC: createdAtStartUTC,
+        endUTC: createdAtEndUTC,
+      },
+      totalLogs: biometricLogsForDay.length,
+      logs: biometricLogsForDay.map(log => ({
+        logDate: log.logDate,
+        createdAt: log.createdAt,
+        createdAtIST: moment(log.createdAt).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss'),
+        direction: log.direction,
+        employeeCode: log.employeeCode,
+      })),
+    });
+
+    // If no logs found, try to find any logs for this employeeCode to debug
+    if (biometricLogsForDay.length === 0) {
+      const anyLogs = await BiometricLog.find({
+        employeeCode: employeeCode,
+      })
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .select('logDate createdAt employeeCode')
+        .lean();
+      
+      logger.warn('No biometric logs found for the date range, but found logs for employeeCode', {
+        employeeCode: employeeCode,
+        dateRange: {
+          startUTC: createdAtStartUTC,
+          endUTC: createdAtEndUTC,
+        },
+        recentLogs: anyLogs.map(log => ({
+          logDate: log.logDate,
+          createdAt: log.createdAt,
+          employeeCode: log.employeeCode,
+        })),
+      });
+    }
+
+    // If this is the first log of the day and biometricCheckIn is not set, set it
+    if (biometricLogsForDay.length > 0 && !attendance.biometricCheckIn) {
+      // Get the first log's time from createdAt
+      const firstLogTime = biometricLogsForDay[0].createdAt;
+      attendance.biometricCheckIn = firstLogTime;
+      logger.info('Setting biometricCheckIn (first check-in of the day)', {
+        userId: user._id,
+        employeeCode: employeeCode,
+        date: attendanceDate,
+        checkInTime: firstLogTime,
+        attendanceId: attendance._id,
+        currentBiometricCheckIn: attendance.biometricCheckIn,
+      });
+    } else if (biometricLogsForDay.length > 0 && attendance.biometricCheckIn) {
+      logger.info('biometricCheckIn already set, skipping', {
+        userId: user._id,
+        employeeCode: employeeCode,
+        existingBiometricCheckIn: attendance.biometricCheckIn,
+        firstLogTime: biometricLogsForDay[0].createdAt,
+      });
+    }
+
+    // Always update biometricCheckOut with the latest log time of the day (using createdAt)
+    // This ensures the last checkout is always stored (removes old, sets new)
+    if (biometricLogsForDay.length > 0) {
+      const lastLogTime = biometricLogsForDay[biometricLogsForDay.length - 1].createdAt;
+      const previousCheckOut = attendance.biometricCheckOut;
+      attendance.biometricCheckOut = lastLogTime;
+      logger.info('Updating biometricCheckOut (latest log of the day)', {
+        userId: user._id,
+        employeeCode: employeeCode,
+        date: attendanceDate,
+        checkOutTime: lastLogTime,
+        previousCheckOut: previousCheckOut,
+        totalLogs: biometricLogsForDay.length,
+        attendanceId: attendance._id,
+      });
+    } else {
+      logger.warn('No biometric logs found for the day, cannot update biometricCheckIn/CheckOut', {
+        userId: user._id,
+        employeeCode: employeeCode,
+        date: attendanceDate,
+      });
+    }
+
+    // Save the attendance record
+    const savedAttendance = await attendance.save();
+    
+    logger.info('✅ Biometric data synced with attendance successfully', {
+      userId: user._id,
+      employeeCode: employeeCode,
+      date: attendanceDate,
+      attendanceId: savedAttendance._id,
+      biometricCheckIn: savedAttendance.biometricCheckIn,
+      biometricCheckOut: savedAttendance.biometricCheckOut,
+      totalBiometricLogs: biometricLogsForDay.length,
+      attendanceRecord: {
+        _id: savedAttendance._id,
+        user: savedAttendance.user,
+        date: savedAttendance.date,
+        biometricCheckIn: savedAttendance.biometricCheckIn,
+        biometricCheckOut: savedAttendance.biometricCheckOut,
+      },
+    });
+  } catch (error) {
+    logger.error(
+      {
+        err: error,
+        errorMessage: error.message,
+        errorStack: error.stack,
+        userId: user?._id,
+        logDate: logDate,
+        logDateTime: logDateTime,
+      },
+      'Error syncing biometric data with attendance'
+    );
+    // Don't throw error - we still want to save the biometric log even if attendance sync fails
   }
 }
 

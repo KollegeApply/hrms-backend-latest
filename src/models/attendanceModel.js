@@ -113,6 +113,14 @@ const attendanceSchema = new Schema(
       required: true,
     },
 
+    // Biometric check-in and check-out times
+    biometricCheckIn: {
+      type: Date,
+    },
+    biometricCheckOut: {
+      type: Date,
+    },
+
     regularization: { type: RegularizationSchema }
   },
   {
