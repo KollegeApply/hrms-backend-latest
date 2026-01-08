@@ -63,10 +63,10 @@ async function testSD116Sync() {
     });
     console.log('');
 
-    // Step 2: Get latest biometric log
+    // Step 2: Get latest biometric log (by createdAt - when log was saved)
     const latestLog = await BiometricLog.findOne({
       employeeCode: { $regex: new RegExp(`^${employeeCode}$`, 'i') }
-    }).sort({ logDate: -1 });
+    }).sort({ createdAt: -1 }).select('logDate createdAt employeeCode');
 
     if (!latestLog) {
       console.log('❌ No biometric logs found!');
@@ -79,18 +79,31 @@ async function testSD116Sync() {
       _id: latestLog._id,
       employeeCode: latestLog.employeeCode,
       logDate: latestLog.logDate,
+      createdAt: latestLog.createdAt,
+      logDateIST: moment(latestLog.logDate).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss'),
+      createdAtIST: latestLog.createdAt ? moment(latestLog.createdAt).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss') : 'N/A',
+      note: 'Using createdAt for date calculation (IST time)',
     });
     console.log('');
 
-    // Step 3: Calculate date range
-    const logDateIST = moment(latestLog.logDate).tz('Asia/Kolkata').startOf('day');
-    const attendanceDate = logDateIST.toDate();
-    const endOfDay = moment(logDateIST).add(1, 'day').toDate();
+    // Step 3: Calculate date range based on createdAt (IST time)
+    // Calculate attendance date: IST start of day converted to UTC
+    const createdAtIST = moment(latestLog.createdAt).tz('Asia/Kolkata');
+    const attendanceDateIST = createdAtIST.clone().startOf('day');
+    
+    // Convert IST start of day to UTC (this matches attendance record date format)
+    // IST is UTC+5:30, so 00:00 IST = 18:30 UTC (previous day)
+    const attendanceDate = attendanceDateIST.utc().toDate();
+    
+    // End of day in IST, converted to UTC
+    const endOfDayIST = attendanceDateIST.clone().add(1, 'day');
+    const endOfDay = endOfDayIST.utc().toDate();
 
-    console.log('✅ Step 3: Date calculation');
+    console.log('✅ Step 3: Date calculation (using createdAt)');
     console.log({
-      originalLogDate: latestLog.logDate,
-      logDateIST: logDateIST.format('YYYY-MM-DD HH:mm:ss'),
+      originalCreatedAt: latestLog.createdAt,
+      createdAtIST: createdAtIST.format('YYYY-MM-DD HH:mm:ss'),
+      attendanceDateIST: attendanceDateIST.format('YYYY-MM-DD HH:mm:ss'),
       attendanceDate: attendanceDate,
       endOfDay: endOfDay,
     });
@@ -131,11 +144,11 @@ async function testSD116Sync() {
     }
     console.log('');
 
-    // Step 5: Query biometric logs for the day (using createdAt instead of logDate)
+    // Step 5: Query biometric logs for the day (using createdAt)
     const biometricLogsForDay = await BiometricLog.find({
       employeeCode: { $regex: new RegExp(`^${employeeCode}$`, 'i') },
       createdAt: {
-        $gte: logDateIST.toDate(),
+        $gte: attendanceDate,
         $lt: endOfDay,
       },
     })
@@ -148,12 +161,18 @@ async function testSD116Sync() {
       query: {
         employeeCode: employeeCode,
         createdAt: {
-          $gte: logDateIST.toDate(),
+          $gte: attendanceDate,
           $lt: endOfDay,
         },
       },
       totalLogs: biometricLogsForDay.length,
-      logs: biometricLogsForDay,
+      logs: biometricLogsForDay.map(log => ({
+        logDate: log.logDate,
+        logDateIST: moment(log.logDate).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss'),
+        createdAt: log.createdAt,
+        createdAtIST: moment(log.createdAt).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss'),
+        direction: log.direction,
+      })),
     });
     console.log('');
 
@@ -163,12 +182,14 @@ async function testSD116Sync() {
       // Check what logs exist
       const allLogs = await BiometricLog.find({
         employeeCode: { $regex: new RegExp(`^${employeeCode}$`, 'i') }
-      }).sort({ logDate: -1 }).limit(5).select('logDate employeeCode').lean();
+      }).sort({ createdAt: -1 }).limit(5).select('logDate createdAt employeeCode').lean();
       
       console.log('\n📋 All logs for this employeeCode:');
       allLogs.forEach((log, i) => {
+        const createdAtIST = moment(log.createdAt).tz('Asia/Kolkata');
         const logDateIST = moment(log.logDate).tz('Asia/Kolkata');
-        console.log(`   ${i + 1}. ${logDateIST.format('YYYY-MM-DD HH:mm:ss')} (${log.logDate})`);
+        console.log(`   ${i + 1}. createdAt: ${createdAtIST.format('YYYY-MM-DD HH:mm:ss')} (${log.createdAt})`);
+        console.log(`      logDate: ${logDateIST.format('YYYY-MM-DD HH:mm:ss')} (${log.logDate})`);
       });
       
       await mongoose.connection.close();

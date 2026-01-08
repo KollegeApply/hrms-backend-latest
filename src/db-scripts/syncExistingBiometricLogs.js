@@ -81,29 +81,39 @@ async function syncExistingBiometricLogs() {
         console.log(`   ✅ User found: ${user.employeeId}`);
 
         // Get all biometric logs for this employeeCode, grouped by date
+        // Use createdAt (when log was saved) for date calculation
         const allLogs = await BiometricLog.find({
           employeeCode: { $regex: new RegExp(`^${employeeCode}$`, 'i') }
-        }).sort({ logDate: 1 }).select('logDate').lean();
+        })
+          .sort({ createdAt: 1 })
+          .select('logDate createdAt')
+          .lean();
 
-        // Group logs by date
+        // Group logs by date (based on createdAt in IST)
         const logsByDate = {};
         allLogs.forEach(log => {
-          const logDateIST = moment(log.logDate).tz('Asia/Kolkata').startOf('day');
-          const dateKey = logDateIST.format('YYYY-MM-DD');
+          const baseDate = log.createdAt || log.logDate;
+          const createdAtIST = moment(baseDate).tz('Asia/Kolkata').startOf('day');
+          const dateKey = createdAtIST.format('YYYY-MM-DD');
           
           if (!logsByDate[dateKey]) {
             logsByDate[dateKey] = [];
           }
-          logsByDate[dateKey].push(log.logDate);
+          logsByDate[dateKey].push({
+            logDate: log.logDate,
+            createdAt: log.createdAt,
+          });
         });
 
         console.log(`   📅 Found logs for ${Object.keys(logsByDate).length} date(s)`);
 
-        // Sync each date
+        // Sync each date (dateKey is IST date string based on createdAt)
         for (const [dateKey, logDates] of Object.entries(logsByDate)) {
-          const logDateIST = moment(dateKey).tz('Asia/Kolkata').startOf('day');
-          const attendanceDate = logDateIST.toDate();
-          const endOfDay = moment(logDateIST).add(1, 'day').toDate();
+          // attendanceDate should be IST start-of-day converted to UTC
+          const attendanceDateIST = moment(dateKey).tz('Asia/Kolkata').startOf('day');
+          const attendanceDate = attendanceDateIST.utc().toDate();
+          const endOfDayIST = attendanceDateIST.clone().add(1, 'day');
+          const endOfDay = endOfDayIST.utc().toDate();
 
           // Find or create attendance record
           let attendance = await Attendance.findOne({
@@ -130,18 +140,30 @@ async function syncExistingBiometricLogs() {
             console.log(`      ✅ Created attendance for ${dateKey}`);
           }
 
-          // Set biometricCheckIn (first log of the day)
+          // Set biometricCheckIn (first log of the day) using createdAt (fallback to logDate)
           if (logDates.length > 0 && !attendance.biometricCheckIn) {
-            const firstLogTime = new Date(Math.min(...logDates.map(d => new Date(d).getTime())));
+            const firstLog = logDates.reduce((min, curr) => {
+              const currTime = new Date(curr.createdAt || curr.logDate).getTime();
+              const minTime = new Date(min.createdAt || min.logDate).getTime();
+              return currTime < minTime ? curr : min;
+            }, logDates[0]);
+
+            const firstLogTime = firstLog.createdAt || firstLog.logDate;
             attendance.biometricCheckIn = firstLogTime;
-            console.log(`      ✅ Set biometricCheckIn: ${firstLogTime}`);
+            console.log(`      ✅ Set biometricCheckIn (createdAt): ${firstLogTime}`);
           }
 
-          // Set biometricCheckOut (last log of the day)
+          // Set biometricCheckOut (last log of the day) using createdAt (fallback to logDate)
           if (logDates.length > 0) {
-            const lastLogTime = new Date(Math.max(...logDates.map(d => new Date(d).getTime())));
+            const lastLog = logDates.reduce((max, curr) => {
+              const currTime = new Date(curr.createdAt || curr.logDate).getTime();
+              const maxTime = new Date(max.createdAt || max.logDate).getTime();
+              return currTime > maxTime ? curr : max;
+            }, logDates[0]);
+
+            const lastLogTime = lastLog.createdAt || lastLog.logDate;
             attendance.biometricCheckOut = lastLogTime;
-            console.log(`      ✅ Set biometricCheckOut: ${lastLogTime}`);
+            console.log(`      ✅ Set biometricCheckOut (createdAt): ${lastLogTime}`);
           }
 
           await attendance.save();
