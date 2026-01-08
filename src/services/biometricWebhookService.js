@@ -275,14 +275,15 @@ async function processSingleBiometricRecord(payload) {
     // Use employeeCode to find biometric logs, not user field (which is always null)
     const employeeCodeForSync = biometricData.EmployeeCode || biometricData.employeeCode;
     
-    if (user && logDate && employeeCodeForSync) {
+    // Use createdAt (when log was saved) for date calculation, not logDate
+    if (user && biometricLog.createdAt && employeeCodeForSync) {
       logger.info('Calling syncBiometricWithAttendance', {
         userId: user._id,
         employeeId: user.employeeId,
         employeeCode: employeeCodeForSync,
-        logDate: logDate,
+        createdAt: biometricLog.createdAt,
       });
-      await syncBiometricWithAttendance(user, employeeCodeForSync, logDate, logDate);
+      await syncBiometricWithAttendance(user, employeeCodeForSync, biometricLog.createdAt);
     } else {
       logger.warn('Skipping attendance sync - missing user, logDate, or employeeCode', {
         hasUser: !!user,
@@ -440,10 +441,9 @@ function convertEmployeeCodeToEmployeeId(employeeCode) {
  * Updates biometricCheckOut for every subsequent log (always keeps the latest)
  * @param {object} user - User object with _id
  * @param {string} employeeCode - Employee code from biometric log (e.g., "SD116")
- * @param {Date} logDate - Date of the biometric log
- * @param {Date} logDateTime - Full date-time of the biometric log
+ * @param {Date} createdAt - createdAt timestamp of the biometric log (when it was saved to DB)
  */
-async function syncBiometricWithAttendance(user, employeeCode, logDate, logDateTime) {
+async function syncBiometricWithAttendance(user, employeeCode, createdAt) {
   if (!user || !user._id) {
     logger.warn('No user found, skipping attendance sync', {
       user: user,
@@ -453,11 +453,11 @@ async function syncBiometricWithAttendance(user, employeeCode, logDate, logDateT
   }
 
   try {
-    // Calculate attendance date based on logDate
+    // Calculate attendance date based on createdAt (IST time)
     // Attendance date format: IST start of day converted to UTC
     // Example: For 3rd Jan 2026, attendance date = 2026-01-02T18:30:00.000Z (which is 2026-01-03 00:00:00 IST)
-    const logDateIST = moment(logDate).tz('Asia/Kolkata');
-    const attendanceDateIST = logDateIST.clone().startOf('day');
+    const createdAtIST = moment(createdAt).tz('Asia/Kolkata');
+    const attendanceDateIST = createdAtIST.clone().startOf('day');
     
     // Convert IST start of day to UTC (this matches attendance record date format)
     // IST is UTC+5:30, so 00:00 IST = 18:30 UTC (previous day)
@@ -470,8 +470,8 @@ async function syncBiometricWithAttendance(user, employeeCode, logDate, logDateT
     logger.info('Syncing biometric with attendance - Date calculation', {
       userId: user._id,
       employeeCode: employeeCode,
-      originalLogDate: logDate,
-      logDateIST: logDateIST.format('YYYY-MM-DD HH:mm:ss'),
+      originalCreatedAt: createdAt,
+      createdAtIST: createdAtIST.format('YYYY-MM-DD HH:mm:ss'),
       attendanceDateIST: attendanceDateIST.format('YYYY-MM-DD HH:mm:ss'),
       attendanceDate: attendanceDate,
       endOfDay: endOfDay,
@@ -649,8 +649,7 @@ async function syncBiometricWithAttendance(user, employeeCode, logDate, logDateT
         errorMessage: error.message,
         errorStack: error.stack,
         userId: user?._id,
-        logDate: logDate,
-        logDateTime: logDateTime,
+        createdAt: createdAt,
       },
       'Error syncing biometric data with attendance'
     );
