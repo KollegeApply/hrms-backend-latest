@@ -490,15 +490,51 @@ class FeedbacksService {
     if (filters.search) {
         const searchTerm = filters.search.trim();
         if (searchTerm) {
+            // Split search term by spaces to handle full names like "Rishabh Kumar"
+            const searchTerms = searchTerm.split(/\s+/).filter(term => term.length > 0);
+            
+            let userQuery = {};
+            
+            if (searchTerms.length > 1) {
+                // Multiple words: search for firstName matching first word AND lastName matching second word
+                // Also handle reverse case and full term in either field
+                userQuery = {
+                    $or: [
+                        // First word in firstName, second word in lastName
+                        {
+                            $and: [
+                                { firstName: { $regex: searchTerms[0], $options: 'i' } },
+                                { lastName: { $regex: searchTerms[1], $options: 'i' } }
+                            ]
+                        },
+                        // First word in lastName, second word in firstName (reverse)
+                        {
+                            $and: [
+                                { firstName: { $regex: searchTerms[1], $options: 'i' } },
+                                { lastName: { $regex: searchTerms[0], $options: 'i' } }
+                            ]
+                        },
+                        // Full term in firstName
+                        { firstName: { $regex: searchTerm, $options: 'i' } },
+                        // Full term in lastName
+                        { lastName: { $regex: searchTerm, $options: 'i' } },
+                        // Full term in employeeId
+                        { employeeId: { $regex: searchTerm, $options: 'i' } }
+                    ]
+                };
+            } else {
+                // Single word: search in firstName, lastName, or employeeId
+                userQuery = {
+                    $or: [
+                        { firstName: { $regex: searchTerm, $options: 'i' } },
+                        { lastName: { $regex: searchTerm, $options: 'i' } },
+                        { employeeId: { $regex: searchTerm, $options: 'i' } }
+                    ]
+                };
+            }
             
             // Find users that match the search term
-            const searchUsers = await User.find({
-                $or: [
-                    { firstName: { $regex: searchTerm, $options: 'i' } },
-                    { lastName: { $regex: searchTerm, $options: 'i' } },
-                    { employeeId: { $regex: searchTerm, $options: 'i' } }
-                ]
-            }, '_id firstName lastName employeeId');
+            const searchUsers = await User.find(userQuery, '_id firstName lastName employeeId');
             
             const searchUserIds = searchUsers.map(user => user._id);
             
@@ -598,7 +634,7 @@ class FeedbacksService {
 
     const feedbacks = await Feedback.find(finalFilter)
         .populate('givenBy', 'firstName lastName email role employeeId team department')
-        .populate('givenTo', 'firstName lastName email role employeeId team department')
+        .populate('givenTo', 'firstName lastName email role employeeId team department hireDate')
         .populate('givenTo.department', 'name')
         .populate('givenBy.department', 'name')
         .sort({ createdAt: -1 })
@@ -742,8 +778,8 @@ class FeedbacksService {
 
     async getFeedbackById(feedbackId, userId, userRole) {
         const feedback = await Feedback.findById(feedbackId)
-            .populate('givenBy', 'firstName lastName email role employeeId')
-            .populate('givenTo', 'firstName lastName email role employeeId');
+            .populate('givenBy', 'firstName lastName email role employeeId team department')
+            .populate('givenTo', 'firstName lastName email role employeeId team department hireDate');
 
         if (!feedback) return null;
 

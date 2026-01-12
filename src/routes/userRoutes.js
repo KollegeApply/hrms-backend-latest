@@ -32,7 +32,7 @@ router.post(
   userController?.bulkUpload
 );
 
-router.get('/', authenticateUser, userController?.getAllUsers);
+router.get('/', authenticateUser, authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN, USER_ROLES?.TEAMLEAD]), userController?.getAllUsers);
 // Dedicated route for meeting attendee search to avoid side effects elsewhere
 router.get('/meeting-attendees', authenticateUser, userController?.getAllUsersForMeeting);
 
