@@ -77,15 +77,52 @@ async fetchAssignedAssets(page, limit, search, team) {
 
     if (search) {
       const searchTerm = search.trim();
+      
+      // Split search term by spaces to handle full names like "Rishabh Kumar"
+      const searchTerms = searchTerm.split(/\s+/).filter(term => term.length > 0);
+      
+      let userQuery = {};
+      
+      if (searchTerms.length > 1) {
+        // Multiple words: search for firstName matching first word AND lastName matching second word
+        // Also handle reverse case and full term in either field
+        userQuery = {
+          $or: [
+            // First word in firstName, second word in lastName
+            {
+              $and: [
+                { firstName: { $regex: searchTerms[0], $options: 'i' } },
+                { lastName: { $regex: searchTerms[1], $options: 'i' } }
+              ]
+            },
+            // First word in lastName, second word in firstName (reverse)
+            {
+              $and: [
+                { firstName: { $regex: searchTerms[1], $options: 'i' } },
+                { lastName: { $regex: searchTerms[0], $options: 'i' } }
+              ]
+            },
+            // Full term in firstName
+            { firstName: { $regex: searchTerm, $options: 'i' } },
+            // Full term in lastName
+            { lastName: { $regex: searchTerm, $options: 'i' } },
+            // Full term in employeeId
+            { employeeId: { $regex: searchTerm, $options: 'i' } }
+          ]
+        };
+      } else {
+        // Single word: search in firstName, lastName, or employeeId
+        userQuery = {
+          $or: [
+            { firstName: { $regex: searchTerm, $options: 'i' } },
+            { lastName: { $regex: searchTerm, $options: 'i' } },
+            { employeeId: { $regex: searchTerm, $options: 'i' } }
+          ]
+        };
+      }
 
-      // Search by employee name (firstName, lastName) and employeeId only
-      const searchUsers = await User.find({
-        $or: [
-          { firstName: { $regex: searchTerm, $options: 'i' } },
-          { lastName: { $regex: searchTerm, $options: 'i' } },
-          { employeeId: { $regex: searchTerm, $options: 'i' } }
-        ]
-      }).select('_id');
+      // Search by employee name (firstName, lastName) and employeeId
+      const searchUsers = await User.find(userQuery).select('_id');
 
       const userIds = searchUsers.map(user => user._id);
 
