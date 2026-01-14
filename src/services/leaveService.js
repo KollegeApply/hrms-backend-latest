@@ -1072,11 +1072,30 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
           });
 
           if (holiday) {
-            addReason(`Holiday (${holiday.name})`, dateStr);
+            // For restricted leave type, allow only on restricted holidays
+            if (leaveType.code === 'RESTRICTED') {
+              if (holiday.holidayType === 'Restricted') {
+                // Allow restricted leave on restricted holiday dates
+                const dateInKolkata = moment.tz(pointer.format('YYYY-MM-DD'), 'Asia/Kolkata').startOf('day').toDate();
+                validDates.push(dateInKolkata);
+              } else {
+                // Block restricted leave on regular holidays or non-restricted holidays
+                addReason(`Restricted leave can only be taken on restricted holiday dates`);
+              }
+            } else {
+              // For other leave types, block all holidays
+              addReason(`Holiday (${holiday.name})`, dateStr);
+            }
           } else {
-            // Create date in Asia/Kolkata timezone to avoid timezone conversion issues
-            const dateInKolkata = moment.tz(pointer.format('YYYY-MM-DD'), 'Asia/Kolkata').startOf('day').toDate();
-            validDates.push(dateInKolkata);
+            // For restricted leave type, block non-holiday dates
+            if (leaveType.code === 'RESTRICTED') {
+              addReason(`Restricted leave can only be taken on restricted holiday dates`);
+            } else {
+              // For other leave types, allow non-holiday dates
+              // Create date in Asia/Kolkata timezone to avoid timezone conversion issues
+              const dateInKolkata = moment.tz(pointer.format('YYYY-MM-DD'), 'Asia/Kolkata').startOf('day').toDate();
+              validDates.push(dateInKolkata);
+            }
           }
         }
 
@@ -1104,6 +1123,31 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
           return {
             isValid: false,
             reason: `Only ${3 - usedBereavement} bereavement days remaining this year`,
+          };
+        }
+      }
+
+      // ✅ 11. Restricted Leave Rule
+      if (leaveType.code === 'RESTRICTED') {
+        const usedRestricted = await this.getUsedRestrictedDays(
+          userId,
+          currentYear
+        );
+        const totalRequested = validDates.length;
+        const quota = 2; // Fixed quota of 2 restricted leaves per year
+
+        if (usedRestricted >= quota) {
+          return {
+            isValid: false,
+            reason:
+              'Annual restricted leave quota (2 days) has been exhausted',
+          };
+        }
+
+        if (usedRestricted + totalRequested > quota) {
+          return {
+            isValid: false,
+            reason: `Only ${quota - usedRestricted} restricted leave(s) remaining this year`,
           };
         }
       }
@@ -1234,7 +1278,8 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
       leaveTypeId: await LeaveType.findOne({ code: 'BEREAVEMENT' }).select(
         '_id'
       ),
-      status: { $in: ['approved', 'pending', 'tl-approved', 'hr-approved'] },
+      status: { $in: ['approved', 'pending', 'tl-pending', 'hr-pending'] },
+      isDeleted: false,
       dates: {
         $gte: startOfYear,
         $lte: endOfYear,
@@ -1242,6 +1287,32 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
     });
 
     return bereavementLeaves.reduce(
+      (total, leave) => total + leave.totalDays,
+      0
+    );
+  }
+
+  async getUsedRestrictedDays(userId, year) {
+    const startOfYear = new Date(year, 0, 1);
+    const endOfYear = new Date(year, 11, 31, 23, 59, 59, 999);
+
+    const restrictedLeaveType = await LeaveType.findOne({ code: 'RESTRICTED' }).select('_id');
+    if (!restrictedLeaveType) {
+      return 0;
+    }
+
+    const restrictedLeaves = await LeaveApplication.find({
+      userId,
+      leaveTypeId: restrictedLeaveType._id,
+      status: { $in: ['approved', 'pending', 'tl-pending', 'hr-pending'] },
+      isDeleted: false,
+      dates: {
+        $gte: startOfYear,
+        $lte: endOfYear,
+      },
+    });
+
+    return restrictedLeaves.reduce(
       (total, leave) => total + leave.totalDays,
       0
     );
