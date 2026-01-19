@@ -17,9 +17,6 @@ const getAllLeave = catchAsync(async (req, res) => {
   const currentUser = req.user;
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
-  const department = req.query.department; // Department ID filter
-  const status = req.query.status; // Status filter
-  const search = req.query.search; // Search filter
   let leaves;
 
   // Check if user is Finance department teamlead
@@ -37,14 +34,14 @@ const getAllLeave = catchAsync(async (req, res) => {
   ) {
     // Pass financeTeamLeadId if user is Finance TL to prioritize their team members
     const financeTeamLeadId = isFinanceTeamlead ? currentUser.id : null;
-    leaves = await leaveService?.getAllLeave(currentUser.team, page, limit, financeTeamLeadId, department, status, search);
+    leaves = await leaveService?.getAllLeave(currentUser.team, page, limit, financeTeamLeadId);
   } else if (
     currentUser.role === 'teamlead' ||
     currentUser.role === 'subteamlead'
   ) {
-    leaves = await leaveService?.getLeaveTl({ id: currentUser.id, team:currentUser.team }, page, limit, department, status, search);
+    leaves = await leaveService?.getLeaveTl({ id: currentUser.id, team:currentUser.team }, page, limit);
   } else {
-    leaves = await leaveService?.getLeaveById({ id: currentUser.id }, page, limit, department, status, search);
+    leaves = await leaveService?.getLeaveById({ id: currentUser.id }, page, limit);
   }
 
   res?.status(httpStatus.OK).json({

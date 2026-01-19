@@ -121,22 +121,9 @@ const attendanceService = {
         if (checkInMode) {
           attendance.checkInMode = checkInMode;
         }
-        // Preserve existing biometricCheckIn and biometricCheckOut if they exist
-        await attendance.save();
-      } else if (existingAttendance && !existingAttendance.checkInTime) {
-        // Update existing record (created by biometric sync) with app check-in details
-        // This preserves biometricCheckIn and biometricCheckOut
-        attendance = existingAttendance;
-        attendance.checkInTime = now;
-        attendance.checkInLocation = { latitude, longitude };
-        attendance.status = status;
-        if (checkInMode) {
-          attendance.checkInMode = checkInMode;
-        }
-        // biometricCheckIn and biometricCheckOut will be preserved automatically
         await attendance.save();
       } else {
-        // Create new attendance record (no existing record)
+        // Create new attendance record
         attendance = new Attendance({
           user: userId,
           checkInTime: now,
