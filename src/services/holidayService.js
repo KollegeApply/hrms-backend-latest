@@ -83,9 +83,6 @@ class holidayService {
     }
     oldHoliday.name = holidayData?.name;
     oldHoliday.date = holidayData?.date;
-    if (holidayData?.holidayType !== undefined) {
-      oldHoliday.holidayType = holidayData?.holidayType;
-    }
     return await oldHoliday.save();
   }
 
