@@ -101,8 +101,8 @@ class EmployeeLeaveBalanceService {
         const code = mapping.leaveTypeId.code;
         if (!code) return false;
         
-        // LOP (Loss of Pay) is available to all users regardless of status
-        if (code === 'LOP') return true;
+        // LOP (Loss of Pay) and RESTRICTED leave are available to all users regardless of status
+        if (code === 'LOP' || code === 'RESTRICTED') return true;
         
         return user.status === 'probation'
           ? code === 'PROBATION'

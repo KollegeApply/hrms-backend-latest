@@ -27,6 +27,7 @@ class LeavePolicyService {
         _id: { $in: leaveTypeIds },
         isDeleted: false,
       });
+      console.log(leaveTypes, "leaveTypes");
 
       return leaveTypes;
     } catch (error) {

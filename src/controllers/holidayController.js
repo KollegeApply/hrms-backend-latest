@@ -8,12 +8,14 @@ const catchAsync = require('../utility/catchAsync');
 const createHoliday = catchAsync(async (req, res) => {
   const holidayName = req?.body?.name;
   const holidayDate = req?.body?.date;
+  const holidayType = req?.body?.holidayType;
   const userId = req?.user?.id;
 
   const validatedData =
     await holidayValidator?.createHolidaySchema?.validateAsync({
       name: holidayName,
       date: holidayDate,
+      holidayType: holidayType,
       userId: userId,
     });
   const holiday = await holidayService?.createHoliday(validatedData);
@@ -58,11 +60,13 @@ const updateHoliday = catchAsync(async (req, res) => {
   const holidayId = req?.params?.id;
   const name = req?.body?.name;
   const date = req?.body?.date;
+  const holidayType = req?.body?.holidayType;
   const validatedData =
     await holidayValidator?.updateHolidaySchema?.validateAsync({
       holidayId,
       name,
       date,
+      holidayType,
     });
   const updated = await holidayService?.updateHoliday(validatedData);
 
