@@ -820,6 +820,8 @@ async getUserById(id) {
 
     // Populate department with _id and name before returning
     await user.populate('department', '_id name');
+    // Populate userDetails with all nested fields
+    await user.populate('userDetails');
     logger.info(`Authentication successful for user: ${user.id}`);
     // Return user object without the password field
     return user.toJSON();

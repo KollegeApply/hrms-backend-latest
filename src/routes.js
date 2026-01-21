@@ -19,6 +19,7 @@ const personalEventRoutes = require('./routes/personalEventRoute');
 const announcementRoutes = require('./routes/announcementRoute');
 const kpiRoutes = require('./routes/kpiRoute');
 const biometricWebhookRoutes = require('./routes/biometricWebhookRoute');
+const companypolicyRoute = require('./routes/companypolicyRoute')
 // const otherRoutes = require('./routes/otherRoutes'); // Example for future routes
 
 const router = express.Router();
@@ -102,7 +103,12 @@ const defaultRoutes = [
   {
     path: `/api/${apiVersion}/webhook`,
     route: biometricWebhookRoutes,
+  },
+  {
+    path: `/api/${apiVersion}/company-policy`,
+    route: companypolicyRoute,
   }
+  
   // Add other route configurations here
   // {
   //   path: `/api/${apiVersion}/departments`,
