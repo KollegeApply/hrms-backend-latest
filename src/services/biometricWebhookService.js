@@ -275,15 +275,15 @@ async function processSingleBiometricRecord(payload) {
     // Use employeeCode to find biometric logs, not user field (which is always null)
     const employeeCodeForSync = biometricData.EmployeeCode || biometricData.employeeCode;
     
-    // Use createdAt (when log was saved) for date calculation, not logDate
-    if (user && biometricLog.createdAt && employeeCodeForSync) {
+    // Use logDate for date calculation (ignoring timezone)
+    if (user && biometricLog.logDate && employeeCodeForSync) {
       logger.info('Calling syncBiometricWithAttendance', {
         userId: user._id,
         employeeId: user.employeeId,
         employeeCode: employeeCodeForSync,
-        createdAt: biometricLog.createdAt,
+        logDate: biometricLog.logDate,
       });
-      await syncBiometricWithAttendance(user, employeeCodeForSync, biometricLog.createdAt);
+      await syncBiometricWithAttendance(user, employeeCodeForSync, biometricLog.logDate);
     } else {
       logger.warn('Skipping attendance sync - missing user, logDate, or employeeCode', {
         hasUser: !!user,
@@ -441,9 +441,9 @@ function convertEmployeeCodeToEmployeeId(employeeCode) {
  * Updates biometricCheckOut for every subsequent log (always keeps the latest)
  * @param {object} user - User object with _id
  * @param {string} employeeCode - Employee code from biometric log (e.g., "SD116")
- * @param {Date} createdAt - createdAt timestamp of the biometric log (when it was saved to DB)
+ * @param {Date} logDate - logDate from biometric log (ignoring timezone)
  */
-async function syncBiometricWithAttendance(user, employeeCode, createdAt) {
+async function syncBiometricWithAttendance(user, employeeCode, logDate) {
   if (!user || !user._id) {
     logger.warn('No user found, skipping attendance sync', {
       user: user,
@@ -453,11 +453,38 @@ async function syncBiometricWithAttendance(user, employeeCode, createdAt) {
   }
 
   try {
-    // Calculate attendance date based on createdAt (IST time)
-    // Attendance date format: IST start of day converted to UTC
-    // Example: For 3rd Jan 2026, attendance date = 2026-01-02T18:30:00.000Z (which is 2026-01-03 00:00:00 IST)
-    const createdAtIST = moment(createdAt).tz('Asia/Kolkata');
-    const attendanceDateIST = createdAtIST.clone().startOf('day');
+    // Extract date/time directly from logDate ISO string (ignoring timezone)
+    let logDateStr = '';
+    if (logDate instanceof Date) {
+      logDateStr = logDate.toISOString();
+    } else if (typeof logDate === 'string') {
+      logDateStr = logDate;
+    } else {
+      logDateStr = logDate.toString();
+    }
+    
+    // Extract YYYY-MM-DD and HH:mm:ss from the string (ignoring timezone)
+    const dateTimeMatch = logDateStr.match(/(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+    if (!dateTimeMatch) {
+      throw new Error(`Invalid logDate format: ${logDate}`);
+    }
+    
+    const [, datePart, hour, minute, second] = dateTimeMatch;
+    const [year, month, date] = datePart.split('-').map(Number);
+    
+    // Create moment object with extracted values (no timezone conversion)
+    const logDateIgnoringTZ = moment({
+      year: year,
+      month: month - 1, // moment months are 0-indexed
+      date: date,
+      hour: parseInt(hour),
+      minute: parseInt(minute),
+      second: parseInt(second)
+    });
+
+    // Calculate attendance date based on logDate (ignoring timezone)
+    // Extract date part and treat as IST start of day, then convert to UTC
+    const attendanceDateIST = logDateIgnoringTZ.clone().startOf('day');
     
     // Convert IST start of day to UTC (this matches attendance record date format)
     // IST is UTC+5:30, so 00:00 IST = 18:30 UTC (previous day)
@@ -467,15 +494,14 @@ async function syncBiometricWithAttendance(user, employeeCode, createdAt) {
     const endOfDayIST = attendanceDateIST.clone().add(1, 'day');
     const endOfDay = endOfDayIST.utc().toDate();
 
-    logger.info('Syncing biometric with attendance - Date calculation', {
+    logger.info('Syncing biometric with attendance - Date calculation (using logDate, ignoring timezone)', {
       userId: user._id,
       employeeCode: employeeCode,
-      originalCreatedAt: createdAt,
-      createdAtIST: createdAtIST.format('YYYY-MM-DD HH:mm:ss'),
+      originalLogDate: logDate,
+      logDateParsed: logDateIgnoringTZ.format('YYYY-MM-DD HH:mm:ss'),
       attendanceDateIST: attendanceDateIST.format('YYYY-MM-DD HH:mm:ss'),
       attendanceDate: attendanceDate,
       endOfDay: endOfDay,
-      attendanceDateIST_UTC: attendanceDateIST.utc().format('YYYY-MM-DD HH:mm:ss'),
     });
 
     // Find or get attendance record for this user and date
@@ -517,41 +543,79 @@ async function syncBiometricWithAttendance(user, employeeCode, createdAt) {
       });
     }
 
-    // Get all biometric logs for this employeeCode on this date, ordered by createdAt
+    // Get all biometric logs for this employeeCode, then filter by date (ignoring timezone)
     // Use employeeCode to query, not user field (which is always null in biometric logs)
-    // Query logs for the same date (IST date, not UTC) using createdAt
-    // Use attendanceDate (IST start of day converted to UTC) and endOfDay as UTC bounds
-    const createdAtStartUTC = attendanceDate;
-    const createdAtEndUTC = endOfDay;
-    
-    const biometricLogsForDay = await BiometricLog.find({
-      employeeCode: { $regex: new RegExp(`^${employeeCode}$`, 'i') },
-      createdAt: {
-        $gte: createdAtStartUTC,
-        $lt: createdAtEndUTC,
-      },
+    const allLogsForEmployee = await BiometricLog.find({
+      employeeCode: { $regex: new RegExp(`^${employeeCode}$`, 'i') }
     })
-      .sort({ createdAt: 1 })
+      .sort({ logDate: 1 })
       .select('logDate createdAt direction employeeCode')
       .lean();
 
-    logger.info('Biometric logs query result', {
+    // Filter logs by date (ignoring timezone)
+    const targetDateStr = logDateIgnoringTZ.format('YYYY-MM-DD');
+    const biometricLogsForDay = allLogsForEmployee.filter(log => {
+      // Extract date part directly from logDate string, ignoring timezone
+      let logDateStr = '';
+      if (log.logDate instanceof Date) {
+        logDateStr = log.logDate.toISOString();
+      } else if (typeof log.logDate === 'string') {
+        logDateStr = log.logDate;
+      } else {
+        logDateStr = log.logDate.toString();
+      }
+      
+      // Extract YYYY-MM-DD from ISO string (first 10 characters before 'T')
+      const dateMatch = logDateStr.match(/(\d{4}-\d{2}-\d{2})/);
+      if (!dateMatch) {
+        return false;
+      }
+      const logDateOnly = dateMatch[1];
+      return logDateOnly === targetDateStr;
+    });
+
+    logger.info('Biometric logs query result (using logDate, ignoring timezone)', {
       userId: user._id,
       employeeCode: employeeCode,
       attendanceDate: attendanceDate,
-      attendanceDateIST: attendanceDateIST.format('YYYY-MM-DD'),
-      dateRange: {
-        startUTC: createdAtStartUTC,
-        endUTC: createdAtEndUTC,
-      },
+      targetDate: targetDateStr,
       totalLogs: biometricLogsForDay.length,
-      logs: biometricLogsForDay.map(log => ({
-        logDate: log.logDate,
-        createdAt: log.createdAt,
-        createdAtIST: moment(log.createdAt).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss'),
-        direction: log.direction,
-        employeeCode: log.employeeCode,
-      })),
+      logs: biometricLogsForDay.map(log => {
+        let logDateStr = '';
+        if (log.logDate instanceof Date) {
+          logDateStr = log.logDate.toISOString();
+        } else if (typeof log.logDate === 'string') {
+          logDateStr = log.logDate;
+        } else {
+          logDateStr = log.logDate.toString();
+        }
+        
+        const dateTimeMatch = logDateStr.match(/(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+        if (dateTimeMatch) {
+          const [, datePart, hour, minute, second] = dateTimeMatch;
+          const [year, month, date] = datePart.split('-').map(Number);
+          const logDateParsed = moment({
+            year: year,
+            month: month - 1,
+            date: date,
+            hour: parseInt(hour),
+            minute: parseInt(minute),
+            second: parseInt(second)
+          });
+          return {
+            logDate: log.logDate,
+            logDateParsed: logDateParsed.format('YYYY-MM-DD HH:mm:ss'),
+            direction: log.direction,
+            employeeCode: log.employeeCode,
+          };
+        }
+        return {
+          logDate: log.logDate,
+          logDateParsed: 'Invalid format',
+          direction: log.direction,
+          employeeCode: log.employeeCode,
+        };
+      }),
     });
 
     // If no logs found, try to find any logs for this employeeCode to debug
@@ -559,62 +623,133 @@ async function syncBiometricWithAttendance(user, employeeCode, createdAt) {
       const anyLogs = await BiometricLog.find({
         employeeCode: employeeCode,
       })
-        .sort({ createdAt: -1 })
+        .sort({ logDate: -1 })
         .limit(5)
         .select('logDate createdAt employeeCode')
         .lean();
       
-      logger.warn('No biometric logs found for the date range, but found logs for employeeCode', {
+      logger.warn('No biometric logs found for the target date, but found logs for employeeCode', {
         employeeCode: employeeCode,
-        dateRange: {
-          startUTC: createdAtStartUTC,
-          endUTC: createdAtEndUTC,
-        },
-        recentLogs: anyLogs.map(log => ({
-          logDate: log.logDate,
-          createdAt: log.createdAt,
-          employeeCode: log.employeeCode,
-        })),
+        targetDate: targetDateStr,
+        recentLogs: anyLogs.map(log => {
+          let logDateStr = '';
+          if (log.logDate instanceof Date) {
+            logDateStr = log.logDate.toISOString();
+          } else if (typeof log.logDate === 'string') {
+            logDateStr = log.logDate;
+          } else {
+            logDateStr = log.logDate.toString();
+          }
+          
+          const dateTimeMatch = logDateStr.match(/(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+          if (dateTimeMatch) {
+            const [, datePart, hour, minute, second] = dateTimeMatch;
+            const [year, month, date] = datePart.split('-').map(Number);
+            const logDateParsed = moment({
+              year: year,
+              month: month - 1,
+              date: date,
+              hour: parseInt(hour),
+              minute: parseInt(minute),
+              second: parseInt(second)
+            });
+            return {
+              logDate: log.logDate,
+              logDateParsed: logDateParsed.format('YYYY-MM-DD HH:mm:ss'),
+              employeeCode: log.employeeCode,
+            };
+          }
+          return {
+            logDate: log.logDate,
+            logDateParsed: 'Invalid format',
+            employeeCode: log.employeeCode,
+          };
+        }),
       });
     }
 
     // If this is the first log of the day and biometricCheckIn is not set, set it
     if (biometricLogsForDay.length > 0 && !attendance.biometricCheckIn) {
-      // Get the first log's time from createdAt
-      const firstLogTime = biometricLogsForDay[0].createdAt;
-      attendance.biometricCheckIn = firstLogTime;
-      logger.info('Setting biometricCheckIn (first check-in of the day)', {
-        userId: user._id,
-        employeeCode: employeeCode,
-        date: attendanceDate,
-        checkInTime: firstLogTime,
-        attendanceId: attendance._id,
-        currentBiometricCheckIn: attendance.biometricCheckIn,
-      });
+      // Get the first log's time from logDate (ignoring timezone)
+      const firstLog = biometricLogsForDay[0];
+      let firstLogDateStr = '';
+      if (firstLog.logDate instanceof Date) {
+        firstLogDateStr = firstLog.logDate.toISOString();
+      } else if (typeof firstLog.logDate === 'string') {
+        firstLogDateStr = firstLog.logDate;
+      } else {
+        firstLogDateStr = firstLog.logDate.toString();
+      }
+      
+      const dateTimeMatch = firstLogDateStr.match(/(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?/);
+      if (dateTimeMatch) {
+        const [, datePart, hour, minute, second, millisecond] = dateTimeMatch;
+        const [year, month, date] = datePart.split('-').map(Number);
+        const firstLogTime = moment({
+          year: year,
+          month: month - 1,
+          date: date,
+          hour: parseInt(hour),
+          minute: parseInt(minute),
+          second: parseInt(second),
+          millisecond: millisecond ? parseInt(millisecond.padEnd(3, '0')) : 0
+        }).utc().toDate();
+        attendance.biometricCheckIn = firstLogTime;
+        logger.info('Setting biometricCheckIn (first check-in of the day, using logDate)', {
+          userId: user._id,
+          employeeCode: employeeCode,
+          date: attendanceDate,
+          checkInTime: firstLogTime,
+          attendanceId: attendance._id,
+          currentBiometricCheckIn: attendance.biometricCheckIn,
+        });
+      }
     } else if (biometricLogsForDay.length > 0 && attendance.biometricCheckIn) {
       logger.info('biometricCheckIn already set, skipping', {
         userId: user._id,
         employeeCode: employeeCode,
         existingBiometricCheckIn: attendance.biometricCheckIn,
-        firstLogTime: biometricLogsForDay[0].createdAt,
       });
     }
 
-    // Always update biometricCheckOut with the latest log time of the day (using createdAt)
+    // Always update biometricCheckOut with the latest log time of the day (using logDate, ignoring timezone)
     // This ensures the last checkout is always stored (removes old, sets new)
     if (biometricLogsForDay.length > 0) {
-      const lastLogTime = biometricLogsForDay[biometricLogsForDay.length - 1].createdAt;
-      const previousCheckOut = attendance.biometricCheckOut;
-      attendance.biometricCheckOut = lastLogTime;
-      logger.info('Updating biometricCheckOut (latest log of the day)', {
-        userId: user._id,
-        employeeCode: employeeCode,
-        date: attendanceDate,
-        checkOutTime: lastLogTime,
-        previousCheckOut: previousCheckOut,
-        totalLogs: biometricLogsForDay.length,
-        attendanceId: attendance._id,
-      });
+      const lastLog = biometricLogsForDay[biometricLogsForDay.length - 1];
+      let lastLogDateStr = '';
+      if (lastLog.logDate instanceof Date) {
+        lastLogDateStr = lastLog.logDate.toISOString();
+      } else if (typeof lastLog.logDate === 'string') {
+        lastLogDateStr = lastLog.logDate;
+      } else {
+        lastLogDateStr = lastLog.logDate.toString();
+      }
+      
+      const dateTimeMatch = lastLogDateStr.match(/(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?/);
+      if (dateTimeMatch) {
+        const [, datePart, hour, minute, second, millisecond] = dateTimeMatch;
+        const [year, month, date] = datePart.split('-').map(Number);
+        const lastLogTime = moment({
+          year: year,
+          month: month - 1,
+          date: date,
+          hour: parseInt(hour),
+          minute: parseInt(minute),
+          second: parseInt(second),
+          millisecond: millisecond ? parseInt(millisecond.padEnd(3, '0')) : 0
+        }).utc().toDate();
+        const previousCheckOut = attendance.biometricCheckOut;
+        attendance.biometricCheckOut = lastLogTime;
+        logger.info('Updating biometricCheckOut (latest log of the day, using logDate)', {
+          userId: user._id,
+          employeeCode: employeeCode,
+          date: attendanceDate,
+          checkOutTime: lastLogTime,
+          previousCheckOut: previousCheckOut,
+          totalLogs: biometricLogsForDay.length,
+          attendanceId: attendance._id,
+        });
+      }
     } else {
       logger.warn('No biometric logs found for the day, cannot update biometricCheckIn/CheckOut', {
         userId: user._id,
@@ -649,7 +784,7 @@ async function syncBiometricWithAttendance(user, employeeCode, createdAt) {
         errorMessage: error.message,
         errorStack: error.stack,
         userId: user?._id,
-        createdAt: createdAt,
+        logDate: logDate,
       },
       'Error syncing biometric data with attendance'
     );
