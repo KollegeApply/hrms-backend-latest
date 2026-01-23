@@ -81,40 +81,28 @@ async function syncExistingBiometricLogs() {
         console.log(`   ✅ User found: ${user.employeeId}`);
 
         // Get all biometric logs for this employeeCode, grouped by date
-        // Use logDate (ignoring timezone) for date calculation
+        // Use createdAt (when log was saved) for date calculation
         const allLogs = await BiometricLog.find({
           employeeCode: { $regex: new RegExp(`^${employeeCode}$`, 'i') }
         })
-          .sort({ logDate: 1 })
+          .sort({ createdAt: 1 })
           .select('logDate createdAt')
           .lean();
 
-        // Group logs by date (based on logDate, ignoring timezone)
+        // Group logs by date (based on createdAt in IST)
         const logsByDate = {};
         allLogs.forEach(log => {
-          // Extract date part directly from logDate string, ignoring timezone
-          let logDateStr = '';
-          if (log.logDate instanceof Date) {
-            logDateStr = log.logDate.toISOString();
-          } else if (typeof log.logDate === 'string') {
-            logDateStr = log.logDate;
-          } else {
-            logDateStr = log.logDate.toString();
-          }
+          const baseDate = log.createdAt || log.logDate;
+          const createdAtIST = moment(baseDate).tz('Asia/Kolkata').startOf('day');
+          const dateKey = createdAtIST.format('YYYY-MM-DD');
           
-          // Extract YYYY-MM-DD from ISO string (first 10 characters before 'T')
-          const dateMatch = logDateStr.match(/(\d{4}-\d{2}-\d{2})/);
-          if (dateMatch) {
-            const dateKey = dateMatch[1];
-            
-            if (!logsByDate[dateKey]) {
-              logsByDate[dateKey] = [];
-            }
-            logsByDate[dateKey].push({
-              logDate: log.logDate,
-              createdAt: log.createdAt,
-            });
+          if (!logsByDate[dateKey]) {
+            logsByDate[dateKey] = [];
           }
+          logsByDate[dateKey].push({
+            logDate: log.logDate,
+            createdAt: log.createdAt,
+          });
         });
 
         console.log(`   📅 Found logs for ${Object.keys(logsByDate).length} date(s)`);
@@ -152,106 +140,30 @@ async function syncExistingBiometricLogs() {
             console.log(`      ✅ Created attendance for ${dateKey}`);
           }
 
-          // Set biometricCheckIn (first log of the day) using logDate (ignoring timezone)
+          // Set biometricCheckIn (first log of the day) using createdAt (fallback to logDate)
           if (logDates.length > 0 && !attendance.biometricCheckIn) {
-            // Sort by logDate time (ignoring timezone)
-            const sortedLogs = logDates.sort((a, b) => {
-              let aStr = '';
-              let bStr = '';
-              if (a.logDate instanceof Date) {
-                aStr = a.logDate.toISOString();
-              } else if (typeof a.logDate === 'string') {
-                aStr = a.logDate;
-              } else {
-                aStr = a.logDate.toString();
-              }
-              if (b.logDate instanceof Date) {
-                bStr = b.logDate.toISOString();
-              } else if (typeof b.logDate === 'string') {
-                bStr = b.logDate;
-              } else {
-                bStr = b.logDate.toString();
-              }
-              return aStr.localeCompare(bStr);
-            });
+            const firstLog = logDates.reduce((min, curr) => {
+              const currTime = new Date(curr.createdAt || curr.logDate).getTime();
+              const minTime = new Date(min.createdAt || min.logDate).getTime();
+              return currTime < minTime ? curr : min;
+            }, logDates[0]);
 
-            const firstLog = sortedLogs[0];
-            let firstLogDateStr = '';
-            if (firstLog.logDate instanceof Date) {
-              firstLogDateStr = firstLog.logDate.toISOString();
-            } else if (typeof firstLog.logDate === 'string') {
-              firstLogDateStr = firstLog.logDate;
-            } else {
-              firstLogDateStr = firstLog.logDate.toString();
-            }
-            
-            const dateTimeMatch = firstLogDateStr.match(/(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?/);
-            if (dateTimeMatch) {
-              const [, datePart, hour, minute, second, millisecond] = dateTimeMatch;
-              const [year, month, date] = datePart.split('-').map(Number);
-              const firstLogTime = moment({
-                year: year,
-                month: month - 1,
-                date: date,
-                hour: parseInt(hour),
-                minute: parseInt(minute),
-                second: parseInt(second),
-                millisecond: millisecond ? parseInt(millisecond.padEnd(3, '0')) : 0
-              }).utc().toDate();
-              attendance.biometricCheckIn = firstLogTime;
-              console.log(`      ✅ Set biometricCheckIn (logDate): ${firstLogTime}`);
-            }
+            const firstLogTime = firstLog.createdAt || firstLog.logDate;
+            attendance.biometricCheckIn = firstLogTime;
+            console.log(`      ✅ Set biometricCheckIn (createdAt): ${firstLogTime}`);
           }
 
-          // Set biometricCheckOut (last log of the day) using logDate (ignoring timezone)
+          // Set biometricCheckOut (last log of the day) using createdAt (fallback to logDate)
           if (logDates.length > 0) {
-            // Sort by logDate time (ignoring timezone)
-            const sortedLogs = logDates.sort((a, b) => {
-              let aStr = '';
-              let bStr = '';
-              if (a.logDate instanceof Date) {
-                aStr = a.logDate.toISOString();
-              } else if (typeof a.logDate === 'string') {
-                aStr = a.logDate;
-              } else {
-                aStr = a.logDate.toString();
-              }
-              if (b.logDate instanceof Date) {
-                bStr = b.logDate.toISOString();
-              } else if (typeof b.logDate === 'string') {
-                bStr = b.logDate;
-              } else {
-                bStr = b.logDate.toString();
-              }
-              return aStr.localeCompare(bStr);
-            });
+            const lastLog = logDates.reduce((max, curr) => {
+              const currTime = new Date(curr.createdAt || curr.logDate).getTime();
+              const maxTime = new Date(max.createdAt || max.logDate).getTime();
+              return currTime > maxTime ? curr : max;
+            }, logDates[0]);
 
-            const lastLog = sortedLogs[sortedLogs.length - 1];
-            let lastLogDateStr = '';
-            if (lastLog.logDate instanceof Date) {
-              lastLogDateStr = lastLog.logDate.toISOString();
-            } else if (typeof lastLog.logDate === 'string') {
-              lastLogDateStr = lastLog.logDate;
-            } else {
-              lastLogDateStr = lastLog.logDate.toString();
-            }
-            
-            const dateTimeMatch = lastLogDateStr.match(/(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?/);
-            if (dateTimeMatch) {
-              const [, datePart, hour, minute, second, millisecond] = dateTimeMatch;
-              const [year, month, date] = datePart.split('-').map(Number);
-              const lastLogTime = moment({
-                year: year,
-                month: month - 1,
-                date: date,
-                hour: parseInt(hour),
-                minute: parseInt(minute),
-                second: parseInt(second),
-                millisecond: millisecond ? parseInt(millisecond.padEnd(3, '0')) : 0
-              }).utc().toDate();
-              attendance.biometricCheckOut = lastLogTime;
-              console.log(`      ✅ Set biometricCheckOut (logDate): ${lastLogTime}`);
-            }
+            const lastLogTime = lastLog.createdAt || lastLog.logDate;
+            attendance.biometricCheckOut = lastLogTime;
+            console.log(`      ✅ Set biometricCheckOut (createdAt): ${lastLogTime}`);
           }
 
           await attendance.save();
