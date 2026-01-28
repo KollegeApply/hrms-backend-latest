@@ -6,18 +6,14 @@
 const mongoose = require('mongoose');
 const path = require('path');
 
-// Load env files
-const envPaths = [
-  path.resolve(__dirname, '../../.env.development'),
-  path.resolve(__dirname, '../../.env.local'),
-  path.resolve(__dirname, '../../.env'),
-];
-
-for (const envPath of envPaths) {
-  try {
-    require('dotenv').config({ path: envPath });
-    break;
-  } catch (err) {}
+if (process.env.NODE_ENV) {
+  require('dotenv').config({
+    path: `.env.${process.env.NODE_ENV}`,
+  });
+} else {
+  require('dotenv').config({
+    path: path.resolve(__dirname, '../../.env.development'),
+  });
 }
 
 // Models
