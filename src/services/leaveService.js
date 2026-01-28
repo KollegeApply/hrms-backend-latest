@@ -843,16 +843,17 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
         }
       }
 
-      // ✅ 11. Probation Check
+      // ✅ 11. First 30 Days Check - Auto-reject PROBATION leaves within first 30 days from joining
 
-      const hireDate = new Date(employee.hireDate);
-      const isInFirstMonth =
-        currentDate.year() === hireDate.getFullYear() &&
-        currentDate.month() === hireDate.getMonth();
+      const hireDate = moment.tz(employee.hireDate, 'Asia/Kolkata').startOf('day');
+      const leaveStartDate = currentDate.clone();
+      
+      // Calculate days difference between hire date and leave start date
+      const daysDifference = leaveStartDate.diff(hireDate, 'days');
 
+      // Auto-reject if PROBATION leave is applied within first 30 days from joining
       const isProbationLeave = leaveType.code === 'PROBATION';
-
-      if (isInFirstMonth && isProbationLeave) {
+      if (isProbationLeave && daysDifference >= 0 && daysDifference < 30) {
         // Calculate requested days considering half-day logic
         let requestedDays = validDates.length;
         if (isHalfDay) {
@@ -875,8 +876,9 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
         return {
           isValid: true,
           autoReject: true,
+          autoRejectReason: `Auto-rejected: Probation leave applications are not allowed within the first 30 days from joining date (${hireDate.format('DD MMM YYYY')}). If you have an emergency, please contact HR.`,
           rejectedReasons: [
-            'Auto-rejected: Probation leave not allowed in first month. If you have an emergency, contact HR.',
+            `Auto-rejected: Probation leave applications are not allowed within the first 30 days from joining date (${hireDate.format('DD MMM YYYY')}). If you have an emergency, please contact HR.`,
           ],
           dates: validDates,
         };

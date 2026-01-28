@@ -65,7 +65,8 @@ class AnniversaryAnnouncementService {
           ]
         },
         isDeleted: false,
-        dateOfBirth: { $exists: true, $ne: null }
+        dateOfBirth: { $exists: true, $ne: null },
+        status: { $in: ["probation", "onroll"] }
       };
 
       // Add team filter if specified
@@ -125,7 +126,8 @@ class AnniversaryAnnouncementService {
       // Get all users with hire dates for debugging
       const query = {
         isDeleted: false,
-        hireDate: { $exists: true, $ne: null }
+        hireDate: { $exists: true, $ne: null },
+        status: { $in: ["probation", "onroll"] }
       };
 
       // Add team filter if specified
@@ -219,7 +221,8 @@ class AnniversaryAnnouncementService {
       // Find users with marriage anniversaries today
       const query = {
         isDeleted: false,
-        userDetails: { $exists: true, $ne: null }
+        userDetails: { $exists: true, $ne: null },
+        status: { $in: ["probation", "onroll"] }
       };
 
       // Add team filter if specified
