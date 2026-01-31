@@ -1417,7 +1417,7 @@ async getUserById(id) {
       };
 
       // Select all required fields
-      const selectFields = '_id firstName lastName email role employeeId department phoneNumber hireDate workType status jobTitle formStatus teamLeadId subTeamLeadId shiftTime';
+      const selectFields = '_id firstName lastName email role employeeId department phoneNumber hireDate workType status jobTitle formStatus teamLeadId subTeamLeadId shiftTime isEmergencyRegularizationAllowed';
 
       let users;
 
