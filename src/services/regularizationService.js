@@ -161,21 +161,7 @@ const regularizationService = {
 
       // Add status filter
       if (status) {
-        // Validate status value
-        const validStatuses = ['tl-pending', 'tl-rejected', 'hr-pending', 'approved', 'hr-rejected', 'revoked'];
-        if (validStatuses.includes(status)) {
-          query['regularization.status'] = status;
-        } else {
-          // Invalid status provided, return empty result
-          return {
-            status: 'success',
-            data: [],
-            totalPages: 0,
-            currentPage: parseInt(page),
-            totalRecords: 0,
-            message: `Invalid status value. Valid values are: ${validStatuses.join(', ')}`
-          };
-        }
+        query['regularization.status'] = status;
       }
 
       // Add type filter

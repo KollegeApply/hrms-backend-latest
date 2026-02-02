@@ -27,89 +27,18 @@ class leaveService {
    * @param {string} team - Team code to filter by
    * @param {number} page - Page number (default: 1)
    * @param {number} limit - Items per page (default: 10)
-   * @param {string} financeTeamLeadId - Finance team lead ID (optional)
-   * @param {string} department - Department ID to filter by (optional)
-   * @param {string} status - Leave status to filter by (optional)
-   * @param {string} search - Search term to filter by user name or employeeId (optional)
    * @returns {Promise<object>} - Paginated list of all non-deleted Leaves, sorted by date.
    */
-  async getAllLeave(team, page = 1, limit = 10, financeTeamLeadId = null, department = null, status = null, search = null) {
-    // Build user query with optional department filter
-    const userQuery = { team };
-    if (department) {
-      userQuery.department = department;
-    }
-
-    // Get all user IDs for the team (with optional department filter)
-    let teamUsers = await User.find(userQuery).select('_id');
-    let teamUserIds = teamUsers.map(user => user._id);
-
-    // Apply search filter if provided
-    if (search) {
-      const searchTerm = search.trim();
-      if (searchTerm) {
-        // Split search term by spaces to handle full names like "Rishabh Kumar"
-        const searchTerms = searchTerm.split(/\s+/).filter(term => term.length > 0);
-        
-        let searchUserQuery = {};
-        
-        if (searchTerms.length > 1) {
-          // Multiple words: search for firstName matching first word AND lastName matching second word
-          searchUserQuery = {
-            $or: [
-              {
-                $and: [
-                  { firstName: { $regex: searchTerms[0], $options: 'i' } },
-                  { lastName: { $regex: searchTerms[1], $options: 'i' } }
-                ]
-              },
-              {
-                $and: [
-                  { firstName: { $regex: searchTerms[1], $options: 'i' } },
-                  { lastName: { $regex: searchTerms[0], $options: 'i' } }
-                ]
-              },
-              { firstName: { $regex: searchTerm, $options: 'i' } },
-              { lastName: { $regex: searchTerm, $options: 'i' } },
-              { employeeId: { $regex: searchTerm, $options: 'i' } }
-            ]
-          };
-        } else {
-          // Single word: search in firstName, lastName, or employeeId
-          searchUserQuery = {
-            $or: [
-              { firstName: { $regex: searchTerm, $options: 'i' } },
-              { lastName: { $regex: searchTerm, $options: 'i' } },
-              { employeeId: { $regex: searchTerm, $options: 'i' } }
-            ]
-          };
-        }
-
-        // Find users matching search term within the team
-        const searchUserQueryWithTeam = { ...userQuery, ...searchUserQuery };
-        const searchUsers = await User.find(searchUserQueryWithTeam).select('_id');
-        const searchUserIds = searchUsers.map(user => user._id);
-        
-        // Intersect team user IDs with search user IDs
-        if (searchUserIds.length > 0) {
-          teamUserIds = teamUserIds.filter(id => searchUserIds.some(searchId => searchId.toString() === id.toString()));
-        } else {
-          // No users found matching search, return empty result
-          teamUserIds = [];
-        }
-      }
-    }
+  async getAllLeave(team, page = 1, limit = 10, financeTeamLeadId = null) {
+    // Get all user IDs for the team
+    const teamUsers = await User.find({ team }).select('_id');
+    const teamUserIds = teamUsers.map(user => user._id);
 
     // Build query to filter by team users
     const query = {
       userId: { $in: teamUserIds },
       isDeleted: { $ne: true }
     };
-
-    // Add status filter if provided
-    if (status) {
-      query.status = status;
-    }
 
     const populateOptions = [
       {
@@ -138,73 +67,9 @@ class leaveService {
     if (financeTeamLeadId) {
       financeLeaderObjectId = new mongoose.Types.ObjectId(financeTeamLeadId);
 
-      const teamMemberQuery = {
+      const teamMembers = await User.find({
         teamLeadId: financeLeaderObjectId
-      };
-      
-      // Add department filter if provided
-      if (department) {
-        teamMemberQuery.department = department;
-      }
-
-      let teamMembers = await User.find(teamMemberQuery).select('_id');
-      
-      // Apply search filter if provided
-      if (search) {
-        const searchTerm = search.trim();
-        if (searchTerm) {
-          // Split search term by spaces to handle full names like "Rishabh Kumar"
-          const searchTerms = searchTerm.split(/\s+/).filter(term => term.length > 0);
-          
-          let searchUserQuery = {};
-          
-          if (searchTerms.length > 1) {
-            // Multiple words: search for firstName matching first word AND lastName matching second word
-            searchUserQuery = {
-              $or: [
-                {
-                  $and: [
-                    { firstName: { $regex: searchTerms[0], $options: 'i' } },
-                    { lastName: { $regex: searchTerms[1], $options: 'i' } }
-                  ]
-                },
-                {
-                  $and: [
-                    { firstName: { $regex: searchTerms[1], $options: 'i' } },
-                    { lastName: { $regex: searchTerms[0], $options: 'i' } }
-                  ]
-                },
-                { firstName: { $regex: searchTerm, $options: 'i' } },
-                { lastName: { $regex: searchTerm, $options: 'i' } },
-                { employeeId: { $regex: searchTerm, $options: 'i' } }
-              ]
-            };
-          } else {
-            // Single word: search in firstName, lastName, or employeeId
-            searchUserQuery = {
-              $or: [
-                { firstName: { $regex: searchTerm, $options: 'i' } },
-                { lastName: { $regex: searchTerm, $options: 'i' } },
-                { employeeId: { $regex: searchTerm, $options: 'i' } }
-              ]
-            };
-          }
-
-          // Find users matching search term within team members
-          const searchUserQueryWithTeam = { ...teamMemberQuery, ...searchUserQuery };
-          const searchUsers = await User.find(searchUserQueryWithTeam).select('_id');
-          const searchUserIds = searchUsers.map(user => user._id);
-          
-          // Filter teamMembers to only include those matching search
-          if (searchUserIds.length > 0) {
-            teamMembers = teamMembers.filter(user => searchUserIds.some(searchId => searchId.toString() === user._id.toString()));
-          } else {
-            // No users found matching search
-            teamMembers = [];
-          }
-        }
-      }
-      
+      }).select('_id');
       teamMemberIds = teamMembers.map((u) => u._id);
     }
 
@@ -300,93 +165,13 @@ class leaveService {
    * @param {String} params.id - MongoDB ObjectId.
    * @param {number} page - Page number (default: 1)
    * @param {number} limit - Items per page (default: 10)
-   * @param {string} department - Department ID to filter by (optional)
-   * @param {string} status - Leave status to filter by (optional)
-   * @param {string} search - Search term to filter by user name or employeeId (optional, not applicable for single user)
    * @returns {Promise<object>} - Paginated list of leaves for the user.
    */
-  async getLeaveById({ id }, page = 1, limit = 10, department = null, status = null, search = null) {
+  async getLeaveById({ id }, page = 1, limit = 10) {
     const query = {
       userId: id,
       isDeleted: { $ne: true }
     };
-
-    // Add status filter if provided
-    if (status) {
-      query.status = status;
-    }
-
-    // If department filter is provided, verify user belongs to that department
-    if (department) {
-      const user = await User.findById(id).select('department');
-      if (!user || user.department?.toString() !== department) {
-        // User doesn't belong to the specified department, return empty result
-        return {
-          data: [],
-          pagination: {
-            totalDocs: 0,
-            limit,
-            totalPages: 0,
-            currentPage: page,
-            pagingCounter: 0,
-            hasPrevPage: false,
-            hasNextPage: false,
-            prevPage: null,
-            nextPage: null,
-          },
-        };
-      }
-    }
-
-    // Note: Search filter is not applicable for getLeaveById as it's already filtered by specific user ID
-    // But we can verify if the user matches the search term
-    if (search) {
-      const searchTerm = search.trim();
-      if (searchTerm) {
-        const user = await User.findById(id).select('firstName lastName employeeId');
-        if (user) {
-          const fullName = `${user.firstName} ${user.lastName}`.toLowerCase();
-          const searchLower = searchTerm.toLowerCase();
-          const searchTerms = searchTerm.split(/\s+/).filter(term => term.length > 0);
-          
-          let matches = false;
-          if (searchTerms.length > 1) {
-            // Check if firstName and lastName match the search terms
-            matches = (
-              (user.firstName?.toLowerCase().includes(searchTerms[0]) && user.lastName?.toLowerCase().includes(searchTerms[1])) ||
-              (user.firstName?.toLowerCase().includes(searchTerms[1]) && user.lastName?.toLowerCase().includes(searchTerms[0])) ||
-              fullName.includes(searchLower) ||
-              user.employeeId?.toLowerCase().includes(searchLower)
-            );
-          } else {
-            // Single word search
-            matches = (
-              user.firstName?.toLowerCase().includes(searchLower) ||
-              user.lastName?.toLowerCase().includes(searchLower) ||
-              user.employeeId?.toLowerCase().includes(searchLower)
-            );
-          }
-          
-          if (!matches) {
-            // User doesn't match search term, return empty result
-            return {
-              data: [],
-              pagination: {
-                totalDocs: 0,
-                limit,
-                totalPages: 0,
-                currentPage: page,
-                pagingCounter: 0,
-                hasPrevPage: false,
-                hasNextPage: false,
-                prevPage: null,
-                nextPage: null,
-              },
-            };
-          }
-        }
-      }
-    }
 
     const populateOptions = [
       {
@@ -681,73 +466,13 @@ async updateLeaveStatus({ leaveId, action, editor }) {
   return await leave.save();
 }
 
-  async getLeaveTl({ id, team }, page = 1, limit = 10, department = null, status = null, search = null) {
-    // Build query for team members with optional department filter
-    const teamMemberQuery = {
-      $or: [{ teamLeadId: id }, { subTeamLeadId: id }],
-    };
-    
-    if (department) {
-      teamMemberQuery.department = department;
-    }
-
-    let leadUsers = await User.find(teamMemberQuery, 'id');
-
-    // Apply search filter if provided
-    if (search) {
-      const searchTerm = search.trim();
-      if (searchTerm) {
-        // Split search term by spaces to handle full names like "Rishabh Kumar"
-        const searchTerms = searchTerm.split(/\s+/).filter(term => term.length > 0);
-        
-        let searchUserQuery = {};
-        
-        if (searchTerms.length > 1) {
-          // Multiple words: search for firstName matching first word AND lastName matching second word
-          searchUserQuery = {
-            $or: [
-              {
-                $and: [
-                  { firstName: { $regex: searchTerms[0], $options: 'i' } },
-                  { lastName: { $regex: searchTerms[1], $options: 'i' } }
-                ]
-              },
-              {
-                $and: [
-                  { firstName: { $regex: searchTerms[1], $options: 'i' } },
-                  { lastName: { $regex: searchTerms[0], $options: 'i' } }
-                ]
-              },
-              { firstName: { $regex: searchTerm, $options: 'i' } },
-              { lastName: { $regex: searchTerm, $options: 'i' } },
-              { employeeId: { $regex: searchTerm, $options: 'i' } }
-            ]
-          };
-        } else {
-          // Single word: search in firstName, lastName, or employeeId
-          searchUserQuery = {
-            $or: [
-              { firstName: { $regex: searchTerm, $options: 'i' } },
-              { lastName: { $regex: searchTerm, $options: 'i' } },
-              { employeeId: { $regex: searchTerm, $options: 'i' } }
-            ]
-          };
-        }
-
-        // Find users matching search term within team members
-        const searchUserQueryWithTeam = { ...teamMemberQuery, ...searchUserQuery };
-        const searchUsers = await User.find(searchUserQueryWithTeam, 'id');
-        const searchUserIds = searchUsers.map(user => user._id.toString());
-        
-        // Filter leadUsers to only include those matching search
-        if (searchUserIds.length > 0) {
-          leadUsers = leadUsers.filter(user => searchUserIds.includes(user._id.toString()));
-        } else {
-          // No users found matching search, return empty result
-          leadUsers = [];
-        }
-      }
-    }
+  async getLeaveTl({ id, team }, page = 1, limit = 10) {
+    const leadUsers = await User.find(
+      {
+        $or: [{ teamLeadId: id }, { subTeamLeadId: id }],
+      },
+      'id'
+    );
 
     const userIds = leadUsers.map((user) => user._id.toString());
     userIds.push(id);
@@ -756,11 +481,6 @@ async updateLeaveStatus({ leaveId, action, editor }) {
       userId: { $in: userIds },
       isDeleted: { $ne: true }
     };
-
-    // Add status filter if provided
-    if (status) {
-      query.status = status;
-    }
 
     const populateOptions = [
       {
@@ -1072,30 +792,11 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
           });
 
           if (holiday) {
-            // For restricted leave type, allow only on restricted holidays
-            if (leaveType.code === 'RESTRICTED') {
-              if (holiday.holidayType === 'Restricted') {
-                // Allow restricted leave on restricted holiday dates
-                const dateInKolkata = moment.tz(pointer.format('YYYY-MM-DD'), 'Asia/Kolkata').startOf('day').toDate();
-                validDates.push(dateInKolkata);
-              } else {
-                // Block restricted leave on regular holidays or non-restricted holidays
-                addReason(`Restricted leave can only be taken on restricted holiday dates`);
-              }
-            } else {
-              // For other leave types, block all holidays
-              addReason(`Holiday (${holiday.name})`, dateStr);
-            }
+            addReason(`Holiday (${holiday.name})`, dateStr);
           } else {
-            // For restricted leave type, block non-holiday dates
-            if (leaveType.code === 'RESTRICTED') {
-              addReason(`Restricted leave can only be taken on restricted holiday dates`);
-            } else {
-              // For other leave types, allow non-holiday dates
-              // Create date in Asia/Kolkata timezone to avoid timezone conversion issues
-              const dateInKolkata = moment.tz(pointer.format('YYYY-MM-DD'), 'Asia/Kolkata').startOf('day').toDate();
-              validDates.push(dateInKolkata);
-            }
+            // Create date in Asia/Kolkata timezone to avoid timezone conversion issues
+            const dateInKolkata = moment.tz(pointer.format('YYYY-MM-DD'), 'Asia/Kolkata').startOf('day').toDate();
+            validDates.push(dateInKolkata);
           }
         }
 
@@ -1123,31 +824,6 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
           return {
             isValid: false,
             reason: `Only ${3 - usedBereavement} bereavement days remaining this year`,
-          };
-        }
-      }
-
-      // ✅ 11. Restricted Leave Rule
-      if (leaveType.code === 'RESTRICTED') {
-        const usedRestricted = await this.getUsedRestrictedDays(
-          userId,
-          currentYear
-        );
-        const totalRequested = validDates.length;
-        const quota = 2; // Fixed quota of 2 restricted leaves per year
-
-        if (usedRestricted >= quota) {
-          return {
-            isValid: false,
-            reason:
-              'Annual restricted leave quota (2 days) has been exhausted',
-          };
-        }
-
-        if (usedRestricted + totalRequested > quota) {
-          return {
-            isValid: false,
-            reason: `Only ${quota - usedRestricted} restricted leave(s) remaining this year`,
           };
         }
       }
@@ -1280,8 +956,7 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
       leaveTypeId: await LeaveType.findOne({ code: 'BEREAVEMENT' }).select(
         '_id'
       ),
-      status: { $in: ['approved', 'pending', 'tl-pending', 'hr-pending'] },
-      isDeleted: false,
+      status: { $in: ['approved', 'pending', 'tl-approved', 'hr-approved'] },
       dates: {
         $gte: startOfYear,
         $lte: endOfYear,
@@ -1289,32 +964,6 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
     });
 
     return bereavementLeaves.reduce(
-      (total, leave) => total + leave.totalDays,
-      0
-    );
-  }
-
-  async getUsedRestrictedDays(userId, year) {
-    const startOfYear = new Date(year, 0, 1);
-    const endOfYear = new Date(year, 11, 31, 23, 59, 59, 999);
-
-    const restrictedLeaveType = await LeaveType.findOne({ code: 'RESTRICTED' }).select('_id');
-    if (!restrictedLeaveType) {
-      return 0;
-    }
-
-    const restrictedLeaves = await LeaveApplication.find({
-      userId,
-      leaveTypeId: restrictedLeaveType._id,
-      status: { $in: ['approved', 'pending', 'tl-pending', 'hr-pending'] },
-      isDeleted: false,
-      dates: {
-        $gte: startOfYear,
-        $lte: endOfYear,
-      },
-    });
-
-    return restrictedLeaves.reduce(
       (total, leave) => total + leave.totalDays,
       0
     );

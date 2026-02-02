@@ -22,9 +22,6 @@ const createHolidaySchema = Joi.object({
   userId: objectIdSchema.required().messages({
     'any.required': 'UserId is required.',
   }),
-  holidayType: Joi.string().valid('Regular', 'Restricted').default('Regular').messages({
-    'any.only': 'Holiday type must be either "Regular" or "Restricted".',
-  }),
 }).options({ stripUnknown: true });
 
 const updateHolidaySchema = Joi.object({
@@ -39,9 +36,6 @@ const updateHolidaySchema = Joi.object({
   date: Joi.date().iso().required().messages({
     'string.base': 'Holiday date must be a validate date.',
     'any.required': 'Holiday date is required.',
-  }),
-  holidayType: Joi.string().valid('Regular', 'Restricted').messages({
-    'any.only': 'Holiday type must be either "Regular" or "Restricted".',
   }),
 });
 

@@ -33,7 +33,7 @@ const optionalDocumentFields = [
 const documentFields = [...requiredDocumentFields, ...optionalDocumentFields];
 
 router.post('/', authenticateUser, authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]), candidateController.createCandidate);
-router.get('/', authenticateUser, authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN, USER_ROLES?.TEAMLEAD]), candidateController.getCandidates);
+router.get('/', authenticateUser, candidateController.getCandidates);
 router.get('/id/:id', candidateController.getCandidateDetailsById);
 
 router.post('/invite-user/:id',authenticateUser, candidateController.inviteOrRemindUser);
