@@ -1300,16 +1300,26 @@ async getUserById(id) {
           role: { $in: ['subteamlead', 'teamlead', 'employee', 'intern', 'IT'] },
         }).select(commonSelectFields).populate('department', 'name');
       } else if (userRole === 'teamlead') {
-        // TL → Self team + HR (only their team members + HR)
+        // TL → Self team + HR + Their own TL (only their team members + HR + their TL)
+        const currentUser = await User.findById(userId).select('teamLeadId');
+        const userTeamLeadId = currentUser?.teamLeadId;
+        
+        const orConditions = [
+          { teamLeadId: userId }, // Direct team members under this TL
+          { subTeamLeadId: userId }, // Sub team members under this TL  
+          { role: 'hr' }, // HR members
+        ];
+        
+        // Include current user's TL if exists
+        if (userTeamLeadId) {
+          orConditions.push({ _id: userTeamLeadId }); // Their own TL
+        }
+        
         user = await User.find({
           $and: [
             query,
             {
-              $or: [
-                { teamLeadId: userId }, // Direct team members under this TL
-                { subTeamLeadId: userId }, // Sub team members under this TL  
-                { role: 'hr' }, // HR members
-              ],
+              $or: orConditions,
             },
           ],
         }).select(commonSelectFields).populate('department', 'name');
