@@ -597,10 +597,22 @@ class FeedbacksService {
 
 
     const feedbacks = await Feedback.find(finalFilter)
-        .populate('givenBy', 'firstName lastName email role employeeId team department')
-        .populate('givenTo', 'firstName lastName email role employeeId team department')
-        .populate('givenTo.department', 'name')
-        .populate('givenBy.department', 'name')
+        .populate({
+            path: 'givenBy',
+            select: 'firstName lastName email role employeeId team department',
+            populate: {
+                path: 'department',
+                select: '_id name'
+            }
+        })
+        .populate({
+            path: 'givenTo',
+            select: 'firstName lastName email role employeeId team department hireDate',
+            populate: {
+                path: 'department',
+                select: '_id name'
+            }
+        })
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit);
@@ -742,8 +754,22 @@ class FeedbacksService {
 
     async getFeedbackById(feedbackId, userId, userRole) {
         const feedback = await Feedback.findById(feedbackId)
-            .populate('givenBy', 'firstName lastName email role employeeId')
-            .populate('givenTo', 'firstName lastName email role employeeId');
+            .populate({
+                path: 'givenBy',
+                select: 'firstName lastName email role employeeId team department',
+                populate: {
+                    path: 'department',
+                    select: '_id name'
+                }
+            })
+            .populate({
+                path: 'givenTo',
+                select: 'firstName lastName email role employeeId team department hireDate',
+                populate: {
+                    path: 'department',
+                    select: '_id name'
+                }
+            });
 
         if (!feedback) return null;
 
