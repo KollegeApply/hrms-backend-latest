@@ -25,6 +25,7 @@ const leaveTypeModel = require('../models/leaveTypeModel');
 const { default: mongoose } = require('mongoose');
 const candidateModel = require('../models/candidateModel');
 const Feedback = require('../models/feedbackModel');
+const CompanyPolicy = require('../models/companypolicyModel');
 
 class UserService {
   /**
@@ -494,6 +495,27 @@ async getUserById(id) {
       };
     });
     await employeeLeaveBalanceModel.insertMany(balances);
+
+    // Create default company policy records (BYOD + NDA) for the new user
+    try {
+      await CompanyPolicy.insertMany([
+        {
+          userId: savedUser._id,
+          policyType: 'BYOD',
+          status: 'PENDING',
+        },
+        {
+          userId: savedUser._id,
+          policyType: 'NDA',
+          status: 'PENDING',
+        },
+      ]);
+    } catch (err) {
+      logger.error(
+        `Failed to create default company policies for user ${savedUser?._id}:`,
+        err
+      );
+    }
 
     if (userData?.candidateId) {
       const candidate = await candidateModel.findById(userData?.candidateId);
@@ -1183,6 +1205,34 @@ async getUserById(id) {
             ordered: false,
           });
           createdCount = result?.length;
+
+          // Create default company policies (BYOD + NDA) for all newly created users
+          if (createdCount > 0) {
+            const policyDocs = [];
+            for (const user of result) {
+              policyDocs.push(
+                {
+                  userId: user._id,
+                  policyType: 'BYOD',
+                  status: 'PENDING',
+                },
+                {
+                  userId: user._id,
+                  policyType: 'NDA',
+                  status: 'PENDING',
+                }
+              );
+            }
+
+            try {
+              await CompanyPolicy.insertMany(policyDocs);
+            } catch (policyErr) {
+              logger.error(
+                `${activity} Failed to create default company policies for bulk users:`,
+                policyErr
+              );
+            }
+          }
 
           for (const user of result) {
             // await sendUserWelcomeEmail(user); // customize this function as needed

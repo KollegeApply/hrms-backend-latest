@@ -285,12 +285,25 @@ async updateLeaveStatus({ leaveId, action, editor }) {
 
           if (leave.leaveTypeId.code !== 'LOP') {
             // For paid leaves: check balance and deduct
-            const totalAvailable = (empBalance?.accrued || 0) + (empBalance?.carryForwarded || 0);
+            const accrued = empBalance?.accrued || 0;
+            const carryForwarded = empBalance?.carryForwarded || 0;
+            const total = empBalance?.total || 0;
             const used = empBalance?.used || 0;
 
-            if (!empBalance || totalAvailable - used < daysToAdd) {
-              throw new ApiError(httpStatus.CONFLICT, `Insufficient leave balance. Available: ${totalAvailable - used}, Requested: ${daysToAdd}`);
+            // For regular leaves we use accrued+carryForwarded; for fixed‑quota
+            // types (like Restricted) we may only have `total` populated.
+            const baseEntitlement =
+              accrued + carryForwarded > 0 ? accrued + carryForwarded : total;
+
+            const available = baseEntitlement - used;
+
+            if (!empBalance || available < daysToAdd) {
+              throw new ApiError(
+                httpStatus.CONFLICT,
+                `Insufficient leave balance. Available: ${available}, Requested: ${daysToAdd}`
+              );
             }
+
             empBalance.used += daysToAdd;
             await empBalance.save();
           } else {
@@ -645,11 +658,23 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
         totalPendingDays += leave.totalDays;
       });
 
-      const { accrued = 0, used = 0, carryForwarded = 0 } = balance || {};
+      const {
+        accrued = 0,
+        used = 0,
+        carryForwarded = 0,
+        total = 0,
+      } = balance || {};
+
+      // For most leave types we use accrued + carryForwarded.
+      // For fixed‑quota types (like Restricted) we sometimes only store the quota in `total`,
+      // with accrued=0. In that case, fall back to `total`.
+      const baseEntitlement =
+        accrued + carryForwarded > 0 ? accrued + carryForwarded : total;
+
       const totalAvailable =
         leaveType.code === 'LOP'
           ? Infinity
-          : accrued + carryForwarded - (used + totalPendingDays);
+          : baseEntitlement - (used + totalPendingDays);
 
       const currentMonthStart = moment().tz('Asia/Kolkata').startOf('month').toDate();
       const currentMonthEnd = moment().tz('Asia/Kolkata').endOf('month').toDate();
@@ -788,14 +813,29 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
               $gte: pointer.toDate(),
               $lt: pointer.clone().add(1, 'day').toDate(),
             },
-            isDeleted:false,
+            isDeleted: false,
           });
 
           if (holiday) {
-            addReason(`Holiday (${holiday.name})`, dateStr);
+            // Special rule: allow applying RESTRICTED leave on Restricted holidays.
+            if (
+              leaveType.code === 'RESTRICTED' &&
+              holiday.holidayType === 'Restricted'
+            ) {
+              const dateInKolkata = moment
+                .tz(pointer.format('YYYY-MM-DD'), 'Asia/Kolkata')
+                .startOf('day')
+                .toDate();
+              validDates.push(dateInKolkata);
+            } else {
+              addReason(`Holiday (${holiday.name})`, dateStr);
+            }
           } else {
             // Create date in Asia/Kolkata timezone to avoid timezone conversion issues
-            const dateInKolkata = moment.tz(pointer.format('YYYY-MM-DD'), 'Asia/Kolkata').startOf('day').toDate();
+            const dateInKolkata = moment
+              .tz(pointer.format('YYYY-MM-DD'), 'Asia/Kolkata')
+              .startOf('day')
+              .toDate();
             validDates.push(dateInKolkata);
           }
         }
