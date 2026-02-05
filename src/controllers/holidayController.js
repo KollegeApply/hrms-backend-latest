@@ -8,12 +8,14 @@ const catchAsync = require('../utility/catchAsync');
 const createHoliday = catchAsync(async (req, res) => {
   const holidayName = req?.body?.name;
   const holidayDate = req?.body?.date;
+  const holidayType = req?.body?.holidayType;
   const userId = req?.user?.id;
 
   const validatedData =
     await holidayValidator?.createHolidaySchema?.validateAsync({
       name: holidayName,
       date: holidayDate,
+      holidayType: holidayType,
       userId: userId,
     });
   const holiday = await holidayService?.createHoliday(validatedData);
