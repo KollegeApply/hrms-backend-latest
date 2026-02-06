@@ -1,7 +1,9 @@
 const BiometricLog = require('../models/biometricLogModel');
 const User = require('../models/userModel');
+const Attendance = require('../models/attendanceModel');
 const { decryptAES256CBC, isEncrypted } = require('../utility/aesDecrypt');
 const logger = require('../config/logger');
+const moment = require('moment-timezone');
 
 // Get decryption key from environment or use default
 const DECRYPTION_KEY =
@@ -199,11 +201,25 @@ async function processSingleBiometricRecord(payload) {
 
     // Find user by employeeCode (matching employeeId in User model)
     let user = null;
-    if (biometricData.EmployeeCode) {
+    const rawEmployeeCode = biometricData.EmployeeCode;
+    const normalizedEmployeeCode = normalizeEmployeeCode(rawEmployeeCode);
+    if (rawEmployeeCode) {
+      const employeeIdCandidates = [
+        rawEmployeeCode,
+        normalizedEmployeeCode,
+      ].filter(Boolean);
+
       user = await User.findOne({
-        employeeId: biometricData.EmployeeCode,
+        employeeId: { $in: employeeIdCandidates },
         isDeleted: { $ne: true },
       }).select('_id employeeId');
+
+      if (!user) {
+        logger.warn('No user matched for employee code', {
+          rawEmployeeCode,
+          normalizedEmployeeCode,
+        });
+      }
     }
 
     // Parse GPS coordinates
@@ -241,6 +257,13 @@ async function processSingleBiometricRecord(payload) {
       logId: biometricLog._id,
     });
 
+    // Sync biometric log into attendance (if user mapping exists)
+    await syncBiometricToAttendance({
+      user,
+      logDate,
+      direction: biometricData.Direction,
+    });
+
     return {
       success: true,
       message: 'Biometric log processed successfully',
@@ -262,6 +285,24 @@ async function processSingleBiometricRecord(payload) {
     );
     throw error;
   }
+}
+
+/**
+ * Normalizes employee code to match stored employeeId format.
+ * Example: "SD116" -> "SD_116"
+ * @param {string} employeeCode
+ * @returns {string|null}
+ */
+function normalizeEmployeeCode(employeeCode) {
+  if (!employeeCode || typeof employeeCode !== 'string') return null;
+
+  const trimmed = employeeCode.trim().toUpperCase();
+  if (trimmed.includes('_')) return trimmed;
+
+  const match = trimmed.match(/^([A-Z]+)(\d+)$/);
+  if (!match) return trimmed;
+
+  return `${match[1]}_${match[2]}`;
 }
 
 /**
@@ -362,6 +403,86 @@ function parseGPS(gpsString) {
   } catch (error) {
     return null;
   }
+}
+
+/**
+ * Syncs biometric log into attendance record for the same day (IST).
+ * @param {object} params
+ * @param {object|null} params.user - Mongoose user doc (must have _id)
+ * @param {Date} params.logDate - Log timestamp
+ * @param {string} params.direction - IN/OUT
+ */
+async function syncBiometricToAttendance({ user, logDate, direction }) {
+  try {
+    if (!user || !user._id) {
+      logger.warn('Skipping attendance sync: user not mapped for biometric log');
+      return;
+    }
+
+    if (!logDate) {
+      logger.warn('Skipping attendance sync: logDate missing');
+      return;
+    }
+
+    const { attendanceDate, endOfDay } = getAttendanceDateRangeIST(logDate);
+
+    let attendance = await Attendance.findOne({
+      user: user._id,
+      date: attendanceDate,
+    });
+
+    if (!attendance) {
+      attendance = await Attendance.findOne({
+        user: user._id,
+        date: { $gte: attendanceDate, $lt: endOfDay },
+      });
+    }
+
+    if (!attendance) {
+      attendance = new Attendance({
+        user: user._id,
+        date: attendanceDate,
+      });
+    }
+
+    const logTime = logDate instanceof Date ? logDate : new Date(logDate);
+
+    // Direction ignored: always keep earliest log as check-in, latest log as check-out
+    if (!attendance.biometricCheckIn || logTime < attendance.biometricCheckIn) {
+      attendance.biometricCheckIn = logTime;
+    }
+    if (!attendance.biometricCheckOut || logTime > attendance.biometricCheckOut) {
+      attendance.biometricCheckOut = logTime;
+    }
+
+    await attendance.save();
+  } catch (error) {
+    logger.error(
+      {
+        err: error,
+        errorMessage: error.message,
+        userId: user?._id,
+        logDate,
+        direction,
+      },
+      'Failed to sync biometric log to attendance'
+    );
+  }
+}
+
+/**
+ * Calculates IST day range for attendance storage.
+ * @param {Date} logDate
+ * @returns {{ attendanceDate: Date, endOfDay: Date }}
+ */
+function getAttendanceDateRangeIST(logDate) {
+  const logMomentIST = moment(logDate).tz('Asia/Kolkata');
+  const dayStartIST = logMomentIST.clone().startOf('day');
+  const dayEndIST = dayStartIST.clone().add(1, 'day');
+  return {
+    attendanceDate: dayStartIST.utc().toDate(),
+    endOfDay: dayEndIST.utc().toDate(),
+  };
 }
 
 module.exports = {
