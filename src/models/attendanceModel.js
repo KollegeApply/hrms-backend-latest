@@ -63,6 +63,8 @@ const attendanceSchema = new Schema(
 
     checkInTime: Date,
     checkOutTime: Date,
+    biometricCheckIn: Date,
+    biometricCheckOut: Date,
 
     checkInLocation: {
       latitude: Number,
