@@ -260,7 +260,7 @@ async function processSingleBiometricRecord(payload) {
     // Sync biometric log into attendance (if user mapping exists)
     await syncBiometricToAttendance({
       user,
-      logDate,
+      logDate: biometricLog.createdAt,
       direction: biometricData.Direction,
     });
 
