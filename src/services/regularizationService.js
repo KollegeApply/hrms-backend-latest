@@ -187,6 +187,10 @@ const regularizationService = {
           // Team leads can see their team members' requests
           const teamMembers = await this.getTeamMembers(userId);
           roleBasedUserIds = teamMembers.map(id => id.toString());
+        } else if (userRole === 'subteamlead') {
+          // Sub team leads can see their sub team members' requests
+          const subTeamMembers = await this.getSubTeamMembers(userId);
+          roleBasedUserIds = subTeamMembers.map(id => id.toString());
         } else if (['hr', 'subadmin', 'admin'].includes(userRole)) {
           // HR/Admin/SubAdmin can see all requests by default
           // No additional filtering needed - they can see all regularization requests
@@ -202,6 +206,10 @@ const regularizationService = {
           // Team leads can see their team members' requests
           const teamMembers = await this.getTeamMembers(userId);
           roleBasedUserIds = teamMembers.map(id => id.toString());
+        } else if (userRole === 'subteamlead') {
+          // Sub team leads can see their sub team members' requests
+          const subTeamMembers = await this.getSubTeamMembers(userId);
+          roleBasedUserIds = subTeamMembers.map(id => id.toString());
         } else if (['hr', 'subadmin', 'admin'].includes(userRole)) {
           // HR/Admin/SubAdmin can see all requests by default
           // No additional filtering needed
@@ -541,6 +549,22 @@ const regularizationService = {
       throw error;
     }
   },
+
+  async getSubTeamMembers(subTeamLeadId) {
+    try {
+      const members = await User.find({
+        $or: [
+          { _id: subTeamLeadId },
+          { subTeamLeadId: subTeamLeadId }
+        ]
+      }).select('_id');
+  
+      return members.map(m => m._id);
+    } catch (error) {
+      throw error;
+    }
+  },
+  
 
   canReview(attendance, userId, userRole) {
     if (userRole === 'admin' || userRole === 'subadmin') {
