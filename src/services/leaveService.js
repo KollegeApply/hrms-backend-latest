@@ -816,20 +816,26 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
             isDeleted: false,
           });
 
-          if (holiday) {
-            // Special rule: allow applying RESTRICTED leave on Restricted holidays.
-            if (
-              leaveType.code === 'RESTRICTED' &&
-              holiday.holidayType === 'Restricted'
-            ) {
+          if (leaveType.code === 'RESTRICTED') {
+            if (holiday && holiday.holidayType === 'Restricted') {
               const dateInKolkata = moment
                 .tz(pointer.format('YYYY-MM-DD'), 'Asia/Kolkata')
                 .startOf('day')
                 .toDate();
               validDates.push(dateInKolkata);
+            } else if (holiday) {
+              addReason(
+                `Restricted leave can only be taken on Restricted holidays`,
+                null
+              );
             } else {
-              addReason(`Holiday (${holiday.name})`, dateStr);
+              addReason(
+                'Restricted leave can only be taken on Restricted holidays',
+                null
+              );
             }
+          } else if (holiday) {
+            addReason(`Holiday (${holiday.name})`, dateStr);
           } else {
             // Create date in Asia/Kolkata timezone to avoid timezone conversion issues
             const dateInKolkata = moment
