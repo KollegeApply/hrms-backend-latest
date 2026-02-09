@@ -22,6 +22,12 @@ const holidaySchema = new mongoose.Schema(
       required: true,
       default: false,
     },
+    holidayType: {
+      type: String,
+      enum: ["Restricted", "Normal"],
+      required: true,
+      default: "Normal",
+    },
   },
   { timestamps: true }
 );
