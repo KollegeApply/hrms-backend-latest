@@ -92,10 +92,23 @@ class FeedbacksService {
 
         // Get appropriate KPIs for the department
         let kpis;
+        let departmentKpiRecord = null;
+        let employeeKpiOverride = null;
         if (employee.department && employee.department._id) {
-            kpis = await kpiService.getKPIsByDepartmentId(employee.department._id);
+            departmentKpiRecord = await kpiService.getKPIsByDepartmentId(employee.department._id);
+            kpis = departmentKpiRecord;
         }
         
+        // Check employee-specific KPI override (takes precedence for this employee)
+        employeeKpiOverride = await kpiService.getEmployeeKpiOverride(employee._id);
+        if (employeeKpiOverride) {
+            kpis = {
+                _id: null,
+                departmentName: employeeKpiOverride.departmentId?.name || 'override',
+                kpis: employeeKpiOverride.kpis
+            };
+        }
+
         if (!kpis) {
             kpis = kpiService.getGenericKPIs();
         }
@@ -241,7 +254,8 @@ class FeedbacksService {
             periodType: periodType,
             rating: finalRating,
             legacyRating: legacyRating, // For backward compatibility
-            kpiRecordId: kpis._id || null, // Reference to KPI record (contains all KPI definitions)
+            kpiRecordId: departmentKpiRecord?._id || kpis._id || null, // Reference to KPI record (contains all KPI definitions)
+            employeeKpiOverrideId: employeeKpiOverride ? employeeKpiOverride._id : null,
             departmentId: employee.department ? employee.department._id : null,
             // Add approval workflow fields
             approvalStatus: approvalStatus,

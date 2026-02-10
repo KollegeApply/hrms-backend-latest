@@ -51,15 +51,23 @@ const updateFeedbackValidator = Joi.object({
   to: Joi.date().iso().optional().label("To Date"),
   feedback: Joi.string().optional().label("Feedback"),
   givenTo: Joi.string().optional().label("Given To"),
-  rating: Joi.object({
-    discipline: Joi.number().min(1).max(5).optional(),
-    initiative: Joi.number().min(1).max(5).optional(),
-    teamwork: Joi.number().min(1).max(5).optional(),
-    ownership: Joi.number().min(1).max(5).optional(),
-    skillDevelopment: Joi.number().min(1).max(5).optional(),
-    techSkills: Joi.number().min(1).max(5).optional(),
-    overall: Joi.number().min(1).max(5).optional(),
-  }).optional(),
+  rating: Joi.alternatives().try(
+    // Legacy format support
+    Joi.object({
+      discipline: Joi.number().min(1).max(5).optional(),
+      initiative: Joi.number().min(1).max(5).optional(),
+      teamwork: Joi.number().min(1).max(5).optional(),
+      ownership: Joi.number().min(1).max(5).optional(),
+      skillDevelopment: Joi.number().min(1).max(5).optional(),
+      techSkills: Joi.number().min(1).max(5).optional(),
+      overall: Joi.number().min(1).max(5).optional(),
+    }).min(1),
+    // New KPI format support - dynamic key-value pairs
+    Joi.object().pattern(
+      Joi.string(),
+      Joi.number().min(0).max(5)
+    ).min(1)
+  ).optional(),
   concernRaised: Joi.boolean().optional(),
   concernReason: Joi.string().optional(),
   // AI Analysis fields (optional for updates)
