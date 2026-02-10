@@ -12,6 +12,9 @@ router.get('/department/:departmentName', kpiController.getKPIsByDepartment);
 // Get KPIs for employee (used in feedback forms)
 router.get('/employee/:employeeId', kpiController.getKPIsForEmployee);
 
+// Set employee KPI override (teamlead, subteamlead, admin, subadmin)
+router.put('/employee/:employeeId/override', authorizeRole(['teamlead', 'subteamlead', 'admin', 'subadmin']), kpiController.setEmployeeKpiOverride);
+
 // Get all KPIs (admin/hr only)
 router.get('/', authorizeRole(['admin', 'subadmin', 'hr']), kpiController.getAllKPIs);
 

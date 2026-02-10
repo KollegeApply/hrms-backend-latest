@@ -1,5 +1,6 @@
 const KPI = require('../models/kpiModel');
 const Department = require('../models/departmentModel');
+const EmployeeKpiOverride = require('../models/employeeKpiOverrideModel');
 const logger = require('../config/logger');
 
 class KPIService {
@@ -99,6 +100,53 @@ class KPIService {
         }
       ]
     };
+  }
+
+  async getEmployeeKpiOverride(employeeId) {
+    try {
+      const override = await EmployeeKpiOverride.findOne({
+        employeeId: employeeId,
+        isActive: true,
+        isDeleted: false
+      }).populate('departmentId', 'name');
+
+      return override;
+    } catch (error) {
+      logger.error('Error fetching employee KPI override:', error);
+      return null;
+    }
+  }
+
+  async createOrUpdateEmployeeKpiOverride(employeeId, departmentId, kpis, userId) {
+    try {
+      const existingOverride = await EmployeeKpiOverride.findOne({
+        employeeId: employeeId,
+        isDeleted: false
+      });
+
+      if (existingOverride) {
+        existingOverride.kpis = kpis;
+        existingOverride.departmentId = departmentId || null;
+        existingOverride.updatedBy = userId;
+        existingOverride.isActive = true;
+        await existingOverride.save();
+        return existingOverride;
+      }
+
+      const newOverride = new EmployeeKpiOverride({
+        employeeId,
+        departmentId: departmentId || null,
+        kpis,
+        createdBy: userId,
+        updatedBy: userId
+      });
+
+      await newOverride.save();
+      return newOverride;
+    } catch (error) {
+      logger.error('Error creating/updating employee KPI override:', error);
+      throw error;
+    }
   }
 
   // Create or update KPIs for a department

@@ -54,6 +54,12 @@ const feedbackSchema = new mongoose.Schema({
     ref: 'KPI',
     required: false
   },
+  // Reference to employee-specific KPI override (if used)
+  employeeKpiOverrideId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'EmployeeKpiOverride',
+    required: false
+  },
   // Department reference (for better querying)
   departmentId: {
     type: mongoose.Schema.Types.ObjectId,
