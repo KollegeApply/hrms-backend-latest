@@ -15,6 +15,57 @@ const moment = require('moment-timezone');
 const { paginate } = require('../utility/common');
 
 class leaveService {
+  buildSearchConditions(search) {
+    if (!search || typeof search !== 'string') return null;
+    const terms = search
+      .split(/\s+/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (terms.length === 0) return null;
+
+    const toRegex = (term) => {
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(escaped, 'i');
+    };
+
+    // Single term: match any field
+    if (terms.length === 1) {
+      const rx = toRegex(terms[0]);
+      return {
+        $or: [
+          { firstName: rx },
+          { lastName: rx },
+          { email: rx },
+          { employeeId: rx },
+        ],
+      };
+    }
+
+    // Multiple terms: each term must match at least one field
+    return {
+      $and: terms.map((term) => {
+        const rx = toRegex(term);
+        return {
+          $or: [
+            { firstName: rx },
+            { lastName: rx },
+            { email: rx },
+            { employeeId: rx },
+          ],
+        };
+      }),
+    };
+  }
+
+  normalizeStatusFilter(status) {
+    if (!status) return null;
+    if (Array.isArray(status)) return status.filter(Boolean);
+    if (typeof status !== 'string') return null;
+    return status
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
   /**
    * Create a new Leave (HR/Admin only).
    * @param {object} leaveData - Validated leave data (includes reason, date, userId).
@@ -29,9 +80,21 @@ class leaveService {
    * @param {number} limit - Items per page (default: 10)
    * @returns {Promise<object>} - Paginated list of all non-deleted Leaves, sorted by date.
    */
-  async getAllLeave(team, page = 1, limit = 10, financeTeamLeadId = null) {
-    // Get all user IDs for the team
-    const teamUsers = await User.find({ team }).select('_id');
+  async getAllLeave(team, page = 1, limit = 10, financeTeamLeadId = null, filters = {}) {
+    const { status, department, search } = filters || {};
+    const statusFilter = this.normalizeStatusFilter(status);
+    const searchConditions = this.buildSearchConditions(search);
+
+    const userQuery = { team, isDeleted: { $ne: true } };
+    if (department) {
+      userQuery.department = department;
+    }
+    if (searchConditions) {
+      Object.assign(userQuery, searchConditions);
+    }
+
+    // Get all user IDs for the team with filters
+    const teamUsers = await User.find(userQuery).select('_id');
     const teamUserIds = teamUsers.map(user => user._id);
 
     // Build query to filter by team users
@@ -39,6 +102,9 @@ class leaveService {
       userId: { $in: teamUserIds },
       isDeleted: { $ne: true }
     };
+    if (statusFilter && statusFilter.length > 0) {
+      query.status = { $in: statusFilter };
+    }
 
     const populateOptions = [
       {
@@ -479,7 +545,11 @@ async updateLeaveStatus({ leaveId, action, editor }) {
   return await leave.save();
 }
 
-  async getLeaveTl({ id, team }, page = 1, limit = 10) {
+  async getLeaveTl({ id, team }, page = 1, limit = 10, filters = {}) {
+    const { status, department, search } = filters || {};
+    const statusFilter = this.normalizeStatusFilter(status);
+    const searchConditions = this.buildSearchConditions(search);
+
     const leadUsers = await User.find(
       {
         $or: [{ teamLeadId: id }, { subTeamLeadId: id }],
@@ -490,10 +560,24 @@ async updateLeaveStatus({ leaveId, action, editor }) {
     const userIds = leadUsers.map((user) => user._id.toString());
     userIds.push(id);
 
+    const userQuery = { _id: { $in: userIds }, isDeleted: { $ne: true } };
+    if (department) {
+      userQuery.department = department;
+    }
+    if (searchConditions) {
+      Object.assign(userQuery, searchConditions);
+    }
+
+    const filteredUsers = await User.find(userQuery).select('_id');
+    const filteredUserIds = filteredUsers.map((user) => user._id);
+
     const query = {
-      userId: { $in: userIds },
-      isDeleted: { $ne: true }
+      userId: { $in: filteredUserIds },
+      isDeleted: { $ne: true },
     };
+    if (statusFilter && statusFilter.length > 0) {
+      query.status = { $in: statusFilter };
+    }
 
     const populateOptions = [
       {
