@@ -186,15 +186,19 @@ async function processSingleBiometricRecord(payload) {
       downloadDate: biometricData.DownloadDate,
     });
     
-    const logDate = parseDate(biometricData.LogDate);
-    const downloadDate = parseDate(biometricData.DownloadDate);
+    const rawLogDate = parseDate(biometricData.LogDate);
+    const rawDownloadDate = parseDate(biometricData.DownloadDate);
+    const logDate = normalizeDeviceLogDateToUTC(rawLogDate);
+    const downloadDate = normalizeDeviceLogDateToUTC(rawDownloadDate);
 
     if (!logDate || !downloadDate) {
       logger.error('Invalid date format in biometric data', {
         logDate: biometricData.LogDate,
         downloadDate: biometricData.DownloadDate,
-        parsedLogDate: logDate,
-        parsedDownloadDate: downloadDate,
+        parsedLogDate: rawLogDate,
+        parsedDownloadDate: rawDownloadDate,
+        normalizedLogDate: logDate,
+        normalizedDownloadDate: downloadDate,
       });
       throw new Error(`Invalid date format in biometric data. LogDate: ${biometricData.LogDate}, DownloadDate: ${biometricData.DownloadDate}`);
     }
@@ -253,14 +257,16 @@ async function processSingleBiometricRecord(payload) {
       employeeCode: biometricData.EmployeeCode,
       direction: biometricData.Direction,
       logDate: logDate,
+      logDateIST: moment(logDate).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss'),
       userId: user ? user._id : null,
       logId: biometricLog._id,
     });
 
-    // Sync biometric log into attendance (if user mapping exists)
+    // Sync biometric log into attendance (if user mapping exists).
+    // Use normalized device logDate, not createdAt.
     await syncBiometricToAttendance({
       user,
-      logDate: biometricLog.createdAt,
+      logDate,
       direction: biometricData.Direction,
     });
 
@@ -382,6 +388,26 @@ function parseDate(dateString) {
     );
     return null;
   }
+}
+
+/**
+ * Device often sends IST wall-clock but timestamp is tagged as UTC.
+ * Re-interpret that wall-clock as Asia/Kolkata and return true UTC Date.
+ * @param {Date|string} dateValue
+ * @returns {Date|null}
+ */
+function normalizeDeviceLogDateToUTC(dateValue) {
+  if (!dateValue) return null;
+
+  const inputMoment = moment(dateValue);
+  if (!inputMoment.isValid()) {
+    return null;
+  }
+
+  const wallClockIST = moment.utc(inputMoment.toDate()).format('YYYY-MM-DD HH:mm:ss');
+  const normalizedMoment = moment.tz(wallClockIST, 'YYYY-MM-DD HH:mm:ss', 'Asia/Kolkata');
+
+  return normalizedMoment.isValid() ? normalizedMoment.utc().toDate() : null;
 }
 
 /**
