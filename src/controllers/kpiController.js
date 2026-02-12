@@ -87,6 +87,7 @@ const getKPIsForEmployee = catchAsync(async (req, res) => {
   // Regular flow: Use department-specific or generic KPIs
   let departmentDisplayName = 'Not Assigned';
   let kpis;
+  let override = null;
   
   if (employee.department && employee.department._id) {
     departmentDisplayName = employee.department.name;
@@ -95,8 +96,17 @@ const getKPIsForEmployee = catchAsync(async (req, res) => {
     kpis = await kpiService.getKPIsByDepartmentId(employee.department._id, employee.department.name);
   }
   
-  // Final fallback to generic KPIs only if no department-specific KPIs found
-  if (!kpis) {
+  // Check employee-specific override (only for regular flow)
+  override = await kpiService.getEmployeeKpiOverride(employee._id);
+
+  if (override) {
+    kpis = {
+      departmentName: override.departmentId?.name || departmentDisplayName,
+      kpis: override.kpis
+    };
+    logger.info(`Returning employee-specific KPI override for employee: ${employeeId}`);
+  } else if (!kpis) {
+    // Final fallback to generic KPIs only if no department-specific KPIs found
     kpis = kpiService.getGenericKPIs();
     logger.warn(`No specific KPIs found for department: ${departmentDisplayName}. Using generic KPIs. Run KPI initializer script to create department-specific KPIs.`);
   } else {
@@ -115,9 +125,88 @@ const getKPIsForEmployee = catchAsync(async (req, res) => {
         role: employee.role,
         team: employee.team
       },
-      kpis
+      kpis,
+      kpiSource: override ? 'employee_override' : (kpis?.departmentName === 'generic' ? 'generic' : 'department')
     },
     message: 'Employee KPIs fetched successfully'
+  });
+});
+
+const setEmployeeKpiOverride = catchAsync(async (req, res) => {
+  const { employeeId } = req.params;
+  const { kpis } = req.body;
+  const currentUserId = req.user.id;
+
+  if (!employeeId) {
+    return res.status(httpStatus.BAD_REQUEST).json({
+      success: false,
+      message: 'Employee ID is required'
+    });
+  }
+
+  if (!kpis || !Array.isArray(kpis) || kpis.length === 0) {
+    return res.status(httpStatus.BAD_REQUEST).json({
+      success: false,
+      message: 'KPIs array is required'
+    });
+  }
+
+  const User = require('../models/userModel');
+  const employee = await User.findById(employeeId)
+    .populate('department', 'name description')
+    .select('firstName lastName employeeId role department team teamLeadId');
+
+  if (!employee) {
+    return res.status(httpStatus.NOT_FOUND).json({
+      success: false,
+      message: 'Employee not found'
+    });
+  }
+
+  // TL can edit KPIs only for their direct reports
+  if (!employee.teamLeadId || employee.teamLeadId.toString() !== currentUserId.toString()) {
+    return res.status(httpStatus.FORBIDDEN).json({
+      success: false,
+      message: 'You are not authorized to edit KPIs for this employee'
+    });
+  }
+
+  // Load base KPIs for validation (department-specific or generic)
+  let baseKpis = null;
+  if (employee.department && employee.department._id) {
+    baseKpis = await kpiService.getKPIsByDepartmentId(employee.department._id);
+  }
+  if (!baseKpis) {
+    baseKpis = kpiService.getGenericKPIs();
+  }
+
+  // Validate KPI structure
+  const isValidKPIs = kpis.every(kpi =>
+    kpi.name && kpi.description &&
+    typeof kpi.maxRating === 'number' && kpi.maxRating > 0
+  );
+
+  if (!isValidKPIs) {
+    return res.status(httpStatus.BAD_REQUEST).json({
+      success: false,
+      message: 'Each KPI must have name, description, and valid maxRating'
+    });
+  }
+
+  // Allow employee-specific KPI overrides to add/remove/rename KPI items.
+  
+
+  const result = await kpiService.createOrUpdateEmployeeKpiOverride(
+    employee._id,
+    employee.department ? employee.department._id : null,
+    kpis,
+    currentUserId
+  );
+
+  return res.status(httpStatus.OK).json({
+    success: true,
+    data: result,
+    message: 'Employee KPIs updated successfully'
   });
 });
 
@@ -237,6 +326,7 @@ const checkPeriodFeedbackExists = catchAsync(async (req, res) => {
 module.exports = {
   getKPIsByDepartment,
   getKPIsForEmployee,
+  setEmployeeKpiOverride,
   createOrUpdateKPIs,
   getAllKPIs,
   deleteKPIs,

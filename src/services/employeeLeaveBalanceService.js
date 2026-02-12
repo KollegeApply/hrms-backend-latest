@@ -66,6 +66,8 @@ class EmployeeLeaveBalanceService {
   async getBalancesForEmployee(employeeId) {
     try {
       const currentYear = new Date().getFullYear();
+      const currentYearStart = new Date(currentYear, 0, 1);
+      const currentYearEnd = new Date(currentYear, 11, 31, 23, 59, 59, 999);
 
       // 1. Get user with leave policy
       const user = await User.findById(employeeId).populate('leavePolicyId');
@@ -186,6 +188,12 @@ class EmployeeLeaveBalanceService {
               leaveTypeId: leaveType._id,
               status: { $in: ['pending', 'tl-pending', 'hr-pending'] },
               isDeleted: false,
+              dates: {
+                $elemMatch: {
+                  $gte: currentYearStart,
+                  $lte: currentYearEnd,
+                },
+              },
             });
             const pendingDays = pendingLeaves.reduce((acc, leave) => {
               return acc + (leave.totalDays || 0);
