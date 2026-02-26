@@ -179,7 +179,7 @@ const regularizationService = {
       // Role-based filtering with log filter - collect user IDs first
       let roleBasedUserIds = null;
       if (logFilter === 'my-log') {
-        // Show only user's own requests
+        // Show only user's own requests (for any role)
         roleBasedUserIds = [userId.toString()];
       } else if (logFilter === 'all-log') {
         // Show all requests based on role
@@ -192,12 +192,11 @@ const regularizationService = {
           const subTeamMembers = await this.getSubTeamMembers(userId);
           roleBasedUserIds = subTeamMembers.map(id => id.toString());
         } else if (['hr', 'subadmin', 'admin'].includes(userRole)) {
-          // HR/Admin/SubAdmin can see all requests by default
-          // No additional filtering needed - they can see all regularization requests
+          // HR/Admin/SubAdmin can see all requests by default (within team)
           const teamMembers = await User.find({ team }).select('_id');
           roleBasedUserIds = teamMembers.map(u => u._id.toString());
-        } else if (userRole === 'employee') {
-          // Employees can only see their own requests (same as my-log)
+        } else if (userRole === 'employee' || userRole === 'intern') {
+          // Employees and interns can only see their own requests (same as my-log)
           roleBasedUserIds = [userId.toString()];
         }
       } else {
@@ -211,12 +210,11 @@ const regularizationService = {
           const subTeamMembers = await this.getSubTeamMembers(userId);
           roleBasedUserIds = subTeamMembers.map(id => id.toString());
         } else if (['hr', 'subadmin', 'admin'].includes(userRole)) {
-          // HR/Admin/SubAdmin can see all requests by default
-          // No additional filtering needed
+          // HR/Admin/SubAdmin can see all requests by default (within team)
           const teamMembers = await User.find({ team }).select('_id');
           roleBasedUserIds = teamMembers.map(u => u._id.toString());
-        } else if (userRole === 'employee') {
-          // Employees can only see their own requests
+        } else if (userRole === 'employee' || userRole === 'intern') {
+          // Employees and interns can only see their own requests
           roleBasedUserIds = [userId.toString()];
         }
       }
