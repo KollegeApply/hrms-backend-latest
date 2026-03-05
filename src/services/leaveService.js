@@ -727,14 +727,28 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
         userId,
         leaveTypeId: leaveType._id,
       });
-
-      const currentYear = moment().tz('Asia/Kolkata').year();
       
-      // Calculate pending leaves for this type
+      const currentYear = startMoment.year();
+      const yearStart = moment
+        .tz({ year: currentYear, month: 0, day: 1 }, 'Asia/Kolkata')
+        .startOf('day')
+        .toDate();
+      const yearEnd = moment
+        .tz({ year: currentYear, month: 11, day: 31 }, 'Asia/Kolkata')
+        .endOf('day')
+        .toDate();
+      
+      // Calculate pending leaves for this type - restrict to current leave year
       const pendingLeaves = await LeaveApplication.find({
         userId,
         leaveTypeId: leaveType._id,
         status: { $in: ['pending', 'tl-pending', 'hr-pending'] },
+        dates: {
+          $elemMatch: {
+            $gte: yearStart,
+            $lte: yearEnd,
+          },
+        },
       });
 
       let totalPendingDays = 0;
