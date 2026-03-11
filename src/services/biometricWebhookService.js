@@ -180,26 +180,25 @@ async function processSingleBiometricRecord(payload) {
       throw new Error(validationError);
     }
 
-    // Parse dates
+    // Parse & normalize dates from device (always treated as IST wall-clock or explicit UTC)
     logger.debug('Parsing dates', {
-      logDate: biometricData.LogDate,
-      downloadDate: biometricData.DownloadDate,
+      rawLogDateString: biometricData.LogDate,
+      rawDownloadDateString: biometricData.DownloadDate,
     });
-    
-    const rawLogDate = parseDate(biometricData.LogDate);
-    const rawDownloadDate = parseDate(biometricData.DownloadDate);
-    const logDate = normalizeDeviceLogDateToUTC(rawLogDate);
-    const downloadDate = normalizeDeviceLogDateToUTC(rawDownloadDate);
+
+    const logDate = normalizeDeviceLogDateToUTC(biometricData.LogDate);
+    const downloadDate = normalizeDeviceLogDateToUTC(biometricData.DownloadDate);
 
     if (!logDate || !downloadDate) {
-      logger.error('Invalid date format in biometric data', {
-        logDate: biometricData.LogDate,
-        downloadDate: biometricData.DownloadDate,
-        parsedLogDate: rawLogDate,
-        parsedDownloadDate: rawDownloadDate,
-        normalizedLogDate: logDate,
-        normalizedDownloadDate: downloadDate,
-      });
+      logger.error(
+        'Invalid date format in biometric data',
+        {
+          logDateRaw: biometricData.LogDate,
+          downloadDateRaw: biometricData.DownloadDate,
+          normalizedLogDate: logDate,
+          normalizedDownloadDate: downloadDate,
+        }
+      );
       throw new Error(`Invalid date format in biometric data. LogDate: ${biometricData.LogDate}, DownloadDate: ${biometricData.DownloadDate}`);
     }
 
@@ -363,34 +362,6 @@ function validateBiometricData(data) {
 }
 
 /**
- * Parses date string to Date object
- * @param {string} dateString - Date string in format "YYYY-MM-DD HH:mm:ss"
- * @returns {Date|null} - Parsed date or null if invalid
- */
-function parseDate(dateString) {
-  if (!dateString) return null;
-
-  try {
-    // Format: "2025-01-18 16:28:37"
-    const date = new Date(dateString);
-    if (isNaN(date.getTime())) {
-      return null;
-    }
-    return date;
-  } catch (error) {
-    logger.error(
-      {
-        err: error,
-        errorMessage: error.message,
-        dateString: dateString,
-      },
-      'Date parsing error'
-    );
-    return null;
-  }
-}
-
-/**
  * Device often sends IST wall-clock but timestamp is tagged as UTC.
  * Re-interpret that wall-clock as Asia/Kolkata and return true UTC Date.
  * @param {Date|string} dateValue
@@ -399,15 +370,26 @@ function parseDate(dateString) {
 function normalizeDeviceLogDateToUTC(dateValue) {
   if (!dateValue) return null;
 
-  const inputMoment = moment(dateValue);
-  if (!inputMoment.isValid()) {
-    return null;
+  // 1) If the device already sends a full ISO timestamp with timezone (e.g. "...T..Z" or offset),
+  //    trust it as UTC/offset and do NOT re-interpret as IST to avoid double shifting.
+  if (
+    typeof dateValue === 'string' &&
+    /\dT.*(Z|[+\-]\d\d:?\d\d)$/.test(dateValue)
+  ) {
+    const mUtc = moment.utc(dateValue);
+    return mUtc.isValid() ? mUtc.toDate() : null;
   }
 
-  const wallClockIST = moment.utc(inputMoment.toDate()).format('YYYY-MM-DD HH:mm:ss');
-  const normalizedMoment = moment.tz(wallClockIST, 'YYYY-MM-DD HH:mm:ss', 'Asia/Kolkata');
+  // 2) Otherwise, treat the value as an IST wall-clock time coming from the device.
+  //    This keeps behaviour consistent across servers regardless of OS timezone.
+  const asString =
+    typeof dateValue === 'string'
+      ? dateValue
+      : moment(dateValue).format('YYYY-MM-DD HH:mm:ss');
 
-  return normalizedMoment.isValid() ? normalizedMoment.utc().toDate() : null;
+  const istMoment = moment.tz(asString, 'YYYY-MM-DD HH:mm:ss', 'Asia/Kolkata');
+
+  return istMoment.isValid() ? istMoment.utc().toDate() : null;
 }
 
 /**
