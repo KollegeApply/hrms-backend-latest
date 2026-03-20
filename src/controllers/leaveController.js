@@ -40,7 +40,9 @@ const getAllLeave = catchAsync(async (req, res) => {
       page,
       limit,
       financeTeamLeadId,
-      { status, department, search }
+      { status, department, search },
+      currentUser.id,
+      currentUser.role
     );
   } else if (
     currentUser.role === 'teamlead' ||

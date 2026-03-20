@@ -4,7 +4,7 @@ const ApiError = require('../utility/ApiError');
 const { default: httpStatus } = require('http-status');
 const attendanceService = require('./attendanceService');
 const Attendance = require('../models/attendanceModel');
-const { mongoose } = require('mongoose');
+const mongoose = require('mongoose');
 const { format } = require('date-fns');
 const LeaveApplication = require('../models/leaveApplicationModel');
 const LeaveType = require('../models/leaveTypeModel');
@@ -80,7 +80,7 @@ class leaveService {
    * @param {number} limit - Items per page (default: 10)
    * @returns {Promise<object>} - Paginated list of all non-deleted Leaves, sorted by date.
    */
-  async getAllLeave(team, page = 1, limit = 10, financeTeamLeadId = null, filters = {}) {
+  async getAllLeave(team, page = 1, limit = 10, financeTeamLeadId = null, filters = {}, requesterId = null, requesterRole = null) {
     const { status, department, search } = filters || {};
     const statusFilter = this.normalizeStatusFilter(status);
     const searchConditions = this.buildSearchConditions(search);
@@ -96,6 +96,22 @@ class leaveService {
     // Get all user IDs for the team with filters
     const teamUsers = await User.find(userQuery).select('_id');
     const teamUserIds = teamUsers.map(user => user._id);
+    const requesterObjectId =
+      requesterId && mongoose.Types.ObjectId.isValid(requesterId)
+        ? new mongoose.Types.ObjectId(requesterId)
+        : null;
+
+    // HR priority bucket should consider only HR's direct mapped members
+    // (teamLeadId/subTeamLeadId), not the full team code.
+    let hrPriorityTeamUserIds = [];
+    if (requesterRole === 'hr' && requesterObjectId) {
+      const hrTeamMembers = await User.find({
+        team,
+        $or: [{ teamLeadId: requesterObjectId }, { subTeamLeadId: requesterObjectId }],
+        isDeleted: { $ne: true }
+      }).select('_id');
+      hrPriorityTeamUserIds = hrTeamMembers.map(u => u._id);
+    }
 
     // Build query to filter by team users
     const query = {
@@ -155,24 +171,57 @@ class leaveService {
                     case: { $eq: ['$userId', financeLeaderObjectId] },
                     then: 0,
                   },
-                  // 1: Team members whose status is 'tl-pending'
+                  // 0.5: Current user's pending (always on top, even for finance TL list)
+                  ...(requesterId && mongoose.Types.ObjectId.isValid(requesterId)
+                    ? [requesterRole === 'hr'
+                      ? {
+                        // 0) HR own pending first
+                        case: {
+                          $and: [
+                            { $eq: ['$userId', new mongoose.Types.ObjectId(requesterId)] },
+                            { $in: ['$status', ['tl-pending', 'hr-pending']] },
+                          ]
+                        },
+                        then: 0,
+                      }
+                      : {
+                        // Own pending first (TL/others)
+                        case: {
+                          $and: [
+                            { $eq: ['$userId', new mongoose.Types.ObjectId(requesterId)] },
+                            { $in: ['$status', ['tl-pending', 'hr-pending']] },
+                          ]
+                        },
+                        then: 0,
+                      }]
+                    : []),
+                  // 1: tl-pending (team-first)
                   {
                     case: {
                       $and: [
-                        { $in: ['$userId', teamMemberIds] },
                         { $eq: ['$status', 'tl-pending'] },
+                        {
+                          $in: [
+                            '$userId',
+                            requesterRole === 'hr' ? hrPriorityTeamUserIds : teamMemberIds
+                          ]
+                        },
                       ],
                     },
                     then: 1,
                   },
-                  // 2: Remaining team members
+                  // 2: hr-pending
+                  { case: { $eq: ['$status', 'hr-pending'] }, then: 2 },
+                  // 3: tl-pending outside team
+                  { case: { $eq: ['$status', 'tl-pending'] }, then: 3 },
+                  // 4: Remaining team members
                   {
                     case: { $in: ['$userId', teamMemberIds] },
-                    then: 2,
+                    then: 4,
                   },
                 ],
                 // 3: Everyone else
-                default: 3,
+                default: 5,
               },
             }
           }
@@ -211,18 +260,90 @@ class leaveService {
       };
     }
 
-    // Default pagination for non-Finance TL users
-    const paginationResult = await paginate(
-      LeaveApplication,
-      query,
-      page,
-      limit,
-      { createdAt: -1 },
-      null,
-      populateOptions
-    );
+    // Default ordering (all roles): my pending -> tl-pending -> hr-pending -> rest (then newest)
+    const skip = (page - 1) * limit;
+    const totalDocs = await LeaveApplication.countDocuments(query);
 
-    return paginationResult;
+    const pipeline = [
+      { $match: query },
+      {
+        $addFields: {
+          __sortPriority: {
+            $switch: {
+              branches: [
+                ...(requesterObjectId
+                  ? [requesterRole === 'hr'
+                    ? {
+                      // 0) HR own pending first
+                      case: {
+                        $and: [
+                          { $eq: ['$userId', requesterObjectId] },
+                          { $in: ['$status', ['tl-pending', 'hr-pending']] },
+                        ],
+                      },
+                      then: 0,
+                    }
+                    : {
+                      // TL/others: own pending first
+                      case: {
+                        $and: [
+                          { $eq: ['$userId', requesterObjectId] },
+                          { $in: ['$status', ['tl-pending', 'hr-pending']] },
+                        ],
+                      },
+                      then: 0,
+                    }]
+                  : []),
+                ...(requesterRole === 'hr'
+                  ? [
+                    // 1) HR team tl-pending
+                    {
+                      case: {
+                        $and: [
+                          { $eq: ['$status', 'tl-pending'] },
+                          { $in: ['$userId', hrPriorityTeamUserIds] },
+                        ],
+                      },
+                      then: 1,
+                    },
+                    // 2) hr-pending
+                    { case: { $eq: ['$status', 'hr-pending'] }, then: 2 },
+                    // 3) other-team tl-pending
+                    { case: { $eq: ['$status', 'tl-pending'] }, then: 3 },
+                  ]
+                  : [
+                    { case: { $eq: ['$status', 'tl-pending'] }, then: 1 },
+                    { case: { $eq: ['$status', 'hr-pending'] }, then: 2 },
+                  ]),
+              ],
+              default: requesterRole === 'hr' ? 4 : 3,
+            },
+          },
+        },
+      },
+      { $sort: { __sortPriority: 1, createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limit },
+    ];
+
+    let leaves = await LeaveApplication.aggregate(pipeline);
+    leaves = await LeaveApplication.populate(leaves, populateOptions);
+
+    const totalPages = Math.ceil(totalDocs / limit);
+    return {
+      data: leaves,
+      pagination: {
+        totalDocs,
+        limit,
+        totalPages,
+        currentPage: page,
+        pagingCounter: skip + 1,
+        hasPrevPage: page > 1,
+        hasNextPage: page < totalPages,
+        prevPage: page > 1 ? page - 1 : null,
+        nextPage: page < totalPages ? page + 1 : null,
+      },
+    };
   }
 
   /**
@@ -234,8 +355,9 @@ class leaveService {
    * @returns {Promise<object>} - Paginated list of leaves for the user.
    */
   async getLeaveById({ id }, page = 1, limit = 10) {
+    const userObjectId = mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id;
     const query = {
-      userId: id,
+      userId: userObjectId,
       isDeleted: { $ne: true }
     };
 
@@ -260,17 +382,56 @@ class leaveService {
       }
     ];
 
-    const paginationResult = await paginate(
-      LeaveApplication,
-      query,
-      page,
-      limit,
-      { createdAt: -1 },
-      null,
-      populateOptions
-    );
+    const skip = (page - 1) * limit;
+    const totalDocs = await LeaveApplication.countDocuments(query);
 
-    return paginationResult;
+    const pipeline = [
+      { $match: query },
+      {
+        $addFields: {
+          __sortPriority: {
+            $switch: {
+              branches: [
+                {
+                  case: {
+                    $and: [
+                      { $eq: ['$userId', userObjectId] },
+                      { $in: ['$status', ['tl-pending', 'hr-pending']] },
+                    ],
+                  },
+                  then: 0,
+                },
+                { case: { $eq: ['$status', 'tl-pending'] }, then: 1 },
+                { case: { $eq: ['$status', 'hr-pending'] }, then: 2 },
+              ],
+              default: 3,
+            },
+          },
+        },
+      },
+      { $sort: { __sortPriority: 1, createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limit },
+    ];
+
+    let leaves = await LeaveApplication.aggregate(pipeline);
+    leaves = await LeaveApplication.populate(leaves, populateOptions);
+
+    const totalPages = Math.ceil(totalDocs / limit);
+    return {
+      data: leaves,
+      pagination: {
+        totalDocs,
+        limit,
+        totalPages,
+        currentPage: page,
+        pagingCounter: skip + 1,
+        hasPrevPage: page > 1,
+        hasNextPage: page < totalPages,
+        prevPage: page > 1 ? page - 1 : null,
+        nextPage: page < totalPages ? page + 1 : null,
+      },
+    };
   }
 
   /**
@@ -600,17 +761,58 @@ async updateLeaveStatus({ leaveId, action, editor }) {
       }
     ];
 
-    const paginationResult = await paginate(
-      LeaveApplication,
-      query,
-      page,
-      limit,
-      { createdAt: -1 },
-      null,
-      populateOptions
-    );
+    const skip = (page - 1) * limit;
+    const totalDocs = await LeaveApplication.countDocuments(query);
 
-    return paginationResult;
+    const tlObjectId = mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id;
+
+    const pipeline = [
+      { $match: query },
+      {
+        $addFields: {
+          __sortPriority: {
+            $switch: {
+              branches: [
+                {
+                  case: {
+                    $and: [
+                      { $eq: ['$userId', tlObjectId] },
+                      { $in: ['$status', ['tl-pending', 'hr-pending']] },
+                    ],
+                  },
+                  then: 0,
+                },
+                { case: { $eq: ['$status', 'tl-pending'] }, then: 1 },
+                { case: { $eq: ['$status', 'hr-pending'] }, then: 2 },
+              ],
+              default: 3,
+            },
+          },
+        },
+      },
+      { $sort: { __sortPriority: 1, createdAt: -1 } },
+      { $skip: skip },
+      { $limit: limit },
+    ];
+
+    let leaves = await LeaveApplication.aggregate(pipeline);
+    leaves = await LeaveApplication.populate(leaves, populateOptions);
+
+    const totalPages = Math.ceil(totalDocs / limit);
+    return {
+      data: leaves,
+      pagination: {
+        totalDocs,
+        limit,
+        totalPages,
+        currentPage: page,
+        pagingCounter: skip + 1,
+        hasPrevPage: page > 1,
+        hasNextPage: page < totalPages,
+        prevPage: page > 1 ? page - 1 : null,
+        nextPage: page < totalPages ? page + 1 : null,
+      },
+    };
   }
   /**
    * Soft delete a Leave Application by its ID.
