@@ -103,6 +103,7 @@ class UserService {
       search,
       department,
       role,
+      workType,
       status = null,
       sortBy,
       sortOrder,
@@ -144,6 +145,11 @@ class UserService {
     // Role filter
     if (role) {
       andConditions.push({ role });
+    }
+
+    // Work type filter
+    if (workType) {
+      andConditions.push({ workType });
     }
 
     // Team-based filter (skip for Finance teamlead - same as HR)
@@ -1460,7 +1466,7 @@ async getUserById(id) {
    * @param {string} userTeam - The logged-in user's team
    * @returns {Promise<Object>} - Response with team members data
    */
-  async getTeamDetails(userId, userRole, userTeam) {
+  async getTeamDetails(userId, userRole, userTeam, filters = {}) {
     try {
       // Only allow TL and SubTL
       if (userRole !== 'teamlead' && userRole !== 'subteamlead') {
@@ -1471,10 +1477,50 @@ async getUserById(id) {
         };
       }
 
-      const query = {
-        status: { $in: ['probation', 'onroll'] },
-        team: userTeam,
-      };
+      const query = { team: userTeam };
+
+      // Default behavior: show active employees (probation/onroll)
+      // If status filter is passed, narrow down to that status.
+      if (filters?.status) {
+        query.status = filters.status;
+      } else {
+        query.status = { $in: ['probation', 'onroll'] };
+      }
+
+      if (filters?.workType) {
+        query.workType = filters.workType;
+      }
+
+      // Search by employee name (firstName/lastName). Supports "first last" too.
+      const rawSearch = (filters?.search || '').trim();
+      if (rawSearch) {
+        const escaped = rawSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const parts = rawSearch.split(/\s+/).filter(Boolean).slice(0, 2);
+        if (parts.length >= 2) {
+          const p1 = parts[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const p2 = parts[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          query.$and = [
+            ...(query.$and || []),
+            {
+              $or: [
+                { firstName: { $regex: p1, $options: 'i' } },
+                { lastName: { $regex: p2, $options: 'i' } },
+              ],
+            },
+            {
+              $or: [
+                { firstName: { $regex: p2, $options: 'i' } },
+                { lastName: { $regex: p1, $options: 'i' } },
+              ],
+            },
+          ];
+        } else {
+          query.$or = [
+            { firstName: { $regex: escaped, $options: 'i' } },
+            { lastName: { $regex: escaped, $options: 'i' } },
+          ];
+        }
+      }
 
       // Select all required fields
       const selectFields = '_id firstName lastName email role employeeId department phoneNumber hireDate workType status jobTitle formStatus teamLeadId subTeamLeadId shiftTime isEmergencyRegularizationAllowed';

@@ -194,13 +194,39 @@ async fetchAssignedAssets(page, limit, search, team) {
    */
   async fetchAssignedAssetByUserId(userId) {
     const assignedAsset = await Assets.find({ assignee: userId })
-      .sort({ createdAt: -1 })
       .populate('assignee', 'firstName lastName employeeId email')
       .populate('assignedBy', 'firstName lastName employeeId email');
     if (!assignedAsset) {
       logger.error(`Assigned asset not found for ID: ${userId}`);
       throw new Error('Assigned asset not found');
     }
+
+    // Custom status order required by UI
+    const statusOrder = [
+      'acknowledged',
+      'assigned',
+      'not_acknowledged',
+      'return_requested',
+      'return_approved',
+      'returned',
+      'return_rejected',
+      'cancelled',
+    ];
+    const orderMap = statusOrder.reduce((acc, status, idx) => {
+      acc[status] = idx;
+      return acc;
+    }, {});
+
+    assignedAsset.sort((a, b) => {
+      const aRank = orderMap[a.status] ?? Number.MAX_SAFE_INTEGER;
+      const bRank = orderMap[b.status] ?? Number.MAX_SAFE_INTEGER;
+      if (aRank !== bRank) return aRank - bRank;
+
+      const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return bTime - aTime; // newest first within same status
+    });
+
     logger.info(`Assigned asset fetched successfully for ID: ${userId}`);
     return assignedAsset;
   }

@@ -1,7 +1,7 @@
 const Attendance = require('../models/attendanceModel');
 const User = require('../models/userModel');
 const LeaveApplication = require('../models/leaveApplicationModel');
-const { startOfDay, endOfDay, parseISO, isValid } = require('date-fns');
+const { startOfDay, endOfDay } = require('date-fns');
 const moment = require('moment-timezone');
 
 // Helper function to get the start and end of the current month
@@ -20,12 +20,13 @@ const attendanceService = {
   async markCheckIn(userId, latitude, longitude, checkInMode) {
     try {
       const now = moment().tz('Asia/Kolkata');
-      const today = now.clone().startOf('day'); 
+      const dayStartIST = now.clone().startOf('day');
+      const attendanceDate = dayStartIST.clone().utc().toDate();
+      const endOfDay = dayStartIST.clone().add(1, 'day').utc().toDate();
 
       // Fetch user's shiftTime from user model
       const user = await User.findById(userId).select('shiftTime').lean();
       const shiftTime = user?.shiftTime || null; // Store shiftTime in variable
-      console.log(shiftTime, "shiftTime")
 
       // Calculate shiftTime in minutes (similar to normalCutoff calculation)
       let shiftTimeInMinutes = null;
@@ -40,26 +41,20 @@ const attendanceService = {
           }
         }
       }
-      console.log(shiftTimeInMinutes, "shiftTimeInMinutes")
 
       // Check for any existing attendance record for today
       const existingAttendance = await Attendance.findOne({
         user: userId,
-        date: today.toDate(),
-      });
+        date: { $gte: attendanceDate, $lt: endOfDay },
+        checkInTime: { $ne: null },
+      }).sort({ createdAt: -1 });
 
-      if (existingAttendance && existingAttendance.checkInTime) {
-        return {
-          status: 'error',
-          statusCode: 400,
-          message: 'Already checked in today.',
-        };
-      }
+      const alreadyCheckedInToday = !!(existingAttendance && existingAttendance.checkInTime);
 
       // Check if user has any leave applied for today
       const leaveAttendance = await Attendance.findOne({
         user: userId,
-        date: today.toDate(),
+        date: { $gte: attendanceDate, $lt: endOfDay },
         status: { 
           $in: ['leave_applied_first_half', 'leave_applied_second_half', 'leave_applied_full'] 
         },
@@ -76,7 +71,7 @@ const attendanceService = {
       
       // Use shiftTimeInMinutes if available, otherwise fallback to normalCutoff
       const cutoffTime = shiftTimeInMinutes !== null ? shiftTimeInMinutes : normalCutoff;
-      console.log(cutoffTime, "cutoffTime (shiftTimeInMinutes or normalCutoff)")
+      
 
       // First half leave cutoff: shiftTime + 4 hours 15 minutes, or default 2:30 PM
       const defaultFirstHalfLeaveCutoff = 14 * 60 + 30; // 2:30 PM in minutes (default)
@@ -84,7 +79,7 @@ const attendanceService = {
       const firstHalfLeaveCutoff = shiftTimeInMinutes !== null 
         ? shiftTimeInMinutes + fourHoursFifteenMinutes 
         : defaultFirstHalfLeaveCutoff;
-      console.log(firstHalfLeaveCutoff, "firstHalfLeaveCutoff")
+        
 
       if (leaveAttendance) {
         // User has leave applied
@@ -110,30 +105,146 @@ const attendanceService = {
         }
       }
 
-      let attendance;
+      let attendance = existingAttendance;
       
-      if (leaveAttendance) {
-        // Update existing leave attendance record with check-in details
-        attendance = leaveAttendance;
-        attendance.checkInTime = now;
-        attendance.checkInLocation = { latitude, longitude };
-        attendance.status = status;
-        if (checkInMode) {
-          attendance.checkInMode = checkInMode;
+      if (!alreadyCheckedInToday) {
+        if (leaveAttendance) {
+          // Update existing leave attendance record with check-in details
+          attendance = leaveAttendance;
+          attendance.checkInTime = now.toDate();
+          attendance.checkInLocation = { latitude, longitude };
+          attendance.status = status;
+          if (checkInMode) {
+            attendance.checkInMode = checkInMode;
+          }
+          await attendance.save();
+        } else {
+          // Create or update today's attendance record (prevents duplicates after biometric)
+          attendance = await Attendance.findOneAndUpdate(
+            { user: userId, date: attendanceDate },
+            {
+              $setOnInsert: { user: userId, date: attendanceDate },
+              $set: {
+                checkInTime: now.toDate(),
+                checkInLocation: { latitude, longitude },
+                status,
+                ...(checkInMode && { checkInMode }),
+              },
+            },
+            { upsert: true, new: true }
+          );
         }
-        await attendance.save();
-      } else {
-        // Create new attendance record
-        attendance = new Attendance({
-          user: userId,
-          checkInTime: now,
-          checkInLocation: { latitude, longitude },
-          date: today,
-          status: status,
-          ...(checkInMode && { checkInMode }),
-        });
-        await attendance.save();
       }
+
+      // If biometric+app created 2 records for same day, merge into a single record.
+      // This fixes the current production issue immediately after app check-in.
+      const dayDocs = await Attendance.find({
+        user: userId,
+        date: { $gte: attendanceDate, $lt: endOfDay },
+      }).lean();
+
+      if (dayDocs.length > 1) {
+        const scoreDoc = (doc) =>
+          (doc.checkInTime ? 100 : 0) +
+          (doc.status ? 50 : 0) +
+          (doc.checkOutTime ? 25 : 0) +
+          (doc.biometricCheckIn ? 20 : 0) +
+          (doc.biometricCheckOut ? 20 : 0) +
+          (doc.checkInLocation ? 5 : 0) +
+          (doc.checkOutLocation ? 5 : 0);
+
+        const keep = dayDocs
+          .slice()
+          .sort((a, b) => {
+            const sa = scoreDoc(a);
+            const sb = scoreDoc(b);
+            if (sb !== sa) return sb - sa;
+            const ua = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+            const ub = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+            return ub - ua;
+          })[0];
+
+        const otherIds = dayDocs
+          .filter((d) => String(d._id) !== String(keep._id))
+          .map((d) => d._id);
+
+        const biometricIns = dayDocs
+          .map((d) => d.biometricCheckIn)
+          .filter((v) => v !== null && v !== undefined)
+          .map((v) => new Date(v).getTime());
+        const biometricOuts = dayDocs
+          .map((d) => d.biometricCheckOut)
+          .filter((v) => v !== null && v !== undefined)
+          .map((v) => new Date(v).getTime());
+
+        const checkInTimes = dayDocs
+          .map((d) => d.checkInTime)
+          .filter((v) => v !== null && v !== undefined)
+          .map((v) => new Date(v).getTime());
+        const checkOutTimes = dayDocs
+          .map((d) => d.checkOutTime)
+          .filter((v) => v !== null && v !== undefined)
+          .map((v) => new Date(v).getTime());
+
+        const docsByRecent = dayDocs
+          .slice()
+          .sort((a, b) => {
+            const ua = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+            const ub = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+            return ub - ua;
+          });
+
+        const merged = { ...keep };
+        if (biometricIns.length) merged.biometricCheckIn = new Date(Math.min(...biometricIns));
+        if (biometricOuts.length) merged.biometricCheckOut = new Date(Math.max(...biometricOuts));
+        if (checkInTimes.length) merged.checkInTime = new Date(Math.min(...checkInTimes));
+        if (checkOutTimes.length) merged.checkOutTime = new Date(Math.max(...checkOutTimes));
+        // Ensure check-in essentials are present even if keep doc was biometric-only
+        if (!merged.status) merged.status = status;
+        if (!merged.checkInLocation) merged.checkInLocation = { latitude, longitude };
+        if (!merged.checkInMode && checkInMode) merged.checkInMode = checkInMode;
+
+        for (const d of docsByRecent) {
+          if (!merged.checkInLocation && d.checkInLocation) merged.checkInLocation = d.checkInLocation;
+          if (!merged.checkOutLocation && d.checkOutLocation) merged.checkOutLocation = d.checkOutLocation;
+          if (!merged.checkInMode && d.checkInMode) merged.checkInMode = d.checkInMode;
+          if (!merged.checkOutMode && d.checkOutMode) merged.checkOutMode = d.checkOutMode;
+          if (!merged.leaveId && d.leaveId) merged.leaveId = d.leaveId;
+          if (!merged.wfhId && d.wfhId) merged.wfhId = d.wfhId;
+          if (!merged.regularization && d.regularization) merged.regularization = d.regularization;
+          if (!merged.status && d.status) merged.status = d.status;
+        }
+
+        await Attendance.updateOne(
+          { _id: keep._id },
+          {
+            $set: {
+              checkInTime: merged.checkInTime,
+              checkOutTime: merged.checkOutTime,
+              biometricCheckIn: merged.biometricCheckIn,
+              biometricCheckOut: merged.biometricCheckOut,
+              checkInLocation: merged.checkInLocation,
+              checkOutLocation: merged.checkOutLocation,
+              status: merged.status,
+              leaveId: merged.leaveId,
+              wfhId: merged.wfhId,
+              checkInMode: merged.checkInMode,
+              checkOutMode: merged.checkOutMode,
+              regularization: merged.regularization,
+            },
+          }
+        );
+        await Attendance.deleteMany({ _id: { $in: otherIds } });
+        attendance = await Attendance.findById(keep._id);
+      }
+      if (alreadyCheckedInToday) {
+        return {
+          status: 'error',
+          statusCode: 400,
+          message: 'Already checked in today.',
+        };
+      }
+
       return {
         status: 'success',
         statusCode: 201,
@@ -150,67 +261,20 @@ const attendanceService = {
     }
   },
 
-  // async createAttendance(userId, status, Id, date, updateIn) {
-  //   try {
-  //     const existingAttendace = await Attendance.findOne({
-  //       user: userId,
-  //       date: date,
-  //     });
-  //     if (existingAttendace) {
-  //       // For now, keep the old logic but we'll need to update this based on leave type
-  //       existingAttendace.status =
-  //         updateIn === 'leave' ? 'leave_applied_full' : 'wfh_applied';
-  //       if (updateIn === 'leave') {
-  //         existingAttendace.leaveId = Id;
-  //       } else if (updateIn === 'wfh') {
-  //         existingAttendace.wfhId = Id;
-  //       }
-  //       await existingAttendace.save();
-  //       return {
-  //         status: 'success',
-  //         statusCode: 201,
-  //         message: 'Data changed successfully.',
-  //         data: existingAttendace,
-  //       };
-  //     }
-  //     const newAttendance = new Attendance({
-  //       user: userId,
-  //       status: updateIn === 'leave' ? 'leave_applied_full' : 'wfh_applied',
-  //       leaveId: updateIn === 'leave' ? Id : undefined,
-  //       wfhId: updateIn === 'wfh' ? Id : undefined,
-  //       date: date,
-  //     });
-  //     await newAttendance.save();
-  //     return {
-  //       status: 'success',
-  //       statusCode: 201,
-  //       message: 'Attendace created.',
-  //       data: newAttendance,
-  //     };
-  //   } catch (err) {
-  //     console.error(
-  //       `Error occured while registering ${status} on date : ${date}. Error: `,
-  //       err
-  //     );
-  //     return {
-  //       status: 'error',
-  //       statusCode: 500,
-  //       message: 'Failed to create attendance.',
-  //     };
-  //   }
-  // },
 
   async markCheckOut(userId, latitude, longitude, checkOutMode) {
     try {
       const now = moment().tz('Asia/Kolkata');
-      const today = now.clone().startOf('day');
+      const dayStartIST = now.clone().startOf('day');
+      const attendanceDate = dayStartIST.clone().utc().toDate();
+      const endOfDay = dayStartIST.clone().add(1, 'day').utc().toDate();
 
       const attendance = await Attendance.findOne({
         user: userId,
-        date: today.toDate(),
+        date: { $gte: attendanceDate, $lt: endOfDay },
         checkOutTime: null,
         status: { $in: ['present', 'late_in', 'early_out', 'late_in_early_out'] },
-      });
+      }).sort({ createdAt: -1 });
 
       if (!attendance) {
         return {
@@ -220,7 +284,7 @@ const attendanceService = {
         };
       }
 
-      attendance.checkOutTime = now;
+      attendance.checkOutTime = now.toDate();
       attendance.checkOutLocation = { latitude, longitude };
 
       // Calculate work duration using moment timezone

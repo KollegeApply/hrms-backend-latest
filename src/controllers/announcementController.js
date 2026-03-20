@@ -1,5 +1,5 @@
 const announcementService = require('../services/announcementService');
-const { ApiError } = require('../utility/ApiError');
+const ApiError = require('../utility/ApiError');
 const catchAsync = require('../utility/catchAsync');
 const announcementValidator = require('../validators/announcementValidator');
 

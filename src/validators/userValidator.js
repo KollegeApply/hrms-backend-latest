@@ -184,6 +184,7 @@ const getAllUsersSchema = Joi.object({
   status: Joi.string()
     .valid(...VALID_EMPLOYEE_STATUS)
     .optional(),
+  workType: Joi.string().trim().valid('WFH', 'WFO').optional(),
   department: Joi.string().trim().allow('').optional(),
   teamLeadId: Joi.string().trim().allow('').optional(),
   subTeamLeadId: Joi.string().trim().allow('').optional(),
@@ -315,6 +316,13 @@ const getUserByTlIdSchema = Joi.object({
   isTeamDetail: Joi.boolean().optional().default(false),
 });
 
+// Query schema for TL/SubTL "View Team" page filters
+const getTeamDetailsQuerySchema = Joi.object({
+  workType: Joi.string().trim().valid('WFH', 'WFO').optional(),
+  status: Joi.string().trim().valid('probation', 'onroll').optional(),
+  search: Joi.string().trim().allow('').optional(),
+}).options({ stripUnknown: true });
+
 const updateShiftTimeSchema = Joi.object({
   shiftTime: Joi.alternatives()
     .try(
@@ -347,5 +355,6 @@ module.exports = {
   bulkCreateUserRowSchema,
   getUserHistorySchema,
   getUserByTlIdSchema,
+  getTeamDetailsQuerySchema,
   updateShiftTimeSchema,
 };

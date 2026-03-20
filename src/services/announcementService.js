@@ -1,9 +1,40 @@
 const Announcement = require('../models/announcementModel');
-const { ApiError } = require('../utility/ApiError');
+const ApiError = require('../utility/ApiError');
+const User = require('../models/userModel');
+const { USER_ROLES } = require('../utility/constants');
 const anniversaryAnnouncementService = require('./anniversaryAnnouncementService');
 
 const createAnnouncement = async (announcementData) => {
   try {
+    const creator = await User.findById(announcementData.createdBy).select('role department');
+
+    if (!creator) {
+      throw new ApiError(404, 'Creator user not found');
+    }
+
+    if (announcementData.category === 'general') {
+      const allowedRolesForGeneral = [USER_ROLES.HR, USER_ROLES.ADMIN];
+      if (!allowedRolesForGeneral.includes(creator.role)) {
+        throw new ApiError(403, 'Only HR and Admin can create general announcements');
+      }
+    }
+
+    if (announcementData.category === 'department') {
+      const allowedRolesForDepartment = [USER_ROLES.TEAMLEAD, USER_ROLES.SUBTEAMLEAD, USER_ROLES.HR];
+
+      if (!allowedRolesForDepartment.includes(creator.role)) {
+        throw new ApiError(403, 'Only Team Lead, Sub Team Lead, and HR can create department announcements');
+      }
+
+      if (!announcementData.departmentId) {
+        throw new ApiError(400, 'Department ID is required for department announcements');
+      }
+
+      if (!creator.department || creator.department.toString() !== announcementData.departmentId.toString()) {
+        throw new ApiError(403, 'You can create department announcements only for your own department');
+      }
+    }
+
     const announcement = new Announcement(announcementData);
     await announcement.save();
     return await announcement.populate([
