@@ -1,5 +1,6 @@
 const Attendance = require('../models/attendanceModel');
 const User = require('../models/userModel');
+const mongoose = require('mongoose');
 const moment = require('moment-timezone');
 const { transformDocumentPaths } = require('../utility/common');
 
@@ -178,6 +179,7 @@ const regularizationService = {
 
       // Role-based filtering with log filter - collect user IDs first
       let roleBasedUserIds = null;
+      let hrTeamUserIdsForPriority = [];
       if (logFilter === 'my-log') {
         // Show only user's own requests (for any role)
         roleBasedUserIds = [userId.toString()];
@@ -195,6 +197,14 @@ const regularizationService = {
           // HR/Admin/SubAdmin can see all requests by default (within team)
           const teamMembers = await User.find({ team }).select('_id');
           roleBasedUserIds = teamMembers.map(u => u._id.toString());
+          if (userRole === 'hr') {
+            // HR "own team" for priority means users directly mapped to this HR as TL/Sub-TL,
+            // not the entire org/team code.
+            const hrOwnTeamMembers = await User.find({
+              $or: [{ teamLeadId: userId }, { subTeamLeadId: userId }]
+            }).select('_id');
+            hrTeamUserIdsForPriority = hrOwnTeamMembers.map(u => u._id);
+          }
         } else if (userRole === 'employee' || userRole === 'intern') {
           // Employees and interns can only see their own requests (same as my-log)
           roleBasedUserIds = [userId.toString()];
@@ -213,6 +223,12 @@ const regularizationService = {
           // HR/Admin/SubAdmin can see all requests by default (within team)
           const teamMembers = await User.find({ team }).select('_id');
           roleBasedUserIds = teamMembers.map(u => u._id.toString());
+          if (userRole === 'hr') {
+            const hrOwnTeamMembers = await User.find({
+              $or: [{ teamLeadId: userId }, { subTeamLeadId: userId }]
+            }).select('_id');
+            hrTeamUserIdsForPriority = hrOwnTeamMembers.map(u => u._id);
+          }
         } else if (userRole === 'employee' || userRole === 'intern') {
           // Employees and interns can only see their own requests
           roleBasedUserIds = [userId.toString()];
@@ -256,9 +272,111 @@ const regularizationService = {
 
       // Get total count for pagination
       const total = await Attendance.countDocuments(query);
-      
-      // Get paginated data
-      const attendances = await Attendance.find(query)
+
+      // Order required by UI:
+      // 1) current user's pending (tl-pending / hr-pending)
+      // 2) all tl-pending
+      // 3) all hr-pending
+      // 4) rest
+      //
+      // IMPORTANT: ordering must happen BEFORE skip/limit (pagination)
+      const userObjectId = mongoose.Types.ObjectId.isValid(userId)
+        ? new mongoose.Types.ObjectId(userId)
+        : userId;
+
+      // NOTE: Aggregation does NOT auto-cast string ids like Mongoose find().
+      // Convert any id filters to ObjectId for $match.
+      const aggregateMatch = { ...query };
+      if (aggregateMatch.user) {
+        if (typeof aggregateMatch.user === 'string' && mongoose.Types.ObjectId.isValid(aggregateMatch.user)) {
+          aggregateMatch.user = new mongoose.Types.ObjectId(aggregateMatch.user);
+        } else if (
+          aggregateMatch.user &&
+          typeof aggregateMatch.user === 'object' &&
+          Array.isArray(aggregateMatch.user.$in)
+        ) {
+          aggregateMatch.user = {
+            ...aggregateMatch.user,
+            $in: aggregateMatch.user.$in.map(v =>
+              (typeof v === 'string' && mongoose.Types.ObjectId.isValid(v)) ? new mongoose.Types.ObjectId(v) : v
+            )
+          };
+        }
+      }
+
+      const orderedIds = await Attendance.aggregate([
+        { $match: aggregateMatch },
+        {
+          $addFields: {
+            __sortPriority: {
+              $switch: {
+                branches: [
+                  ...(userRole === 'hr'
+                    ? [
+                      {
+                        // 0) HR own pending first
+                        case: {
+                          $and: [
+                            { $eq: ['$regularization.appliedBy', userObjectId] },
+                            { $in: ['$regularization.status', ['tl-pending', 'hr-pending']] },
+                          ],
+                        },
+                        then: 0,
+                      },
+                      {
+                        // 1) HR team tl-pending
+                        case: {
+                          $and: [
+                            { $eq: ['$regularization.status', 'tl-pending'] },
+                            { $in: ['$user', hrTeamUserIdsForPriority] },
+                          ],
+                        },
+                        then: 1,
+                      },
+                      // 2) hr-pending
+                      { case: { $eq: ['$regularization.status', 'hr-pending'] }, then: 2 },
+                      // 3) tl-pending from other teams
+                      { case: { $eq: ['$regularization.status', 'tl-pending'] }, then: 3 },
+                    ]
+                    : [
+                      {
+                        // TL/others: own pending first
+                        case: {
+                          $and: [
+                            { $eq: ['$regularization.appliedBy', userObjectId] },
+                            { $in: ['$regularization.status', ['tl-pending', 'hr-pending']] },
+                          ],
+                        },
+                        then: 0,
+                      },
+                      { case: { $eq: ['$regularization.status', 'tl-pending'] }, then: 1 },
+                      { case: { $eq: ['$regularization.status', 'hr-pending'] }, then: 2 },
+                    ]),
+                ],
+                default: userRole === 'hr' ? 4 : 3,
+              },
+            },
+          },
+        },
+        { $sort: { __sortPriority: 1, 'regularization.appliedAt': -1 } },
+        { $skip: skip },
+        { $limit: limitInt },
+        { $project: { _id: 1 } },
+      ]);
+
+      const ids = orderedIds.map(d => d._id);
+      if (ids.length === 0) {
+        return {
+          status: 'success',
+          data: [],
+          totalPages: Math.ceil(total / limitInt),
+          currentPage: pageInt,
+          totalRecords: total
+        };
+      }
+
+      // Fetch full docs with existing populate behavior, then re-order to match aggregate order.
+      const unorderedAttendances = await Attendance.find({ _id: { $in: ids } })
         .populate({
           path: 'user',
           select: 'firstName lastName employeeId email role teamLeadId',
@@ -269,10 +387,10 @@ const regularizationService = {
         })
         .populate('regularization.tl.reviewer', 'firstName lastName')
         .populate('regularization.hr.reviewer', 'firstName lastName')
-        .sort({ 'regularization.appliedAt': -1 })
-        .skip(skip)
-        .limit(limitInt)
         .lean();
+
+      const byId = new Map(unorderedAttendances.map(a => [a._id.toString(), a]));
+      const attendances = ids.map(id => byId.get(id.toString())).filter(Boolean);
 
       // Transform evidence URLs to include base URL
       const transformedAttendances = attendances.map(attendance => {

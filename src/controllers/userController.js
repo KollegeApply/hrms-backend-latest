@@ -566,7 +566,15 @@ const getTeamDetails = async (req, res) => {
     const userRole = req?.user?.role;
     const userTeam = req?.user?.team;
 
-    const result = await userService.getTeamDetails(userId, userRole, userTeam);
+    const filters =
+      await userValidator?.getTeamDetailsQuerySchema?.validateAsync(req?.query);
+
+    const result = await userService.getTeamDetails(
+      userId,
+      userRole,
+      userTeam,
+      filters
+    );
     return res.status(result.statusCode).json(result);
   } catch (error) {
     console.error('Error in getTeamDetails controller:', error);
