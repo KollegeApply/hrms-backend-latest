@@ -95,7 +95,11 @@ const attendanceService = {
           }
         } else if (leaveAttendance.status === 'leave_applied_full') {
           // Full day leave - should not check in, but if they do, mark as late_in
-          status = 'late_in';
+          // status = 'late_in';
+          if (checkInTimeInMinutes > cutoffTime) {
+            // Check-in after cutoff time without leave = late_in
+            status = 'late_in';
+          }
         }
       } else {
         // No leave applied
@@ -519,10 +523,28 @@ async getTeamMembers(leaderId) {
         .sort({ date: -1, checkInTime: -1 })
         .lean();
 
+      const attendanceWithDisplayStatus = attendance.map((record) => {
+        const regStatus = record?.regularization?.status;
+        if (!regStatus) return record;
+
+        // When regularization is approved, attendance should be treated as present.
+        if (regStatus === 'approved') {
+          return { ...record, status: 'present' };
+        }
+
+        // Only pending workflow statuses should replace late/early indicators.
+        if (regStatus === 'tl-pending' || regStatus === 'hr-pending') {
+          return { ...record, status: regStatus };
+        }
+
+        // For rejected/revoked, fall back to the base attendance status.
+        return record;
+      });
+
       return {
         status: 'success',
         statusCode: 200,
-        data: attendance,
+        data: attendanceWithDisplayStatus,
       };
     } catch (error) {
       console.error('Error fetching attendance in service:', error);
@@ -545,7 +567,7 @@ async getTeamMembers(leaderId) {
         date: { $gte: todayStart.toDate(), $lte: todayEnd.toDate() },
       })
         .sort({ checkInTime: -1 })
-        .select('checkInTime status checkInMode checkOutMode checkOutTime')
+        .select('checkInTime status checkInMode checkOutMode checkOutTime regularization.status')
         .lean();
 
       if (attendance) {
@@ -554,10 +576,23 @@ async getTeamMembers(leaderId) {
         
         // Determine display status based on current attendance state
         let displayStatus = attendance.status;
+
+        // If regularization exists for this attendance, adjust display status:
+        // - approved -> present
+        // - tl-pending/hr-pending -> tl-pending/hr-pending
+        // - rejected/revoked -> keep base attendance.status
+        if (attendance?.regularization?.status) {
+          const regStatus = attendance.regularization.status;
+          if (regStatus === 'approved') {
+            displayStatus = 'present';
+          } else if (regStatus === 'tl-pending' || regStatus === 'hr-pending') {
+            displayStatus = regStatus;
+          }
+        }
         
         // If user is checked in but status is early_out or late_in_early_out, 
         // they might be in the middle of their work day, so show appropriate status
-        if (isCheckedIn) {
+        if (isCheckedIn && !attendance?.regularization?.status) {
           if (attendance.status === 'early_out' || attendance.status === 'late_in_early_out') {
             // User is still working, show the base status
             displayStatus = attendance.status === 'late_in_early_out' ? 'late_in' : 'present';
