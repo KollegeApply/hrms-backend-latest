@@ -1135,7 +1135,16 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
               );
             }
           } else if (holiday) {
-            addReason(`Holiday (${holiday.name})`, dateStr);
+            // Restricted holidays should still allow non-restricted leave applications.
+            if (holiday.holidayType === 'Restricted') {
+              const dateInKolkata = moment
+                .tz(pointer.format('YYYY-MM-DD'), 'Asia/Kolkata')
+                .startOf('day')
+                .toDate();
+              validDates.push(dateInKolkata);
+            } else {
+              addReason(`Holiday (${holiday.name})`, dateStr);
+            }
           } else {
             // Create date in Asia/Kolkata timezone to avoid timezone conversion issues
             const dateInKolkata = moment
