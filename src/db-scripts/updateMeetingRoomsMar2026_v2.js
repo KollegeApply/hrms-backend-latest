@@ -2,17 +2,26 @@ const mongoose = require('mongoose');
 const path = require('path');
 const Rooms = require('../models/roomModel');
 
-const envPaths = [
-  path.resolve(__dirname, '../../.env.development'),
-  path.resolve(__dirname, '../../.env.local'),
-  path.resolve(__dirname, '../../.env'),
-];
+if (process.env.NODE_ENV) {
+  require('dotenv').config({
+    path: `.env.${process.env.NODE_ENV}`,
+  });
+} else {
+  // Try different env file locations
+  const envPaths = [
+    path.resolve(__dirname, '../../.env.development'),
+    path.resolve(__dirname, '../../.env.local'),
+    path.resolve(__dirname, '../../.env'),
+  ];
 
-for (const envPath of envPaths) {
-  try {
-    require('dotenv').config({ path: envPath });
-    break;
-  } catch (error) {}
+  for (const envPath of envPaths) {
+    try {
+      require('dotenv').config({ path: envPath });
+      break;
+    } catch (err) {
+      // Continue to next path
+    }
+  }
 }
 
 const ROOM_UPDATES = [
