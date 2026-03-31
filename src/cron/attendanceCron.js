@@ -47,6 +47,18 @@ function formatReadableDate(date) {
     return moment(date).tz('Asia/Kolkata').format('DD MMMM YYYY');
 }
 
+function formatTimeIST(dateValue) {
+    if (!dateValue) return 'N/A';
+    return moment(dateValue).tz('Asia/Kolkata').format('hh:mm A');
+}
+
+function formatHoursMinutesFromMs(durationMs) {
+    if (!durationMs || durationMs <= 0) return 'N/A';
+    const hours = Math.floor(durationMs / (1000 * 60 * 60));
+    const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
+    return `${hours}h ${minutes}m`;
+}
+
 /**
  * Check if a given date is the 2nd or 4th Saturday of the month (company off days)
  * @param {Date|moment} date - The date to check
@@ -424,7 +436,13 @@ const weeklyReport = async (isTestMode = false) => {
             date: { $gte: startDate, $lte: endDate },
             isDeleted: false
         });
-        const holidayDates = new Set(holidays.map(h => formatDateYMD(h.date)));
+        // Only Normal holidays are treated as non-working days in weekly report.
+        // Restricted holidays should still appear in the report.
+        const holidayDates = new Set(
+            holidays
+                .filter(h => (h.holidayType || 'Normal') !== 'Restricted')
+                .map(h => formatDateYMD(h.date))
+        );
 
         // Add alternate Saturday offs to holiday dates for weekly report calculation
         for (let i = 1; i <= 6; i++) {
@@ -449,10 +467,7 @@ const weeklyReport = async (isTestMode = false) => {
 
             const teamAttendance = await Attendance.find({
                 user: { $in: teamUserIds },
-                $or: [
-                    { checkInTime: { $gte: startDate, $lte: endDate } },
-                    { date: { $gte: startDate, $lte: endDate }, status: { $in: ['leave_applied_full', 'leave_applied_first_half', 'leave_applied_second_half', 'wfh_applied'] } }
-                ]
+                date: { $gte: startDate, $lte: endDate }
             });
 
             const reportData = new Map();
@@ -470,7 +485,7 @@ const weeklyReport = async (isTestMode = false) => {
                 const data = reportData.get(userId);
                 if (!data) continue;
 
-                const dateKey = formatDateYMD(record.checkInTime || record.date);
+                const dateKey = formatDateYMD(record.date);
                 const dayName = moment(dateKey).tz('Asia/Kolkata').format('ddd'); // Short day name (Mon, Tue, Wed)
 
                 // Handle leave and WFH statuses
@@ -578,6 +593,151 @@ const weeklyReport = async (isTestMode = false) => {
                 `;
             }
 
+            // BUILD BIOMETRIC DETAILED + SUMMARY TABLES FOR THIS TEAM
+            let biometricDetailedRows = '';
+            let biometricSummaryRows = '';
+
+            for (const user of members) {
+                const userId = user._id.toString();
+                const employeeName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+                const kappId = user.employeeId || 'N/A';
+                const department = user.department?.name || 'N/A';
+                const shiftTime = user.shiftTime || null;
+                let shiftTimeInMinutes = null;
+                if (shiftTime && typeof shiftTime === 'string') {
+                    const [hours, minutes] = shiftTime.split(':').map(v => parseInt(v, 10));
+                    if (!Number.isNaN(hours) && !Number.isNaN(minutes)) {
+                        shiftTimeInMinutes = (hours * 60) + minutes;
+                    }
+                }
+
+                let lateInCount = 0;
+                let earlyOutCount = 0;
+                let missingPunchCount = 0;
+                let absentWithoutLeaveCount = 0;
+
+                for (let i = 1; i <= 6; i++) {
+                    const currentDay = startMoment.clone().isoWeekday(i);
+                    const dateKey = currentDay.format('YYYY-MM-DD');
+
+                    if (holidayDates.has(dateKey)) continue;
+
+                    const dayStart = currentDay.clone().startOf('day').toDate();
+                    const dayEnd = currentDay.clone().endOf('day').toDate();
+                    const record = teamAttendance.find(r =>
+                        r.user.toString() === userId &&
+                        moment(r.date).tz('Asia/Kolkata').format('YYYY-MM-DD') === dateKey
+                    );
+
+                    const biometricCheckIn = record?.biometricCheckIn || null;
+                    const biometricCheckOut = record?.biometricCheckOut || null;
+                    const biometricStatus = record?.biometricStatus || null;
+                    const baseStatus = record?.status || null;
+                    const finalStatusRaw = biometricStatus || baseStatus;
+
+                    const hasLeave = !!record && (
+                        !!record.leaveId ||
+                        ['leave_applied', 'leave_applied_full', 'leave_applied_first_half', 'leave_applied_second_half', 'wfh_applied'].includes(baseStatus) ||
+                        ['leave_applied', 'leave_applied_full', 'leave_applied_first_half', 'leave_applied_second_half'].includes(biometricStatus)
+                    );
+
+                    const regularisationApplied = !!record?.regularization;
+                    const hasBiometricAny = !!(biometricCheckIn || biometricCheckOut);
+                    const missingPunch = hasBiometricAny && !(biometricCheckIn && biometricCheckOut);
+                    const normalCutoff = shiftTimeInMinutes !== null ? shiftTimeInMinutes : (10 * 60 + 15);
+                    const firstHalfLeaveCutoff = shiftTimeInMinutes !== null ? shiftTimeInMinutes + (4 * 60 + 15) : (14 * 60 + 30);
+                    const isFirstHalfLeave = baseStatus === 'leave_applied_first_half';
+                    const isHalfDayLeave = ['leave_applied_first_half', 'leave_applied_second_half'].includes(baseStatus);
+
+                    let lateIn = ['late_in', 'late_in_early_out'].includes(finalStatusRaw);
+                    let earlyOut = ['early_out', 'late_in_early_out'].includes(finalStatusRaw);
+
+                    // Derive biometric late/early when biometricStatus is not explicitly set.
+                    if (!biometricStatus) {
+                        if (biometricCheckIn) {
+                            const checkInMoment = moment(biometricCheckIn).tz('Asia/Kolkata');
+                            const checkInMinutes = (checkInMoment.hour() * 60) + checkInMoment.minute();
+                            const appliedCutoff = isFirstHalfLeave ? firstHalfLeaveCutoff : normalCutoff;
+                            lateIn = checkInMinutes > appliedCutoff;
+                        }
+                        if (biometricCheckIn && biometricCheckOut) {
+                            const durationHours = moment(biometricCheckOut).diff(moment(biometricCheckIn), 'hours', true);
+                            const requiredHours = isHalfDayLeave ? 4.5 : 9;
+                            earlyOut = durationHours < requiredHours;
+                        }
+                    }
+                    const absentWithoutLeave = !record || ((!hasBiometricAny || finalStatusRaw === 'absent') && !hasLeave);
+
+                    if (lateIn) lateInCount++;
+                    if (earlyOut) earlyOutCount++;
+                    if (missingPunch) missingPunchCount++;
+                    if (absentWithoutLeave) absentWithoutLeaveCount++;
+
+                    let totalWorkingHours = 'N/A';
+                    if (biometricCheckIn && biometricCheckOut) {
+                        const durationMs = moment(biometricCheckOut).diff(moment(biometricCheckIn));
+                        totalWorkingHours = formatHoursMinutesFromMs(durationMs);
+                    }
+
+                    const derivedFinalStatus = lateIn && earlyOut
+                        ? 'Late In Early Out'
+                        : lateIn
+                            ? 'Late In'
+                            : earlyOut
+                                ? 'Early Out'
+                                : (missingPunch ? 'Missing Punch' : 'Present');
+
+                    const finalStatus = absentWithoutLeave
+                        ? 'Absent Without Leave'
+                        : (finalStatusRaw ? String(finalStatusRaw).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : derivedFinalStatus);
+
+                    const hasViolation = lateIn || earlyOut || missingPunch || absentWithoutLeave;
+                    const rowStyle = hasViolation ? 'background-color: #ffe5e5;' : 'background-color: #f9f9f9;';
+                    const tdStyle = 'border: 1px solid #ddd; padding: 8px; text-align: left;';
+
+                    // Show only violation rows in biometric detailed table.
+                    if (hasViolation) {
+                        biometricDetailedRows += `
+                            <tr style="${rowStyle}">
+                                <td style="${tdStyle}">${employeeName}</td>
+                                <td style="${tdStyle}">${kappId}</td>
+                                <td style="${tdStyle}">${department}</td>
+                                <td style="${tdStyle}">${formatDateWithDay(dayStart)}</td>
+                                <td style="${tdStyle}">${formatTimeIST(biometricCheckIn)}</td>
+                                <td style="${tdStyle}">${formatTimeIST(biometricCheckOut)}</td>
+                                <td style="${tdStyle}">${totalWorkingHours}</td>
+                                <td style="${tdStyle}">${lateIn ? 'Yes' : 'No'}</td>
+                                <td style="${tdStyle}">${earlyOut ? 'Yes' : 'No'}</td>
+                                <td style="${tdStyle}">${missingPunch ? 'Yes' : 'No'}</td>
+                                <td style="${tdStyle}">${hasLeave ? 'Yes' : 'No'}</td>
+                                <td style="${tdStyle}">${regularisationApplied ? 'Yes' : 'No'}</td>
+                                <td style="${tdStyle}">${finalStatus}</td>
+                            </tr>
+                        `;
+                    }
+                }
+
+                const totalViolations = lateInCount + earlyOutCount + missingPunchCount + absentWithoutLeaveCount;
+                const summaryRowStyle = totalViolations > 0 ? 'background-color: #ffe5e5;' : 'background-color: #f9f9f9;';
+                const tdStyle = 'border: 1px solid #ddd; padding: 8px; text-align: left;';
+
+                // Show only employees with at least one violation in summary table.
+                if (totalViolations > 0) {
+                    biometricSummaryRows += `
+                        <tr style="${summaryRowStyle}">
+                            <td style="${tdStyle}">${employeeName}</td>
+                            <td style="${tdStyle}">${kappId}</td>
+                            <td style="${tdStyle}">${department}</td>
+                            <td style="${tdStyle}">${lateInCount}</td>
+                            <td style="${tdStyle}">${earlyOutCount}</td>
+                            <td style="${tdStyle}">${missingPunchCount}</td>
+                            <td style="${tdStyle}">${absentWithoutLeaveCount}</td>
+                            <td style="${tdStyle}">${totalViolations}</td>
+                        </tr>
+                    `;
+                }
+            }
+
             //  SEND THE EMAIL TO THIS TEAM'S LEAD 
             const teamName = lead.team || "SD";
             const configEmails = getTeamEmailConfig(teamName);
@@ -593,6 +753,7 @@ const weeklyReport = async (isTestMode = false) => {
                 stlEmail
             ].filter(Boolean);
 
+
             const leadName = `${lead.firstName || ''} ${lead.lastName || ''}`.trim();
 
             if (recipients[0]) {
@@ -601,7 +762,9 @@ const weeklyReport = async (isTestMode = false) => {
                     formatReadableDate(startDate),
                     formatReadableDate(endDate),
                     tableRows,
-                    teamName
+                    teamName,
+                    biometricDetailedRows,
+                    biometricSummaryRows
                 );
                 if (isTestMode) {
                     logger.info(`   🧪 TEST MODE: Would send weekly report to ${recipients.join(', ')}`);

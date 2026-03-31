@@ -1738,7 +1738,7 @@ class Helper {
   }
 
 
-  static teamWeeklyReportEmail(teamLeadName, startDate, endDate, tableRows, team) {
+  static teamWeeklyReportEmail(teamLeadName, startDate, endDate, tableRows, team, biometricDetailedRows = '', biometricSummaryRows = '') {
     // FIX: All styles are now inline for email client compatibility.
     const containerStyle = "font-family: Arial, sans-serif; auto; color: #333; max-width: 900px;";
     const h1Style = "color: #2a2a2a;";
@@ -1771,6 +1771,53 @@ class Helper {
                 ${tableRows}
             </tbody>
         </table>
+
+        ${biometricDetailedRows ? `
+        <h3 style="margin-top: 30px; color: #2a2a2a;">Weekly Biometric Attendance Report (Detailed)</h3>
+        <table style="${tableStyle}">
+            <thead>
+                <tr>
+                    <th style="${thStyle}">Employee Name</th>
+                    <th style="${thStyle}">KAPP ID</th>
+                    <th style="${thStyle}">Department</th>
+                    <th style="${thStyle}">Date</th>
+                    <th style="${thStyle}">Check-in Time</th>
+                    <th style="${thStyle}">Check-out Time</th>
+                    <th style="${thStyle}">Total Working Hours</th>
+                    <th style="${thStyle}">Late In</th>
+                    <th style="${thStyle}">Early Out</th>
+                    <th style="${thStyle}">Missing Punch</th>
+                    <th style="${thStyle}">Leave Applied</th>
+                    <th style="${thStyle}">Regularisation Applied</th>
+                    <th style="${thStyle}">Final Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${biometricDetailedRows}
+            </tbody>
+        </table>
+        ` : ''}
+
+        ${biometricSummaryRows ? `
+        <h3 style="margin-top: 30px; color: #2a2a2a;">Biometric Violations Summary (Employee-wise)</h3>
+        <table style="${tableStyle}">
+            <thead>
+                <tr>
+                    <th style="${thStyle}">Employee Name</th>
+                    <th style="${thStyle}">KAPP ID</th>
+                    <th style="${thStyle}">Department</th>
+                    <th style="${thStyle}">Late In Count</th>
+                    <th style="${thStyle}">Early Out Count</th>
+                    <th style="${thStyle}">Missing Punch Count</th>
+                    <th style="${thStyle}">Absent Without Leave Count</th>
+                    <th style="${thStyle}">Total Violations</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${biometricSummaryRows}
+            </tbody>
+        </table>
+        ` : ''}
         <p style="font-size: 14px; margin-top: 25px;">
   This report has been generated automatically. Kindly review the data and take necessary action on any discrepancies or irregularities in attendance.
 </p>
