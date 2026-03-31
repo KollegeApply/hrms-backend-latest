@@ -92,6 +92,21 @@ const attendanceSchema = new Schema(
       ],
     },
 
+    biometricStatus: {
+      type: String,
+      enum: [
+        'present',
+        'absent',
+        'late_in',
+        'early_out',
+        'late_in_early_out',
+        'leave_applied',
+        'leave_applied_first_half',
+        'leave_applied_second_half',
+        'leave_applied_full',
+      ],
+    },
+
     leaveId: {
       type: Schema.Types.ObjectId,
       ref: 'LeaveApplication',
