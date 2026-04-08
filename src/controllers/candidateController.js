@@ -299,7 +299,9 @@ const approveCandidate = catchAsync(async (req, res) => {
   const team = req.user.team;
   
   // Get candidate details before approval for email
-  const candidate = await Candidate.findById(id).populate('pointOfContact');
+  const candidate = await Candidate.findById(id)
+    .populate('pointOfContact')
+    .populate('department', 'name');
   if (!candidate) {
     return res.status(404).json({ message: "Candidate not found" });
   }

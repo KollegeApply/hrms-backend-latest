@@ -7,6 +7,7 @@ const candidateCreateSchema = Joi.object({
   personalEmail: Joi.string().email().required(),
   phoneNumber: Joi.string().optional().allow(null, ''),
   employeeStatus: Joi.string().required(),
+  designation: Joi.string().trim().allow('', null).optional(),
   department: Joi.string().trim().allow('', null).optional(),
   reportingLocation: Joi.string().required(),
   requestsSent: Joi.object({

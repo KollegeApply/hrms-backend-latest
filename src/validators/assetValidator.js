@@ -1,6 +1,14 @@
 // file: validators/assetValidator.js
 const Joi = require('joi');
-const { VALID_ASSETS_STATUS, VALID_LAPTOP_TYPES, VALID_ASSET_REQUEST_STATUS } = require('../utility/constants');
+const {
+  VALID_ASSETS_STATUS,
+  VALID_LAPTOP_TYPES,
+  VALID_ASSET_REQUEST_STATUS,
+  VALID_ASSET_ASSIGNMENT_TYPES,
+  VALID_ASSET_CONDITIONS,
+  VALID_ASSET_INVENTORY_STATUS,
+  VALID_ASSET_INVENTORY_CREATE_STATUS,
+} = require('../utility/constants');
 
 
 const objectIdSchema = Joi.string()
@@ -12,18 +20,28 @@ const objectIdSchema = Joi.string()
   }, 'ObjectId Validation')
   .message({ 'any.invalid': 'Invalid MongoDB ObjectId' });
 
+const mongoId24 = Joi.string()
+  .length(24)
+  .pattern(/^[a-fA-F0-9]+$/);
+
 const assetAssignmentSchema = Joi.object({
-  assetType: Joi.string().required().messages({
-    'string.empty': 'Asset Type is required',
-    'any.required': 'Asset Type is required',
+  // When assigning from inventory, type/name come from DB; omit from body.
+  inventoryAssetId: objectIdSchema.optional(),
+  assetType: Joi.when('inventoryAssetId', {
+    is: mongoId24,
+    then: Joi.string().optional().allow('', null),
+    otherwise: Joi.string().required().messages({
+      'string.empty': 'Asset Type is required',
+      'any.required': 'Asset Type is required',
+    }),
   }),
-  // assetId: Joi.string().required().messages({
-  //   'string.empty': 'Asset ID is required',
-  //   'any.required': 'Asset ID is required',
-  // }),
-  assetName: Joi.string().required().messages({
-    'string.empty': 'Asset Name is required',
-    'any.required': 'Asset Name is required',
+  assetName: Joi.when('inventoryAssetId', {
+    is: mongoId24,
+    then: Joi.string().optional().allow('', null),
+    otherwise: Joi.string().required().messages({
+      'string.empty': 'Asset Name is required',
+      'any.required': 'Asset Name is required',
+    }),
   }),
   assignee: Joi.string().required().messages({
     'string.empty': 'Assignee (Employee ID) is required',
@@ -35,6 +53,21 @@ const assetAssignmentSchema = Joi.object({
     'string.empty': 'Assigned By (User ID) is required',
     'any.required': 'Assigned By (User ID) is required',
   }),
+  assignmentType: Joi.string()
+    .valid(...VALID_ASSET_ASSIGNMENT_TYPES)
+    .optional()
+    .default('permanent')
+    .messages({
+      'any.only': `Assignment Type must be one of: ${VALID_ASSET_ASSIGNMENT_TYPES.join(', ')}`,
+    }),
+  temporaryUntil: Joi.when('assignmentType', {
+    is: 'temporary',
+    then: Joi.date().required().messages({
+      'any.required': 'Temporary until date is required for temporary assignment',
+      'date.base': 'Temporary until must be a valid date',
+    }),
+    otherwise: Joi.any().strip(),
+  }),
   status: Joi.string()
     .required()
     .valid(...VALID_ASSETS_STATUS)
@@ -43,8 +76,10 @@ const assetAssignmentSchema = Joi.object({
     }),
   sendMail: Joi.boolean().optional(),
   laptopType: Joi.string().optional().allow('').custom((value, helpers) => {
-    const assetType = helpers.state.ancestors[0]?.assetType;
-    
+    const parent = helpers.state.ancestors[0];
+    const invId = parent?.inventoryAssetId;
+    if (invId && /^[a-fA-F0-9]{24}$/.test(invId)) return value;
+    const assetType = parent?.assetType;
     if (assetType === 'laptop') {
       if (!VALID_LAPTOP_TYPES.includes(value)) {
         return helpers.error('any.only');
@@ -54,6 +89,57 @@ const assetAssignmentSchema = Joi.object({
   }).messages({
     'any.only': `Laptop Type must be one of: ${VALID_LAPTOP_TYPES.join(', ')}`,
   }),
+}).options({ stripUnknown: true });
+
+const createAssetInventorySchema = Joi.object({
+  assetType: Joi.string().required(),
+  laptopType: Joi.string().optional().allow('').custom((value, helpers) => {
+    const assetType = helpers.state.ancestors[0]?.assetType;
+    if (assetType?.toLowerCase() === 'laptop') {
+      if (!VALID_LAPTOP_TYPES.includes(value)) return helpers.error('any.only');
+    }
+    return value;
+  }).messages({
+    'any.only': `Laptop Type must be one of: ${VALID_LAPTOP_TYPES.join(', ')}`,
+  }),
+  assetName: Joi.string().required(),
+  brand: Joi.string().required(),
+  model: Joi.string().optional().allow(''),
+  serialNumber: Joi.string().required(),
+  condition: Joi.string().required().valid(...VALID_ASSET_CONDITIONS),
+  specifications: Joi.string().optional().allow(''),
+  purchaseDate: Joi.date().optional(),
+  status: Joi.string()
+    .optional()
+    .valid(...VALID_ASSET_INVENTORY_CREATE_STATUS)
+    .default('available')
+    .messages({
+      'any.only':
+        'Status at create must be one of: available, under_repair, returned_to_vendor',
+    }),
+  notes: Joi.string().optional().allow('').max(2000),
+}).options({ stripUnknown: true });
+
+const listAssetInventorySchema = Joi.object({
+  page: Joi.number().integer().positive().optional().default(1),
+  limit: Joi.number().integer().positive().optional().default(10),
+  search: Joi.string().trim().allow('').optional(),
+  assetType: Joi.string().trim().allow('').optional(),
+  status: Joi.string()
+    .trim()
+    .allow('')
+    .optional()
+    .custom((value, helpers) => {
+      if (!value) return value;
+      if (!VALID_ASSET_INVENTORY_STATUS.includes(value)) {
+        return helpers.error('any.only');
+      }
+      return value;
+    })
+    .messages({
+      'any.only': `Status filter must be one of: ${VALID_ASSET_INVENTORY_STATUS.join(', ')}`,
+    }),
+  departmentId: objectIdSchema.optional(),
 }).options({ stripUnknown: true });
 
 
@@ -193,4 +279,6 @@ module.exports = {
   handleAssetRequestUpdateSchema,
   handleReturnRequestUpdateSchema,
   createAssetRequestSchema,
+  createAssetInventorySchema,
+  listAssetInventorySchema,
 };

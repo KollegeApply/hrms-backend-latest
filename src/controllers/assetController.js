@@ -2,6 +2,7 @@ const httpStatus = require('http-status-codes');
 const catchAsync = require('../utility/catchAsync');
 const logger = require('../config/logger');
 const assetsService = require('../services/assetService');
+const assetInventoryService = require('../services/assetInventoryService');
 const assetRequestService = require('../services/assetRequestService');
 const assetValidator = require('../validators/assetValidator');
 const User = require('../models/userModel');
@@ -9,12 +10,11 @@ const Helper = require('../utility/helper');
 const { IT_EMAIL, HR_EMAIL, ADMIN_EMAILS, getTeamEmailConfig } = require('../utility/constants');
 
 const assignAsset = catchAsync(async (req, res) => {
-  const data = req.body;
   const assignedId = req.user?.id;
-  data.assignedBy = assignedId;
+  const payload = { ...req.body, assignedBy: assignedId };
 
   const validatedData =
-    await assetValidator.assetAssignmentSchema.validateAsync(req.body);
+    await assetValidator.assetAssignmentSchema.validateAsync(payload);
 
   const newAssignment = await assetsService?.assignAsset(validatedData);
 
@@ -27,7 +27,10 @@ const assignAsset = catchAsync(async (req, res) => {
 
   const sendMail = req?.body?.sendMail === true;
   if (sendMail && process.env.HRMS_FRONTEND_URL) {
-    const { assetName, assetType, assignee } = validatedData;
+    const assignJson = newAssignment?.toJSON?.() ?? newAssignment;
+    const { assignee } = validatedData;
+    const assetName = assignJson?.assetName;
+    const assetType = assignJson?.assetType;
     const employee = await User.findById(assignee)
       .populate('teamLeadId', 'firstName lastName email')
       .populate('department', 'name');
@@ -828,6 +831,40 @@ const updateAssetRequestStatus = catchAsync(async (req, res) => {
   });
 });
 
+const createAssetInventory = catchAsync(async (req, res) => {
+  const validatedData = await assetValidator.createAssetInventorySchema.validateAsync(
+    req.body
+  );
+
+  const created = await assetInventoryService.createAsset(validatedData);
+
+  res.status(httpStatus.StatusCodes.CREATED).json({
+    status: true,
+    message: 'Asset created successfully.',
+    data: created,
+  });
+});
+
+const listAssetInventory = catchAsync(async (req, res) => {
+  const validatedQuery = await assetValidator.listAssetInventorySchema.validateAsync(
+    req.query
+  );
+
+  const normalized = {
+    ...validatedQuery,
+    assetType: validatedQuery.assetType || undefined,
+    status: validatedQuery.status || undefined,
+  };
+
+  const result = await assetInventoryService.listAssets(normalized);
+
+  res.status(httpStatus.StatusCodes.OK).json({
+    status: true,
+    message: 'Assets fetched successfully.',
+    data: result,
+  });
+});
+
 module.exports = {
   assignAsset,
   fetchAssignedAssets,
@@ -844,4 +881,6 @@ module.exports = {
   fetchAssetRequestsByUserId,
   fetchTeamAssets,
   updateAssetRequestStatus,
+  createAssetInventory,
+  listAssetInventory,
 };
