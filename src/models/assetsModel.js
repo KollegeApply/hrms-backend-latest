@@ -1,13 +1,41 @@
 const mongoose = require('mongoose');
-const { VALID_ASSETS_STATUS, VALID_LAPTOP_TYPES } = require('../utility/constants');
+const {
+  VALID_ASSETS_STATUS,
+  VALID_LAPTOP_TYPES,
+  VALID_ASSET_ASSIGNMENT_TYPES,
+} = require('../utility/constants');
 const { Schema } = mongoose;
+
+/** API output: when inventory is populated, these five fields come from inventory (single source). */
+function mergeDisplayFieldsFromInventory(ret) {
+  const inv = ret.inventoryAsset;
+  if (!inv || typeof inv !== 'object') return;
+  const hasInv = inv._id != null || inv.id != null;
+  if (!hasInv) return;
+  ret.assetType = inv.assetType ?? ret.assetType;
+  ret.assetName = inv.assetName ?? ret.assetName;
+  ret.serialNumber = inv.serialNumber ?? ret.serialNumber;
+  if (inv.laptopType != null && inv.laptopType !== '') {
+    ret.laptopType = inv.laptopType;
+  }
+  if (inv.specifications !== undefined && inv.specifications !== null) {
+    ret.specifications = inv.specifications;
+  }
+}
 
 const assignedAssetSchema = new Schema(
   {
+    inventoryAsset: {
+      type: Schema.Types.ObjectId,
+      ref: 'AssetInventory',
+      required: false,
+    },
     assetType: {
       type: String,
-      required:true,
-      trim:true,
+      required: function () {
+        return !this.inventoryAsset;
+      },
+      trim: true,
     },
     // assetId: {
     //   type: String,
@@ -16,7 +44,9 @@ const assignedAssetSchema = new Schema(
     // },
     assetName: {
       type: String,
-      required: true,
+      required: function () {
+        return !this.inventoryAsset;
+      },
     },
     serialNumber: {
       type: String,
@@ -24,11 +54,13 @@ const assignedAssetSchema = new Schema(
     },
     laptopType: {
       type: String,
-      required: function() {
+      required: function () {
+        if (this.inventoryAsset) return false;
         return this.assetType === 'laptop';
       },
       validate: {
-        validator: function(value) {
+        validator: function (value) {
+          if (this.inventoryAsset) return true;
           if (this.assetType === 'laptop') {
             return VALID_LAPTOP_TYPES.includes(value);
           }
@@ -51,6 +83,21 @@ const assignedAssetSchema = new Schema(
       type: Date,
       default: Date.now,
       required: true,
+    },
+    assignmentType: {
+      type: String,
+      enum: {
+        values: VALID_ASSET_ASSIGNMENT_TYPES,
+        message: 'Invalid assignment type: {VALUE}',
+      },
+      default: 'permanent',
+      required: true,
+    },
+    temporaryUntil: {
+      type: Date,
+      required: function () {
+        return this.assignmentType === 'temporary';
+      },
     },
     status: {
       type: String,
@@ -123,6 +170,14 @@ assignedAssetSchema.index({
   assetType: 'text',
   serialNumber: 'text',
   laptopType: 'text', 
+});
+
+assignedAssetSchema.set('toJSON', {
+  virtuals: true,
+  transform(_doc, ret) {
+    mergeDisplayFieldsFromInventory(ret);
+    return ret;
+  },
 });
 
 const Assets = mongoose.model('Assets', assignedAssetSchema);

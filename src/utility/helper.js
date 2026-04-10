@@ -1565,11 +1565,15 @@ class Helper {
   }
 
   static getCandidateApprovalEmail(candidate, team) {
+    console.log(candidate, "candidate")
     const displayTeam = getTeamEmailConfig(team);
     const approvalDate = new Date().toLocaleString('en-US', {
       dateStyle: 'long',
       timeStyle: 'short',
     });
+
+    const departmentName =
+      candidate?.department?.name || 'N/A';
 
     return `
       <p>Dear ${candidate?.firstName},</p>
@@ -1580,6 +1584,9 @@ class Helper {
       <ul>
         <li><strong>Name:</strong> ${candidate?.firstName || 'N/A'} ${candidate?.lastName || ''}</li>
         <li><strong>Email:</strong> ${candidate?.personalEmail || 'N/A'}</li>
+        <li><strong>Mobile Number:</strong> ${candidate?.phoneNumber || 'N/A'}</li>
+        <li><strong>Department:</strong> ${departmentName}</li>
+        <li><strong>Designation:</strong> ${candidate?.designation || 'N/A'}</li>
         <li><strong>Approval Date:</strong> ${approvalDate}</li>
         <li><strong>Status:</strong> Approved</li>
       </ul>

@@ -2,7 +2,14 @@ const User = require('../models/userModel');
 const logger = require('../config/logger');
 const Helper = require('../utility/helper');
 const Assets = require('../models/assetsModel'); // Corrected model name
+const AssetInventory = require('../models/assetInventoryModel');
 const { paginate } = require('../utility/common');
+
+const INVENTORY_ASSET_POPULATE = {
+  path: 'inventoryAsset',
+  select:
+    'assetId assetType assetName serialNumber laptopType specifications brand model status assignedTo',
+};
 
 class AssetsService {
   /**
@@ -21,6 +28,9 @@ class AssetsService {
       returnRequestDate,
       assignedBy,
       laptopType,
+      inventoryAssetId,
+      assignmentType = 'permanent',
+      temporaryUntil,
     } = assignmentData;
 
     // Validate the asset ID
@@ -52,20 +62,60 @@ class AssetsService {
       throw new Error("You can't assign this user.")
     }
 
-    const newAssignment = new Assets({
-      assetType,
-      assetName,
+    let inventoryAsset = null;
+    if (inventoryAssetId) {
+      inventoryAsset = await AssetInventory.findOne({
+        _id: inventoryAssetId,
+        isDeleted: false,
+      });
+      if (!inventoryAsset) {
+        throw new Error('Inventory asset not found');
+      }
+      if (inventoryAsset.status !== 'available') {
+        throw new Error('Inventory asset is not available');
+      }
+    }
+
+    const baseAssignment = {
       assignee,
-      serialNumber,
-      specifications,
       returnRequestDate,
-      status: status,
+      status,
       assignedBy,
-      laptopType, 
-    });
+      assignmentType,
+      temporaryUntil: assignmentType === 'temporary' ? temporaryUntil : undefined,
+    };
+
+    if (inventoryAsset) {
+      Object.assign(baseAssignment, {
+        inventoryAsset: inventoryAsset._id,
+      });
+    } else {
+      Object.assign(baseAssignment, {
+        assetType,
+        assetName,
+        serialNumber,
+        specifications,
+        laptopType,
+      });
+    }
+
+    const newAssignment = new Assets(baseAssignment);
     await newAssignment.save();
-    logger.info('Asset assigned successfully:', newAssignment);
-    return newAssignment;
+
+    if (inventoryAsset) {
+      await AssetInventory.updateOne(
+        { _id: inventoryAsset._id },
+        { $set: { status: 'assigned', assignedTo: assignee } }
+      );
+    }
+
+    const populated = await Assets.findById(newAssignment._id)
+      .populate('assignee', 'firstName lastName employeeId email department')
+      .populate('assignedBy', 'firstName lastName employeeId email team')
+      .populate(INVENTORY_ASSET_POPULATE);
+
+    logger.info('Asset assigned successfully:', populated);
+    return populated;
   }
 
   /**
@@ -115,7 +165,8 @@ async fetchAssignedAssets(page, limit, search, team) {
       {
         path: 'assignedBy',
         select: 'firstName lastName employeeId email team'
-      }
+      },
+      INVENTORY_ASSET_POPULATE,
     ];
 
     const paginationResult = await paginate(
@@ -165,22 +216,35 @@ async fetchAssignedAssets(page, limit, search, team) {
     if (status !== undefined) {
       updateFields.status = status;
     }
-    if (specifications !== undefined) {
-      updateFields.specifications = specifications;
-    }
-    if (serialNumber !== undefined) {
-      updateFields.serialNumber = serialNumber;
+    if (!existingAsset.inventoryAsset) {
+      if (specifications !== undefined) {
+        updateFields.specifications = specifications;
+      }
+      if (serialNumber !== undefined) {
+        updateFields.serialNumber = serialNumber;
+      }
     }
 
     const updatedAsset = await Assets.findOneAndUpdate(
       { _id: assetId },
       { $set: updateFields },
       { new: true }
-    ).populate('assignee', 'firstName lastName employeeId email');
+    )
+      .populate('assignee', 'firstName lastName employeeId email')
+      .populate(INVENTORY_ASSET_POPULATE);
 
     if (!updatedAsset) {
       logger.error(`Failed to update asset: ${assetId}`);
       throw new Error('Failed to update asset');
+    }
+
+    if (status !== undefined && existingAsset.inventoryAsset) {
+      if (status === 'returned' || status === 'cancelled' || status === 'not_acknowledged') {
+        await AssetInventory.updateOne(
+          { _id: existingAsset.inventoryAsset },
+          { $set: { status: 'available', assignedTo: null } }
+        );
+      }
     }
 
     logger.info(`Asset ${assetId} updated successfully:`, updatedAsset);
@@ -195,7 +259,8 @@ async fetchAssignedAssets(page, limit, search, team) {
   async fetchAssignedAssetByUserId(userId) {
     const assignedAsset = await Assets.find({ assignee: userId })
       .populate('assignee', 'firstName lastName employeeId email')
-      .populate('assignedBy', 'firstName lastName employeeId email');
+      .populate('assignedBy', 'firstName lastName employeeId email')
+      .populate(INVENTORY_ASSET_POPULATE);
     if (!assignedAsset) {
       logger.error(`Assigned asset not found for ID: ${userId}`);
       throw new Error('Assigned asset not found');
@@ -237,7 +302,8 @@ async fetchAssignedAssets(page, limit, search, team) {
       { _id: assetId, assignee: userId },
       { $set: { status: 'acknowledged', acknowledgedDate: acknowledgedDate } },
       { new: true }
-    );
+    )
+      .populate(INVENTORY_ASSET_POPULATE);
     if (!updatedAssignment) {
       logger.error(`Failed to acknowledge asset: ${assetId}`);
       throw new Error('Failed to acknowledge asset');
@@ -259,7 +325,8 @@ async fetchAssignedAssets(page, limit, search, team) {
       { _id: assetId, assignee: userId },
       { $set: updateData },
       { new: true }
-    );
+    )
+      .populate(INVENTORY_ASSET_POPULATE);
     if (!updatedAssignment) {
       logger.error(`Failed to reject asset: ${assetId}`);
       throw new Error('Failed to reject asset');
@@ -268,6 +335,15 @@ async fetchAssignedAssets(page, limit, search, team) {
       `Asset ${assetId} not acknowledged successfully with reason: ${rejectionReason || 'No reason provided'}`,
       updatedAssignment
     );
+
+    // When an assignee rejects (not_acknowledged), the inventory item should become available again.
+    if (updatedAssignment?.inventoryAsset) {
+      await AssetInventory.updateOne(
+        { _id: updatedAssignment.inventoryAsset },
+        { $set: { status: 'available', assignedTo: null } }
+      );
+    }
+
     return updatedAssignment;
   }
 
@@ -277,7 +353,8 @@ async fetchAssignedAssets(page, limit, search, team) {
       { _id: assetId, assignee: userId },
       { $set: { status: 'return_requested', returnRequestDate: returnRequestDate } },
       { new: true }
-    );
+    )
+      .populate(INVENTORY_ASSET_POPULATE);
     if (!updatedAssignment) {
       logger.error(`Failed to return request asset: ${assetId}`);
       throw new Error('Failed to return request asset');
@@ -316,11 +393,25 @@ async fetchAssignedAssets(page, limit, search, team) {
         },
       },
       {
+        $lookup: {
+          from: 'assetinventories',
+          localField: 'inventoryAsset',
+          foreignField: '_id',
+          as: '_invRows',
+        },
+      },
+      {
+        $addFields: {
+          _inv: { $arrayElemAt: ['$_invRows', 0] },
+        },
+      },
+      {
         $project: {
-          assetType: 1,
-          assetName: 1,
-          serialNumber: 1,
-          specifications: 1,
+          assetType: { $ifNull: ['$assetType', '$_inv.assetType'] },
+          assetName: { $ifNull: ['$assetName', '$_inv.assetName'] },
+          serialNumber: { $ifNull: ['$serialNumber', '$_inv.serialNumber'] },
+          specifications: { $ifNull: ['$specifications', '$_inv.specifications'] },
+          inventoryAsset: 1,
           status: 1,
           assignedBy: 1,
           assignedDate: 1,
@@ -366,11 +457,19 @@ async fetchAssignedAssets(page, limit, search, team) {
             { path: 'teamLeadId', select: 'firstName lastName' },
             { path: 'subTeamLeadId', select: 'firstName lastName' },
           ],
-        });
+        })
+        .populate(INVENTORY_ASSET_POPULATE);
 
       if (!request) {
         logger.error(`Asset request not found: ${requestId}`);
         throw new Error('Asset request not found');
+      }
+
+      if ((newStatus === 'returned' || newStatus === 'cancelled' || newStatus === 'not_acknowledged') && request.inventoryAsset) {
+        await AssetInventory.updateOne(
+          { _id: request.inventoryAsset },
+          { $set: { status: 'available', assignedTo: null } }
+        );
       }
 
       logger.info(
@@ -389,15 +488,32 @@ async fetchAssignedAssets(page, limit, search, team) {
 
 async getPCDepartmentSummary(team) {
     try {
-      const matchStage = {
-        assetType: 'laptop',
-        laptopType: { $exists: true, $ne: null },
+      const statusMatch = {
         status: { $nin: ['returned', 'cancelled', 'not_acknowledged'] },
       };
 
       const summary = await Assets.aggregate([
+        { $match: statusMatch },
         {
-          $match: matchStage,
+          $lookup: {
+            from: 'assetinventories',
+            localField: 'inventoryAsset',
+            foreignField: '_id',
+            as: '_invRows',
+          },
+        },
+        {
+          $addFields: {
+            _inv: { $arrayElemAt: ['$_invRows', 0] },
+            effectiveAssetType: { $ifNull: ['$assetType', '$_inv.assetType'] },
+            effectiveLaptopType: { $ifNull: ['$laptopType', '$_inv.laptopType'] },
+          },
+        },
+        {
+          $match: {
+            effectiveAssetType: 'laptop',
+            effectiveLaptopType: { $exists: true, $nin: [null, ''] },
+          },
         },
         {
           $lookup: {
@@ -429,7 +545,7 @@ async getPCDepartmentSummary(team) {
         {
           $group: {
             _id: {
-              laptopType: '$laptopType',
+              laptopType: '$effectiveLaptopType',
               departmentName: '$departmentDetails.name',
             },
             count: { $sum: 1 },
@@ -510,7 +626,8 @@ async getPCDepartmentSummary(team) {
       {
         path: 'assignedBy',
         select: 'firstName lastName employeeId email team'
-      }
+      },
+      INVENTORY_ASSET_POPULATE,
     ];
 
     const paginationResult = await paginate(
