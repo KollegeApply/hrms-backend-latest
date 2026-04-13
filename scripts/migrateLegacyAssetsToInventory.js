@@ -10,13 +10,30 @@
  * Requires MONGO_URI in .env.<NODE_ENV> (or .env).
  */
 
-const path = require('path');
 const mongoose = require('mongoose');
+const path = require('path');
 
+// Load environment variables
 if (process.env.NODE_ENV) {
-  require('dotenv').config({ path: path.resolve(__dirname, `../.env.${process.env.NODE_ENV}`) });
+  require('dotenv').config({
+    path: `.env.${process.env.NODE_ENV}`,
+  });
 } else {
-  require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
+  // Try different env file locations
+  const envPaths = [
+    path.resolve(__dirname, '../../.env.development'),
+    path.resolve(__dirname, '../../.env.local'),
+    path.resolve(__dirname, '../../.env'),
+  ];
+
+  for (const envPath of envPaths) {
+    try {
+      require('dotenv').config({ path: envPath });
+      break;
+    } catch (err) {
+      // Continue to next path
+    }
+  }
 }
 
 const Assets = require('../src/models/assetsModel');
