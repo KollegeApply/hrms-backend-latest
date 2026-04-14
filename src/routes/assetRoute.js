@@ -21,6 +21,29 @@ router.post(
   assetController.assignAsset
 );
 
+// Inventory: create asset (master) — admin only
+router.post(
+  '/inventory',
+  authenticateUser,
+  authorizeRole([USER_ROLES?.IT]),
+  assetController.createAssetInventory
+);
+
+// Inventory: list assets (table)
+router.get(
+  '/inventory',
+  authenticateUser,
+  authorizeRole([
+    USER_ROLES?.IT,
+    USER_ROLES?.HR,
+    USER_ROLES?.SUBADMIN,
+    USER_ROLES?.ADMIN,
+    USER_ROLES?.TEAMLEAD,
+    USER_ROLES?.SUBTEAMLEAD,
+  ]),
+  assetController.listAssetInventory
+);
+
 router.get(
   '/asset-summary',
   authenticateUser,

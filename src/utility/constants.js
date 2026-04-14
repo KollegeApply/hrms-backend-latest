@@ -65,6 +65,32 @@ const LAPTOP_TYPES = {
   WINDOWS: 'windows',
 }
 
+const ASSET_ASSIGNMENT_TYPES = {
+  TEMPORARY: 'temporary',
+  PERMANENT: 'permanent',
+};
+
+const ASSET_CONDITIONS = {
+  NEW: 'new',
+  GOOD: 'good',
+  FAIR: 'fair',
+  NEEDS_REPAIR: 'needs_repair',
+};
+
+const ASSET_INVENTORY_STATUS = {
+  AVAILABLE: 'available',
+  ASSIGNED: 'assigned',
+  UNDER_REPAIR: 'under_repair',
+  RETURNED_TO_VENDOR: 'returned_to_vendor',
+};
+
+/** Create form / admin create: only these three. `assigned` is set by system on assign. */
+const VALID_ASSET_INVENTORY_CREATE_STATUS = [
+  ASSET_INVENTORY_STATUS.AVAILABLE,
+  ASSET_INVENTORY_STATUS.UNDER_REPAIR,
+  ASSET_INVENTORY_STATUS.RETURNED_TO_VENDOR,
+];
+
 
 const MAIL_HOST = 'smtp.gmail.com';
 const MAIL_PORT = 465;
@@ -199,8 +225,13 @@ module.exports = {
   VALID_USER_ROLES: Object.values(USER_ROLES),
   VALID_EMPLOYEE_STATUS: Object.values(EMPLOYEE_STATUS),
   VALID_ASSETS_STATUS: Object.values(ASSETS_STATUS),
+
   VALID_ASSET_REQUEST_STATUS: Object.values(ASSET_REQUEST_STATUS),
   VALID_LAPTOP_TYPES: Object.values(LAPTOP_TYPES),
+  VALID_ASSET_ASSIGNMENT_TYPES: Object.values(ASSET_ASSIGNMENT_TYPES),
+  VALID_ASSET_CONDITIONS: Object.values(ASSET_CONDITIONS),
+  VALID_ASSET_INVENTORY_STATUS: Object.values(ASSET_INVENTORY_STATUS),
+  VALID_ASSET_INVENTORY_CREATE_STATUS,
   CANDIDATE_STATUS,
   VALID_CANDIDATE_STATUS: Object.values(CANDIDATE_STATUS),
   MAIL_HOST,
@@ -230,4 +261,7 @@ module.exports = {
   SYSTEM_LAUNCH_YEAR,
   SYSTEM_START_MONTH,
   getTeamEmailConfig,
+  ASSET_ASSIGNMENT_TYPES,
+  ASSET_CONDITIONS,
+  ASSET_INVENTORY_STATUS,
 };

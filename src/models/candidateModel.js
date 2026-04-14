@@ -9,6 +9,7 @@ const CandidateSchema = new Schema({
   personalEmail: { type: String, required: true },
   phoneNumber: { type: String },
   employeeStatus: { type: String },
+  designation: { type: String },
   department: { type: Schema.Types.ObjectId, ref: 'Department' },
   reportingLocation: { type: String },
   status: {
