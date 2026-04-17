@@ -136,6 +136,7 @@ const setEmployeeKpiOverride = catchAsync(async (req, res) => {
   const { employeeId } = req.params;
   const { kpis } = req.body;
   const currentUserId = req.user.id;
+  const currentUserRole = req.user.role;
 
   if (!employeeId) {
     return res.status(httpStatus.BAD_REQUEST).json({
@@ -154,7 +155,7 @@ const setEmployeeKpiOverride = catchAsync(async (req, res) => {
   const User = require('../models/userModel');
   const employee = await User.findById(employeeId)
     .populate('department', 'name description')
-    .select('firstName lastName employeeId role department team teamLeadId');
+    .select('firstName lastName employeeId role department team teamLeadId subTeamLeadId');
 
   if (!employee) {
     return res.status(httpStatus.NOT_FOUND).json({
@@ -163,8 +164,12 @@ const setEmployeeKpiOverride = catchAsync(async (req, res) => {
     });
   }
 
-  // TL can edit KPIs only for their direct reports
-  if (!employee.teamLeadId || employee.teamLeadId.toString() !== currentUserId.toString()) {
+  const isPrivilegedRole = ['admin', 'subadmin'].includes(currentUserRole);
+  const isDirectTeamLead = employee.teamLeadId && employee.teamLeadId.toString() === currentUserId.toString();
+  const isDirectSubTeamLead = employee.subTeamLeadId && employee.subTeamLeadId.toString() === currentUserId.toString();
+
+  // Allow admin/subadmin globally, or TL/STL for their direct reports.
+  if (!isPrivilegedRole && !isDirectTeamLead && !isDirectSubTeamLead) {
     return res.status(httpStatus.FORBIDDEN).json({
       success: false,
       message: 'You are not authorized to edit KPIs for this employee'
