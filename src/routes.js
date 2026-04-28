@@ -18,6 +18,7 @@ const aiTestRoutes = require('./routes/aiTestRoute');
 const personalEventRoutes = require('./routes/personalEventRoute');
 const announcementRoutes = require('./routes/announcementRoute');
 const kpiRoutes = require('./routes/kpiRoute');
+const expenseRoutes = require('./routes/expenseRoute');
 const biometricWebhookRoutes = require('./routes/biometricWebhookRoute');
 const companypolicyRoute = require('./routes/companypolicyRoute')
 // const otherRoutes = require('./routes/otherRoutes'); // Example for future routes
@@ -99,6 +100,10 @@ const defaultRoutes = [
   {
     path: `/api/${apiVersion}/kpis`,
     route: kpiRoutes,
+  },
+  {
+    path: `/api/${apiVersion}/expense`,
+    route: expenseRoutes,
   },
   {
     path: `/api/${apiVersion}/webhook`,
