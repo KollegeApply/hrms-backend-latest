@@ -114,7 +114,6 @@ const fetchAssignedAssets = catchAsync(async (req, res) => {
 const updateAssignedAsset = catchAsync(async (req, res) => {
   const { id } = req.params;
   const data = req.body;
-  console.log(req, "reqreqreq")
 
   // 1. Validate the request using the schema
   const validatedData =
@@ -149,8 +148,8 @@ const updateAssignedAsset = catchAsync(async (req, res) => {
         employeeFullName,
         employee.employeeId,
         process.env.HRMS_FRONTEND_URL,
-        updatedRequest?.assetName,
-        updatedRequest?.assetType,
+        updatedRequest?.inventoryAsset?.assetName,
+        updatedRequest?.inventoryAsset?.assetType,
         employee?.jobTitle,
         );
 
@@ -198,12 +197,12 @@ const updateAssignedAsset = catchAsync(async (req, res) => {
           `${employee.subTeamLeadId.firstName || ''} ${employee.subTeamLeadId.lastName || ''}`.trim() : 
           'N/A');
       
-      const emailSubject = `Asset Returned Confirmation - ${updatedRequest.assetName}`;
+      const emailSubject = `Asset Returned Confirmation - ${updatedRequest?.inventoryAsset?.assetName}`;
       const emailMessage = Helper.getAssetReceivedConfirmationEmail(
         employeeFullName,
         employee.employeeId,
-        updatedRequest.assetName,
-        updatedRequest.assetType,
+        updatedRequest?.inventoryAsset?.assetName,
+        updatedRequest?.inventoryAsset?.assetType,
         process.env.HRMS_FRONTEND_URL,
         employee?.jobTitle,
         employee?.department?.name,
@@ -296,7 +295,11 @@ const acknowledgeAsset = catchAsync(async (req, res) => {
 
   const sendMail = req?.body?.sendMail === true;
   if (sendMail && process.env.HRMS_FRONTEND_URL) {
-    const { assetName, assetType, assignee, assignedBy } = updatedAssignment;
+    const {
+  inventoryAsset: { assetName, assetType },
+  assignee,
+  assignedBy
+} = updatedAssignment;
     const [employee, poc] = await Promise.all([
       User.findById(assignee)
         .populate('teamLeadId', 'firstName lastName email')
@@ -379,7 +382,7 @@ const rejectAsset = catchAsync(async (req, res) => {
   }
 
   if (sendMail && process.env.HRMS_FRONTEND_URL) {
-    const { assetName, assetType, assignedBy } = assetAssignment;
+    const { inventoryAsset: { assetName, assetType }, assignedBy } = assetAssignment;
 
     const [employee, poc] = await Promise.all([
       User.findById(userId)
@@ -470,7 +473,7 @@ const returnAsset = catchAsync(async (req, res) => {
         .populate('department', 'name'),
       User.findById(assignedBy),
     ]);
-    const { assetName, assetType } = updatedAssignment;
+    const { inventoryAsset: { assetType, assetName } } = updatedAssignment;
 
     // Construct full names
     const employeeFullName = `${employee?.firstName || ''} ${employee?.lastName || ''}`.trim();
@@ -778,13 +781,13 @@ const updateAssetRequestStatus = catchAsync(async (req, res) => {
     validatedData.id,
     validatedData.status
   );
-
+ 
   // Send email for return_approved / return_rejected to employee
   const sendMail = req?.body?.sendMail === true;
   const shouldNotify = ['return_approved', 'return_rejected'].includes(status) && process.env.HRMS_FRONTEND_URL;
   if (sendMail && shouldNotify) {
     const employee = updatedRequest.assignee;
-    const { assetName, assetType } = updatedRequest;
+    const { inventoryAsset: { assetName, assetType } } = updatedRequest;
 
     const updStatus = status === 'return_approved' ? 'approved' : 'rejected';
     const teamLeadName = employee?.teamLeadId
