@@ -10,9 +10,32 @@ const expenseSchema = new Schema(
     type: {
       type: String,
       required: true,
-      enum: ['Travel', 'Food', 'Stay', 'Miscellaneous'],
+      enum: [
+        'Travel',
+        'Food',
+        'Stay',
+        'Miscellaneous',
+        'Mobile Bill',
+        'Technical Tools',
+        'Team Lunch',
+      ],
     },
-    miscellaneousType: { type: String, trim: true, maxlength: 20 },
+    /** Phase 2 — sub-type under Travel / Food / Miscellaneous. */
+    subCategory: { type: String, trim: true, maxlength: 120 },
+    /** Legacy Phase 1 — free-text miscellaneous; kept for older rows. */
+    miscellaneousType: { type: String, trim: true, maxlength: 200 },
+    distanceKm: { type: Number, min: 0 },
+    clientName: { type: String, trim: true, maxlength: 100 },
+    clientPocName: { type: String, trim: true, maxlength: 100 },
+    clientPocDesignation: { type: String, trim: true, maxlength: 100 },
+    attendeeUserIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
+    miscOthersDescription: { type: String, trim: true, maxlength: 300 },
+    travelMiscDescription: { type: String, trim: true, maxlength: 200 },
+    /** Miscellaneous > Hotel Accommodation — Metro vs Non-Metro nightly cap (PRD). */
+    cityTier: {
+      type: String,
+      enum: ['Metro', 'Non-Metro'],
+    },
     amount: { type: Number, required: true, min: 0.01 },
     purpose: { type: String, required: true, trim: true, maxlength: 500 },
     attachmentUrl: { type: String, trim: true, maxlength: 500 },
@@ -41,5 +64,9 @@ expenseSchema.index(
   { partialFilterExpression: { isDeleted: { $ne: true } } }
 );
 expenseSchema.index({ team: 1, status: 1, createdAt: -1 });
+expenseSchema.index(
+  { team: 1, date: 1, type: 1 },
+  { partialFilterExpression: { isDeleted: { $ne: true }, type: 'Team Lunch' } }
+);
 
 module.exports = mongoose.model('Expense', expenseSchema);

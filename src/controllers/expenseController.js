@@ -10,32 +10,83 @@ const User = require('../models/userModel');
 const Expense = require('../models/expenseModel');
 const { getTeamEmailConfig } = require('../utility/constants');
 
+function parseMaybeJsonArray(val) {
+  if (val == null || val === '') return undefined;
+  if (Array.isArray(val)) return val.map(String).filter(Boolean);
+  if (typeof val === 'string') {
+    try {
+      const p = JSON.parse(val);
+      return Array.isArray(p) ? p.map(String).filter(Boolean) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+function pickDefined(obj) {
+  const o = {};
+  if (!obj) return o;
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined && v !== '') o[k] = v;
+  }
+  return o;
+}
+
 function parseCreateExpenseBody(req) {
   const { expenseData } = req.body;
 
+  let parsed = null;
   if (typeof expenseData === 'string') {
     try {
-      return JSON.parse(expenseData);
+      parsed = JSON.parse(expenseData);
     } catch {
       return null;
     }
+  } else if (expenseData && typeof expenseData === 'object' && !Array.isArray(expenseData)) {
+    parsed = { ...expenseData };
   }
 
-  if (expenseData && typeof expenseData === 'object' && !Array.isArray(expenseData)) {
-    return expenseData;
+  const flat = pickDefined({
+    date: req.body.date,
+    name: req.body.name,
+    type: req.body.type,
+    amount:
+      req.body.amount != null && req.body.amount !== ''
+        ? Number(req.body.amount)
+        : undefined,
+    purpose: req.body.purpose,
+    attachmentUrl: req.body.attachmentUrl,
+    miscellaneousType: req.body.miscellaneousType ?? req.body.otherType ?? req.body.customType,
+    subCategory: req.body.subCategory,
+    distanceKm:
+      req.body.distanceKm !== '' && req.body.distanceKm != null
+        ? Number(req.body.distanceKm)
+        : undefined,
+    clientName: req.body.clientName,
+    clientPocName: req.body.clientPocName,
+    clientPocDesignation: req.body.clientPocDesignation,
+    attendeeUserIds: parseMaybeJsonArray(req.body.attendeeUserIds),
+    miscOthersDescription: req.body.miscOthersDescription,
+    travelMiscDescription: req.body.travelMiscDescription,
+    cityTier: req.body.cityTier,
+  });
+
+  const merged = parsed ? { ...parsed, ...flat } : flat;
+  if (merged.attendeeUserIds != null) {
+    merged.attendeeUserIds =
+      parseMaybeJsonArray(merged.attendeeUserIds) ?? merged.attendeeUserIds;
+  }
+  if (merged.distanceKm != null && typeof merged.distanceKm === 'string') {
+    merged.distanceKm = Number(merged.distanceKm);
+  }
+  if (merged.amount != null && typeof merged.amount === 'string') {
+    merged.amount = Number(merged.amount);
   }
 
-  const { date, name, type, amount, purpose, attachmentUrl, miscellaneousType, otherType, customType } =
-    req.body;
-  return {
-    date,
-    name,
-    type,
-    amount,
-    purpose,
-    attachmentUrl,
-    miscellaneousType: miscellaneousType ?? otherType ?? customType,
-  };
+  if (parsed) return merged;
+  if (Object.keys(flat).length === 0) return null;
+  return merged;
 }
 
 function getUploadedFile(req) {
@@ -51,8 +102,8 @@ function applyAttachmentUrlTransform(expense) {
     const t = transformDocumentPaths({ attachmentUrl: plain.attachmentUrl });
     plain.attachmentUrl = t.attachmentUrl;
   }
-  if (plain.type === 'Miscellaneous' && plain.miscellaneousType) {
-    plain.type = plain.miscellaneousType;
+  if (plain.type === 'Miscellaneous' && plain.subCategory) {
+    plain.displayExpenseLabel = `${plain.type} — ${plain.subCategory}`;
   }
   return plain;
 }
@@ -114,10 +165,13 @@ async function getFinalApproverEmails(team) {
 
 function getMailPayload(expenseDoc) {
   const employee = expenseDoc?.userId || {};
-  const resolvedExpenseType =
-    expenseDoc?.type === 'Miscellaneous' && expenseDoc?.miscellaneousType
-      ? `Miscellaneous (${expenseDoc.miscellaneousType})`
-      : expenseDoc?.type || 'N/A';
+  const resolvedExpenseType = (() => {
+    const t = expenseDoc?.type;
+    const sc = expenseDoc?.subCategory;
+    if (t === 'Miscellaneous' && sc) return `Miscellaneous (${sc})`;
+    if (sc && (t === 'Travel' || t === 'Food')) return `${t} (${sc})`;
+    return t || 'N/A';
+  })();
   return {
     employeeName: fullName(employee),
     employeeEmail: employee.email,
@@ -249,7 +303,9 @@ async function sendExpenseSubmissionEmails(expenseDoc, team) {
         intro:
           expenseDoc.status === 'submitted'
             ? 'Your expense claim has been submitted and is pending review by your Team Lead.'
-            : 'Your expense claim has been submitted and is pending final approval.',
+            : expenseDoc.type === 'Team Lunch'
+              ? 'Your Team Lunch claim has been submitted and is pending Finance approval (TL review is skipped for this type).'
+              : 'Your expense claim has been submitted and is pending final approval.',
         team,
         detailRowsHtml:
           renderExpenseDetailRow('Expense Type', payload.expenseType) +
@@ -269,15 +325,17 @@ async function sendExpenseSubmissionEmails(expenseDoc, team) {
       );
     }
 
-    // If no TL is mapped and expense directly reaches final queue, notify final approvers.
-    if (expenseDoc.status === 'tl-approved' && !tlEmail) {
+    // Direct-to-Finance: no TL mapped, or Team Lunch (Finance-only per policy).
+    if (expenseDoc.status === 'tl-approved' && (!tlEmail || expenseDoc.type === 'Team Lunch')) {
       const finalApproverEmails = await getFinalApproverEmails(team);
       if (finalApproverEmails.length > 0) {
         const finalQueueMsg = renderExpenseEmailTemplate({
           heading: 'Expense Awaiting Final Approval',
           greeting: 'Team',
           intro:
-            'An expense claim has reached the final review stage and requires your action.',
+            expenseDoc.type === 'Team Lunch'
+              ? 'A Team Lunch expense was submitted by a Team Lead and requires Finance approval.'
+              : 'An expense claim has reached the final review stage and requires your action.',
           team,
           detailRowsHtml:
             renderExpenseDetailRow(
@@ -292,7 +350,10 @@ async function sendExpenseSubmissionEmails(expenseDoc, team) {
 
         Helper.sendEmail({
           receiverEmails: finalApproverEmails,
-          subject: 'Expense Awaiting Final Approval',
+          subject:
+            expenseDoc.type === 'Team Lunch'
+              ? 'Team Lunch — Awaiting Finance Approval'
+              : 'Expense Awaiting Final Approval',
           message: finalQueueMsg,
           team,
         }).catch((err) =>

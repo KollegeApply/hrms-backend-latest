@@ -557,6 +557,22 @@ async getUserById(id) {
 
     const oldUser = user.toObject();
 
+    // HR-only: allow setting expenseBand via main update-user API
+    if (Object.prototype.hasOwnProperty.call(updateData, 'expenseBand')) {
+      const actorRole = changedByUser?.role;
+      if (actorRole !== 'hr') {
+        throw new ApiError(
+          httpStatus.FORBIDDEN,
+          'Only HR can set expense band.'
+        );
+      }
+
+      // Normalize unset values
+      if (updateData.expenseBand === '' || updateData.expenseBand === null) {
+        updateData.expenseBand = undefined;
+      }
+    }
+
     // Check for email conflict if email is being updated
     updateData.email = updateData?.email?.toLowerCase();
     const existingUser = await this.getUserByEmail(updateData?.email);
@@ -1523,7 +1539,8 @@ async getUserById(id) {
       }
 
       // Select all required fields
-      const selectFields = '_id firstName lastName email role employeeId department phoneNumber hireDate workType status jobTitle formStatus teamLeadId subTeamLeadId shiftTime isEmergencyRegularizationAllowed';
+      const selectFields =
+        '_id firstName lastName email role employeeId department phoneNumber hireDate workType status jobTitle formStatus teamLeadId subTeamLeadId shiftTime isEmergencyRegularizationAllowed expenseBand';
 
       let users;
 
@@ -1584,6 +1601,43 @@ async getUserById(id) {
         message: 'An unexpected server error occurred.',
       };
     }
+  }
+
+  /**
+   * TL/SubTL: set or update reportee expense band (K1–K4 only). Same logic for first save and edits.
+   */
+  async upsertReporteeExpenseBand(currentUser, reporteeId, expenseBand) {
+    const targetUser = await User.findById(reporteeId);
+    if (!targetUser || targetUser.isDeleted) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
+    }
+
+    const leadId = currentUser.id?.toString?.() ?? String(currentUser.id);
+    const isDirectReport =
+      targetUser.teamLeadId?.toString() === leadId ||
+      targetUser.subTeamLeadId?.toString() === leadId;
+
+    if (!isDirectReport) {
+      throw new ApiError(
+        httpStatus.FORBIDDEN,
+        'You can only set expense band for your direct reportees.'
+      );
+    }
+
+    if (targetUser.team !== currentUser.team) {
+      throw new ApiError(
+        httpStatus.FORBIDDEN,
+        'You can only set expense band for users in your team.'
+      );
+    }
+
+    targetUser.expenseBand = expenseBand;
+    await targetUser.save();
+
+    return {
+      id: targetUser.id,
+      expenseBand: targetUser.expenseBand,
+    };
   }
 }
 

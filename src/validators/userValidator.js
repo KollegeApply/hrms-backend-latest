@@ -2,6 +2,7 @@ const Joi = require('joi');
 const {
   VALID_USER_ROLES,
   VALID_EMPLOYEE_STATUS,
+  VALID_EXPENSE_BANDS,
 } = require('../utility/constants');
 
 // Base schema for common address fields (optional)
@@ -156,6 +157,15 @@ const updateUserSchema = Joi.object({
   shiftTime: Joi.string().trim().optional().allow('', null).messages({
     'string.base': 'Shift time must be a string',
   }),
+  expenseBand: Joi.string()
+    .trim()
+    .uppercase()
+    .valid(...VALID_EXPENSE_BANDS)
+    .optional()
+    .allow(null, '')
+    .messages({
+      'any.only': `Expense band must be one of: ${VALID_EXPENSE_BANDS.join(', ')}`,
+    }),
 })
   .min(1)
   .options({ stripUnknown: true }); // Require at least one field to update
@@ -323,6 +333,18 @@ const getTeamDetailsQuerySchema = Joi.object({
   search: Joi.string().trim().allow('').optional(),
 }).options({ stripUnknown: true });
 
+const updateReporteeExpenseBandSchema = Joi.object({
+  expenseBand: Joi.string()
+    .trim()
+    .uppercase()
+    .valid(...VALID_EXPENSE_BANDS)
+    .required()
+    .messages({
+      'any.only': `Expense band must be one of: ${VALID_EXPENSE_BANDS.join(', ')}`,
+      'any.required': 'Expense band is required.',
+    }),
+}).options({ stripUnknown: true });
+
 const updateShiftTimeSchema = Joi.object({
   shiftTime: Joi.alternatives()
     .try(
@@ -356,5 +378,6 @@ module.exports = {
   getUserHistorySchema,
   getUserByTlIdSchema,
   getTeamDetailsQuerySchema,
+  updateReporteeExpenseBandSchema,
   updateShiftTimeSchema,
 };
