@@ -1,4 +1,10 @@
 const Joi = require('joi');
+const {
+  EXPENSE_TYPES_CREATE,
+  TRAVEL_SUBCATEGORIES,
+  FOOD_SUBCATEGORIES,
+  MISCELLANEOUS_SUBCATEGORIES,
+} = require('../utility/expensePolicyConstants');
 
 const objectIdSchema = Joi.string()
   .custom((value, helpers) => {
@@ -9,15 +15,7 @@ const objectIdSchema = Joi.string()
   }, 'ObjectId Validation')
   .message({ 'any.invalid': 'Invalid MongoDB ObjectId' });
 
-const allowedTypes = ['Travel', 'Food', 'Stay', 'Miscellaneous'];
 const allowedActions = ['approved', 'rejected'];
-const miscellaneousWordLimit = 20;
-
-const countWords = (value = '') =>
-  String(value)
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean).length;
 
 const createExpenseSchema = Joi.object({
   date: Joi.date().required().messages({
@@ -36,32 +34,22 @@ const createExpenseSchema = Joi.object({
         'Expense name contains unsupported special characters.',
     }),
   type: Joi.string()
-    .valid(...allowedTypes)
+    .valid(...EXPENSE_TYPES_CREATE)
     .required()
     .messages({
-      'any.only': `Expense type must be one of: ${allowedTypes.join(', ')}`,
+      'any.only': `Expense type must be one of: ${EXPENSE_TYPES_CREATE.join(', ')}`,
       'any.required': 'Expense type is required.',
     }),
-  miscellaneousType: Joi.when('type', {
-    is: 'Miscellaneous',
-    then: Joi.string()
-      .trim()
-      .max(100)
-      .custom((value, helpers) => {
-        if (countWords(value) > miscellaneousWordLimit) {
-          return helpers.error('string.maxWords');
-        }
-        return value;
-      }, 'Miscellaneous Type word limit')
-      .required()
-      .messages({
-        'string.empty': 'Miscellaneous detail is required.',
-        'string.max': 'Miscellaneous detail cannot exceed 100 characters.',
-        'string.maxWords': `Miscellaneous detail cannot exceed ${miscellaneousWordLimit} words.`,
-        'any.required': 'Miscellaneous detail is required for Miscellaneous type.',
-      }),
-    otherwise: Joi.string().trim().allow('', null).optional(),
-  }),
+  subCategory: Joi.string().trim().max(120).allow('', null).optional(),
+  distanceKm: Joi.number().min(0).allow(null).optional(),
+  clientName: Joi.string().trim().max(100).allow('', null).optional(),
+  clientPocName: Joi.string().trim().max(100).allow('', null).optional(),
+  clientPocDesignation: Joi.string().trim().max(100).allow('', null).optional(),
+  attendeeUserIds: Joi.array().items(objectIdSchema).max(200).optional(),
+  miscOthersDescription: Joi.string().trim().max(300).allow('', null).optional(),
+  travelMiscDescription: Joi.string().trim().max(200).allow('', null).optional(),
+  cityTier: Joi.string().valid('Metro', 'Non-Metro').allow('', null).optional(),
+  miscellaneousType: Joi.string().trim().max(200).allow('', null).optional(),
   amount: Joi.number().precision(2).greater(0).required().messages({
     'number.base': 'Amount must be a valid number.',
     'number.greater': 'Amount must be greater than 0.',
@@ -72,7 +60,6 @@ const createExpenseSchema = Joi.object({
     'string.max': 'Purpose cannot exceed 500 characters.',
     'any.required': 'Purpose is required.',
   }),
-  // Full HTTPS URL or S3-relative key from upload (e.g. hrms-expenses/...)
   attachmentUrl: Joi.string()
     .trim()
     .max(500)
@@ -81,7 +68,108 @@ const createExpenseSchema = Joi.object({
     .messages({
       'string.max': 'Attachment URL cannot exceed 500 characters.',
     }),
-}).options({ stripUnknown: true });
+})
+  .custom((value, helpers) => {
+    const { type, subCategory, distanceKm, attendeeUserIds } = value;
+
+    if (type === 'Travel') {
+      if (!subCategory || !TRAVEL_SUBCATEGORIES.includes(subCategory)) {
+        return helpers.message({
+          custom: `Travel requires subCategory to be one of: ${TRAVEL_SUBCATEGORIES.join(', ')}`,
+        });
+      }
+      if (subCategory === '2 Wheeler' || subCategory === '4 Wheeler') {
+        if (distanceKm == null || Number(distanceKm) <= 0) {
+          return helpers.message({
+            custom:
+              'Distance (km) is required and must be greater than 0 for 2 Wheeler / 4 Wheeler.',
+          });
+        }
+      }
+      if (subCategory === 'Misc') {
+        const desc = (value.travelMiscDescription || '').trim();
+        if (!desc) {
+          return helpers.message({
+            custom: 'Description is required for Travel > Misc (max 200 characters).',
+          });
+        }
+      }
+    }
+
+    if (type === 'Food') {
+      if (!subCategory || !FOOD_SUBCATEGORIES.includes(subCategory)) {
+        return helpers.message({
+          custom: `Food requires subCategory to be one of: ${FOOD_SUBCATEGORIES.join(', ')}`,
+        });
+      }
+    }
+
+    if (type === 'Miscellaneous') {
+      if (!subCategory || !MISCELLANEOUS_SUBCATEGORIES.includes(subCategory)) {
+        return helpers.message({
+          custom: `Miscellaneous requires subCategory to be one of: ${MISCELLANEOUS_SUBCATEGORIES.join(', ')}`,
+        });
+      }
+      if (subCategory === 'Hotel Accommodation') {
+        if (!value.cityTier || !['Metro', 'Non-Metro'].includes(value.cityTier)) {
+          return helpers.message({
+            custom:
+              'cityTier is required for Hotel Accommodation and must be Metro or Non-Metro.',
+          });
+        }
+      }
+      if (subCategory === 'Others') {
+        const d = (value.miscOthersDescription || '').trim();
+        if (!d) {
+          return helpers.message({
+            custom:
+              'Description is required for Miscellaneous > Others (max 300 characters).',
+          });
+        }
+      }
+      if (subCategory === 'Client Gifting' || subCategory === 'Client Lunch') {
+        if (!(value.clientName || '').trim()) {
+          return helpers.message({ custom: 'Client Name is required.' });
+        }
+        if (!(value.clientPocName || '').trim()) {
+          return helpers.message({ custom: 'POC Name is required.' });
+        }
+        if (!(value.clientPocDesignation || '').trim()) {
+          return helpers.message({ custom: 'POC Designation is required.' });
+        }
+      }
+    }
+
+    if (type === 'Team Lunch') {
+      if (!Array.isArray(attendeeUserIds) || attendeeUserIds.length < 1) {
+        return helpers.message({
+          custom: 'Team Lunch requires at least one attendee (attendeeUserIds).',
+        });
+      }
+    }
+
+    if (
+      type !== 'Travel' &&
+      type !== 'Food' &&
+      type !== 'Miscellaneous' &&
+      subCategory
+    ) {
+      return helpers.message({
+        custom: 'subCategory must only be sent for Travel, Food, or Miscellaneous.',
+      });
+    }
+
+    if (value.cityTier) {
+      if (!(type === 'Miscellaneous' && subCategory === 'Hotel Accommodation')) {
+        return helpers.message({
+          custom: 'cityTier is only allowed for Miscellaneous > Hotel Accommodation.',
+        });
+      }
+    }
+
+    return value;
+  }, 'Phase 2 expense cross-field rules')
+  .options({ stripUnknown: true });
 
 const listExpenseSchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
@@ -111,8 +199,28 @@ const updateExpenseStatusSchema = Joi.object({
       'any.required': 'Action is required.',
       'any.only': `Action must be one of: ${allowedActions.join(', ')}`,
     }),
-  remark: Joi.string().trim().max(500).allow('', null).messages({
-    'string.max': 'Remark cannot exceed 500 characters.',
+  remark: Joi.when('action', {
+    is: 'approved',
+    then: Joi.string()
+      .trim()
+      .min(10)
+      .max(500)
+      .required()
+      .messages({
+        'string.min': 'Approval remarks must be at least 10 characters.',
+        'any.required': 'Approval remarks are required.',
+        'string.empty': 'Approval remarks are required.',
+      }),
+    otherwise: Joi.string()
+      .trim()
+      .min(20)
+      .max(500)
+      .required()
+      .messages({
+        'string.min': 'Rejection reason must be at least 20 characters.',
+        'any.required': 'Rejection reason is required.',
+        'string.empty': 'Rejection reason is required.',
+      }),
   }),
 }).options({ stripUnknown: true });
 

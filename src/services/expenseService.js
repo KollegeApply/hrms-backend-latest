@@ -3,6 +3,16 @@ const mongoose = require('mongoose');
 const ApiError = require('../utility/ApiError');
 const Expense = require('../models/expenseModel');
 const User = require('../models/userModel');
+const {
+  TEAM_LUNCH_PER_ATTENDEE,
+  MOBILE_BILL_FIXED_AMOUNT,
+  ATTACHMENT_THRESHOLD_AMOUNT,
+  FOOD_DAILY_CAP,
+  HOTEL_PER_NIGHT_CAP,
+  travelPerKmRate,
+  TECHNICAL_TOOLS_DEFAULTS,
+  TL_ROLES_FOR_TEAM_LUNCH,
+} = require('../utility/expensePolicyConstants');
 
 class ExpenseService {
   constructor() {
@@ -46,6 +56,201 @@ class ExpenseService {
     return deptName === 'expense' || deptName === 'finance';
   }
 
+  hasAttachmentUrl(payload) {
+    return Boolean(payload.attachmentUrl && String(payload.attachmentUrl).trim());
+  }
+
+  requiresAttachment(payload) {
+    const amt = Number(payload.amount);
+    if (amt >= ATTACHMENT_THRESHOLD_AMOUNT) return true;
+    if (['Mobile Bill', 'Technical Tools', 'Team Lunch'].includes(payload.type)) {
+      return true;
+    }
+    if (payload.type === 'Miscellaneous') {
+      const sc = payload.subCategory;
+      if (sc === 'Client Gifting' || sc === 'Client Lunch') return true;
+    }
+    return false;
+  }
+
+  resolveExpenseBand(expenseBand) {
+    const b = (expenseBand || 'K4').toUpperCase();
+    if (['K1', 'K2', 'K3', 'K4'].includes(b)) return b;
+    return 'K4';
+  }
+
+  roundMoney(n) {
+    return Math.round(Number(n) * 100) / 100;
+  }
+
+  async assertPhase2Policy(user, payload, expenseDate) {
+    const submitter = await User.findById(user.id)
+      .select('team teamLeadId subTeamLeadId role expenseBand')
+      .lean();
+    if (!submitter) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
+    }
+
+    const band = this.resolveExpenseBand(submitter.expenseBand);
+    const teamName = submitter.team || user.team;
+
+    if (payload.type === 'Team Lunch') {
+      if (!TL_ROLES_FOR_TEAM_LUNCH.includes((submitter.role || '').toLowerCase())) {
+        throw new ApiError(
+          httpStatus.FORBIDDEN,
+          'Only Team Lead or Sub Team Lead can submit Team Lunch expenses.'
+        );
+      }
+      const ids = [...new Set((payload.attendeeUserIds || []).map(String))];
+      const attendees = await User.find({
+        _id: { $in: ids },
+        isDeleted: { $ne: true },
+      })
+        .select('_id team')
+        .lean();
+      if (attendees.length !== ids.length) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'One or more attendee users are invalid.');
+      }
+      const wrongTeam = attendees.find((a) => (a.team || '').trim() !== (teamName || '').trim());
+      if (wrongTeam) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          'All Team Lunch attendees must belong to the same team as the submitter.'
+        );
+      }
+      const expected = this.roundMoney(ids.length * TEAM_LUNCH_PER_ATTENDEE);
+      if (this.roundMoney(payload.amount) !== expected) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Team Lunch amount must be Rs.${expected} (${ids.length} attendee(s) × Rs.${TEAM_LUNCH_PER_ATTENDEE}).`
+        );
+      }
+    }
+
+    if (payload.type === 'Mobile Bill') {
+      const y = expenseDate.getFullYear();
+      const m = expenseDate.getMonth();
+      const monthStart = new Date(y, m, 1);
+      const monthEnd = new Date(y, m + 1, 0, 23, 59, 59, 999);
+      const existingBill = await Expense.findOne({
+        userId: this.toObjectId(user.id),
+        type: 'Mobile Bill',
+        isDeleted: { $ne: true },
+        date: { $gte: monthStart, $lte: monthEnd },
+      }).lean();
+      if (existingBill) {
+        throw new ApiError(
+          httpStatus.CONFLICT,
+          'Mobile Bill already claimed for this month.'
+        );
+      }
+      if (this.roundMoney(payload.amount) !== MOBILE_BILL_FIXED_AMOUNT) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Mobile Bill amount must be exactly Rs.${MOBILE_BILL_FIXED_AMOUNT}.`
+        );
+      }
+    }
+
+    if (payload.type === 'Travel') {
+      const sc = payload.subCategory;
+      if (sc === '2 Wheeler' || sc === '4 Wheeler') {
+        const rate = travelPerKmRate(sc, band);
+        const expected = this.roundMoney(Number(payload.distanceKm) * rate);
+        if (this.roundMoney(payload.amount) !== expected) {
+          throw new ApiError(
+            httpStatus.BAD_REQUEST,
+            `Travel amount must equal distance × Rs.${rate}/km (expected Rs.${expected}).`
+          );
+        }
+      }
+    }
+
+    if (payload.type === 'Food') {
+      const tier = payload.subCategory === 'Metro' ? 'metro' : 'nonMetro';
+      const daily = FOOD_DAILY_CAP[band]?.[tier];
+      if (daily == null) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid Food sub-category for policy.');
+      }
+      const sameDay = await Expense.find({
+        userId: this.toObjectId(user.id),
+        type: 'Food',
+        subCategory: payload.subCategory,
+        date: expenseDate,
+        isDeleted: { $ne: true },
+      })
+        .select('amount')
+        .lean();
+      const existingSum = sameDay.reduce((s, e) => s + Number(e.amount || 0), 0);
+      const total = existingSum + Number(payload.amount);
+      if (total > daily * 2) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Food total for this date exceeds twice your daily ${payload.subCategory} cap (Rs.${daily}).`
+        );
+      }
+    }
+
+    if (payload.type === 'Miscellaneous' && payload.subCategory === 'Hotel Accommodation') {
+      const tierKey = payload.cityTier === 'Metro' ? 'metro' : 'nonMetro';
+      const cap = HOTEL_PER_NIGHT_CAP[band]?.[tierKey];
+      if (cap == null) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid hotel city tier.');
+      }
+      if (Number(payload.amount) > cap * 2) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Hotel claim exceeds twice the per-night cap (Rs.${cap}) for your band and city tier.`
+        );
+      }
+    }
+
+    if (payload.type === 'Technical Tools') {
+      const start = new Date(expenseDate.getFullYear(), expenseDate.getMonth(), 1);
+      const end = new Date(
+        expenseDate.getFullYear(),
+        expenseDate.getMonth() + 1,
+        0,
+        23,
+        59,
+        59,
+        999
+      );
+      const monthSum = await Expense.aggregate([
+        {
+          $match: {
+            userId: this.toObjectId(user.id),
+            type: 'Technical Tools',
+            isDeleted: { $ne: true },
+            date: { $gte: start, $lte: end },
+          },
+        },
+        { $group: { _id: null, total: { $sum: '$amount' } } },
+      ]);
+      const prev = monthSum[0]?.total || 0;
+      const nextTotal = prev + Number(payload.amount);
+      if (Number(payload.amount) > TECHNICAL_TOOLS_DEFAULTS.maxPerTransaction) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Technical Tools amount exceeds per-transaction limit (Rs.${TECHNICAL_TOOLS_DEFAULTS.maxPerTransaction}).`
+        );
+      }
+      if (nextTotal > TECHNICAL_TOOLS_DEFAULTS.maxPerCalendarMonth) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Technical Tools monthly total would exceed Rs.${TECHNICAL_TOOLS_DEFAULTS.maxPerCalendarMonth}.`
+        );
+      }
+    }
+
+    if (this.requiresAttachment(payload) && !this.hasAttachmentUrl(payload)) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Attachment is required for this expense (policy: amount ≥ Rs.150 and/or this expense type).'
+      );
+    }
+  }
+
   async createExpense(user, payload) {
     const expenseDate = new Date(payload.date);
     expenseDate.setHours(0, 0, 0, 0);
@@ -68,57 +273,103 @@ class ExpenseService {
       );
     }
 
-    const duplicateExpense = await Expense.findOne({
-      userId: user.id,
-      date: expenseDate,
-      type: payload.type,
-      amount: payload.amount,
-      isDeleted: { $ne: true },
-    });
-
-    if (duplicateExpense) {
-      throw new ApiError(
-        httpStatus.CONFLICT,
-        'Duplicate expense detected for same date, type, and amount.'
-      );
-    }
-
     const userWithLeads = await User.findById(user.id).select(
-      'teamLeadId subTeamLeadId team'
+      'teamLeadId subTeamLeadId team role'
     );
     if (!userWithLeads) {
       throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
     }
 
+    const teamKey = userWithLeads.team || user.team;
+
+    if (payload.type === 'Team Lunch') {
+      const dupTeam = await Expense.findOne({
+        team: teamKey,
+        date: expenseDate,
+        type: 'Team Lunch',
+        isDeleted: { $ne: true },
+      }).lean();
+      if (dupTeam) {
+        throw new ApiError(
+          httpStatus.CONFLICT,
+          'A Team Lunch claim already exists for this team on this date.'
+        );
+      }
+    } else if (payload.type !== 'Mobile Bill') {
+      const duplicateExpense = await Expense.findOne({
+        userId: user.id,
+        date: expenseDate,
+        type: payload.type,
+        amount: payload.amount,
+        isDeleted: { $ne: true },
+      });
+      if (duplicateExpense) {
+        throw new ApiError(
+          httpStatus.CONFLICT,
+          'Duplicate expense detected for same date, type, and amount.'
+        );
+      }
+    }
+
+    await this.assertPhase2Policy(user, payload, expenseDate);
+
     const hasTeamLead = Boolean(
       userWithLeads.teamLeadId || userWithLeads.subTeamLeadId
     );
-    const status = hasTeamLead ? 'submitted' : 'tl-approved';
+
+    let status = hasTeamLead ? 'submitted' : 'tl-approved';
+    let tlId = hasTeamLead ? undefined : user.id;
+    let tlRemark = hasTeamLead
+      ? undefined
+      : 'Auto-routed to finance because team lead is not mapped.';
+
+    if (payload.type === 'Team Lunch') {
+      status = 'tl-approved';
+      tlId = undefined;
+      tlRemark = 'Team Lunch: routed directly to Finance (policy).';
+    }
+
+    const attendeeIds =
+      payload.type === 'Team Lunch' && Array.isArray(payload.attendeeUserIds)
+        ? [...new Set(payload.attendeeUserIds.map((id) => this.toObjectId(id)))]
+        : undefined;
 
     const expense = await Expense.create({
       userId: user.id,
-      team: userWithLeads.team || user.team,
+      team: teamKey,
       date: expenseDate,
       name: payload.name,
       type: payload.type,
-      miscellaneousType:
-        payload.type === 'Miscellaneous' ? payload.miscellaneousType || undefined : undefined,
+      subCategory: payload.subCategory || undefined,
+      miscellaneousType: payload.miscellaneousType || undefined,
+      distanceKm:
+        payload.type === 'Travel' &&
+        (payload.subCategory === '2 Wheeler' || payload.subCategory === '4 Wheeler')
+          ? Number(payload.distanceKm)
+          : undefined,
+      clientName: payload.clientName?.trim() || undefined,
+      clientPocName: payload.clientPocName?.trim() || undefined,
+      clientPocDesignation: payload.clientPocDesignation?.trim() || undefined,
+      attendeeUserIds: attendeeIds,
+      miscOthersDescription: payload.miscOthersDescription?.trim() || undefined,
+      travelMiscDescription: payload.travelMiscDescription?.trim() || undefined,
+      cityTier: payload.cityTier || undefined,
       amount: Number(payload.amount),
       purpose: payload.purpose,
       attachmentUrl: payload.attachmentUrl || undefined,
       status,
-      tlId: hasTeamLead ? undefined : user.id,
-      tlRemark: hasTeamLead
-        ? undefined
-        : 'Auto-routed to finance because team lead is not mapped.',
+      tlId,
+      tlRemark,
     });
 
     return Expense.findById(expense._id).populate([
       {
         path: 'userId',
-        select: 'firstName lastName employeeId email role teamLeadId subTeamLeadId',
+        select:
+          'firstName lastName employeeId email role teamLeadId subTeamLeadId expenseBand',
       },
       { path: 'tlId', select: 'firstName lastName employeeId email role' },
+      { path: 'attendeeUserIds', select: 'firstName lastName employeeId email' },
     ]);
   }
 
@@ -221,6 +472,8 @@ class ExpenseService {
         { purpose: searchRegex },
         { type: searchRegex },
         { miscellaneousType: searchRegex },
+        { subCategory: searchRegex },
+        { clientName: searchRegex },
         {
           userId: {
             $in: userMatches.map((entry) =>

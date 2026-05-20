@@ -153,4 +153,12 @@ router.put(
   userController.updateShiftTime
 );
 
+// Expense band (K1–K4): TL / SubTL — one PUT for both initial set and later edits
+router.put(
+  '/:id/expense-band',
+  authenticateUser,
+  authorizeRole([USER_ROLES?.TEAMLEAD, USER_ROLES?.SUBTEAMLEAD]),
+  userController.updateReporteeExpenseBand
+);
+
 module.exports = router;

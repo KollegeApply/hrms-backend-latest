@@ -920,6 +920,32 @@ const updateShiftTime = catchAsync(async (req, res) => {
   });
 });
 
+// TL/SubTL: PUT sets or updates reportee expense band (K1–K4)
+const updateReporteeExpenseBand = catchAsync(async (req, res) => {
+  await userValidator?.mongoIdSchema?.validateAsync(req.params);
+  const userId = req?.params?.id;
+
+  if (!Helper.isValidMongoId(userId)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid user ID format.');
+  }
+
+  const validatedData = await userValidator?.updateReporteeExpenseBandSchema?.validateAsync(
+    req?.body
+  );
+
+  const data = await userService.upsertReporteeExpenseBand(
+    req.user,
+    userId,
+    validatedData.expenseBand
+  );
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Expense band saved successfully.',
+    data,
+  });
+});
+
 module.exports = {
   createUser,
   getAllUsers,
@@ -942,6 +968,7 @@ module.exports = {
   uploadProfilePhoto,
   getAllUsersForMeeting,
   updateShiftTime,
+  updateReporteeExpenseBand,
 };
 
 // --- Utility: catchAsync (Place in src/utility/catchAsync.js) ---

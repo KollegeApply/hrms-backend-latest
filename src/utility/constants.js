@@ -12,6 +12,14 @@ const USER_ROLES = {
   IT: 'IT',
 };
 
+/** Expense policy band (K1–K4 only). */
+const EXPENSE_BANDS = {
+  K1: 'K1',
+  K2: 'K2',
+  K3: 'K3',
+  K4: 'K4',
+};
+
 const EMPLOYEE_STATUS = {
   PROBATION: 'probation',
   TERMINATED: 'terminated',
@@ -221,6 +229,8 @@ const SYSTEM_START_MONTH = 4;
 
 module.exports = {
   USER_ROLES,
+  EXPENSE_BANDS,
+  VALID_EXPENSE_BANDS: Object.values(EXPENSE_BANDS),
   EMPLOYEE_STATUS,
   VALID_USER_ROLES: Object.values(USER_ROLES),
   VALID_EMPLOYEE_STATUS: Object.values(EMPLOYEE_STATUS),
