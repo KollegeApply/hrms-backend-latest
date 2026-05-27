@@ -127,27 +127,39 @@ async fetchAssignedAssets(page, limit, search, team) {
 
     if (search) {
       const searchTerm = search.trim();
+      const orConditions = [];
 
-      // Search by employee name (firstName, lastName) and employeeId only
       const searchUsers = await User.find({
         $or: [
           { firstName: { $regex: searchTerm, $options: 'i' } },
           { lastName: { $regex: searchTerm, $options: 'i' } },
-          { employeeId: { $regex: searchTerm, $options: 'i' } }
-        ]
+          { employeeId: { $regex: searchTerm, $options: 'i' } },
+        ],
       }).select('_id');
 
-      const userIds = searchUsers.map(user => user._id);
-
+      const userIds = searchUsers.map((user) => user._id);
       if (userIds.length > 0) {
-        query.$or = [
+        orConditions.push(
           { assignee: { $in: userIds } },
           { assignedBy: { $in: userIds } }
-        ];
-      } else {
-        // If no users found, return empty result
-        query._id = { $in: [] };
+        );
       }
+
+      orConditions.push({
+        serialNumber: { $regex: searchTerm, $options: 'i' },
+      });
+
+      const matchingInventory = await AssetInventory.find({
+        isDeleted: false,
+        serialNumber: { $regex: searchTerm, $options: 'i' },
+      }).select('_id');
+
+      const inventoryIds = matchingInventory.map((asset) => asset._id);
+      if (inventoryIds.length > 0) {
+        orConditions.push({ inventoryAsset: { $in: inventoryIds } });
+      }
+
+      query.$or = orConditions;
     }
 
     if (team) {
