@@ -301,7 +301,7 @@ const deleteUser = catchAsync(async (req, res) => {
   // check for hierarchy
   if (currentUserRank < targetedUserRank) {
     // 2. Call service to delete user (soft delete)
-    const success = await userService.deleteUser(userId, team);
+    const success = await userService.deleteUser(userId, team, req.user.id);
 
     // 3. Handle not found
     if (!success) {

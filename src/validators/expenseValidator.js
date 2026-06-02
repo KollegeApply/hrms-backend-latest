@@ -203,25 +203,75 @@ const updateExpenseStatusSchema = Joi.object({
     is: 'approved',
     then: Joi.string()
       .trim()
-      .min(10)
+      .min(8)
       .max(500)
       .required()
       .messages({
-        'string.min': 'Approval remarks must be at least 10 characters.',
+        'string.min': 'Approval remarks must be at least 8 characters.',
         'any.required': 'Approval remarks are required.',
         'string.empty': 'Approval remarks are required.',
       }),
     otherwise: Joi.string()
       .trim()
-      .min(20)
+      .min(10)
       .max(500)
       .required()
       .messages({
-        'string.min': 'Rejection reason must be at least 20 characters.',
+        'string.min': 'Rejection reason must be at least 10 characters.',
         'any.required': 'Rejection reason is required.',
         'string.empty': 'Rejection reason is required.',
       }),
   }),
+}).options({ stripUnknown: true });
+
+const bulkApproveExpenseSchema = Joi.object({
+  expenseIds: Joi.array()
+    .items(objectIdSchema)
+    .min(1)
+    .max(50)
+    .unique()
+    .required()
+    .messages({
+      'array.min': 'At least one expense id is required.',
+      'array.max': 'You can approve up to 50 expenses at once.',
+      'any.required': 'Expense ids are required.',
+    }),
+  remark: Joi.string()
+    .trim()
+    .min(8)
+    .max(500)
+    .required()
+    .messages({
+      'string.min': 'Approval remarks must be at least 8 characters.',
+      'any.required': 'Approval remarks are required.',
+      'string.empty': 'Approval remarks are required.',
+    }),
+  sendMail: Joi.boolean().optional(),
+}).options({ stripUnknown: true });
+
+const bulkRejectExpenseSchema = Joi.object({
+  expenseIds: Joi.array()
+    .items(objectIdSchema)
+    .min(1)
+    .max(50)
+    .unique()
+    .required()
+    .messages({
+      'array.min': 'At least one expense id is required.',
+      'array.max': 'You can reject up to 50 expenses at once.',
+      'any.required': 'Expense ids are required.',
+    }),
+  remark: Joi.string()
+    .trim()
+    .min(10)
+    .max(500)
+    .required()
+    .messages({
+      'string.min': 'Rejection reason must be at least 10 characters.',
+      'any.required': 'Rejection reason is required.',
+      'string.empty': 'Rejection reason is required.',
+    }),
+  sendMail: Joi.boolean().optional(),
 }).options({ stripUnknown: true });
 
 module.exports = {
@@ -229,4 +279,6 @@ module.exports = {
   listExpenseSchema,
   expenseIdSchema,
   updateExpenseStatusSchema,
+  bulkApproveExpenseSchema,
+  bulkRejectExpenseSchema,
 };

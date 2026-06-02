@@ -798,10 +798,14 @@ async getUserById(id) {
   /**
    * Soft delete a user by ID.
    * @param {string} id - The user's MongoDB ObjectId.
+   * @param {string} team - Requester's team.
+   * @param {string} deletedById - ID of the user performing the delete.
    * @returns {Promise<boolean>} - True if deletion was successful, false otherwise.
    */
-  async deleteUser(id, team) {
-    logger.info(`Attempting to soft delete user with ID: ${id}`);
+  async deleteUser(id, team, deletedById) {
+    logger.info(
+      `Attempting to soft delete user with ID: ${id}, deleted by user ID: ${deletedById}`
+    );
     const result1 = await User.findById(id);
     if (result1.isDeleted) {
       return false;
@@ -809,7 +813,7 @@ async getUserById(id) {
 
     if (result1.team !== team) {
       logger.warn(
-        `Unauthorized delete attempt: Team mismatch. User team: ${userToDelete.team}, Requester team: ${team}`
+        `Unauthorized delete attempt by user ID: ${deletedById}. Team mismatch. Target user team: ${result1.team}, Requester team: ${team}`
       );
       return false;
     }
@@ -821,10 +825,14 @@ async getUserById(id) {
     );
 
     if (result) {
-      logger.info(`User soft deleted successfully: ${id}`);
+      logger.info(
+        `User soft deleted successfully. Target user ID: ${id}, deleted by user ID: ${deletedById}`
+      );
       return true;
     } else {
-      logger.warn(`Soft delete failed: User not found with ID: ${id}`);
+      logger.warn(
+        `Soft delete failed: User not found with ID: ${id}, attempted by user ID: ${deletedById}`
+      );
       return false;
     }
   }

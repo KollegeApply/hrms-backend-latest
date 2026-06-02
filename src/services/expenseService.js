@@ -83,6 +83,57 @@ class ExpenseService {
     return Math.round(Number(n) * 100) / 100;
   }
 
+  /** Pending statuses (maps to tl-pending / hr-pending on leave & regularisation lists). */
+  expensePendingStatuses() {
+    return ['submitted', 'tl-approved'];
+  }
+
+  /**
+   * Same ordering as Leaves & Regularisation:
+   * my pending → tl-pending (HR team first) → hr-pending → other tl-pending → rest (newest).
+   */
+  buildExpenseSortPriorityBranches(requesterObjectId, requesterRole, hrPriorityTeamUserIds) {
+    const pending = this.expensePendingStatuses();
+    return {
+      $switch: {
+        branches: [
+          ...(requesterObjectId
+            ? [
+              {
+                case: {
+                  $and: [
+                    { $eq: ['$userId', requesterObjectId] },
+                    { $in: ['$status', pending] },
+                  ],
+                },
+                then: 0,
+              },
+            ]
+            : []),
+          ...(requesterRole === 'hr'
+            ? [
+              {
+                case: {
+                  $and: [
+                    { $eq: ['$status', 'submitted'] },
+                    { $in: ['$userId', hrPriorityTeamUserIds] },
+                  ],
+                },
+                then: 1,
+              },
+              { case: { $eq: ['$status', 'tl-approved'] }, then: 2 },
+              { case: { $eq: ['$status', 'submitted'] }, then: 3 },
+            ]
+            : [
+              { case: { $eq: ['$status', 'submitted'] }, then: 1 },
+              { case: { $eq: ['$status', 'tl-approved'] }, then: 2 },
+            ]),
+        ],
+        default: requesterRole === 'hr' ? 4 : 3,
+      },
+    };
+  }
+
   async assertPhase2Policy(user, payload, expenseDate) {
     const submitter = await User.findById(user.id)
       .select('team teamLeadId subTeamLeadId role expenseBand')
@@ -381,7 +432,6 @@ class ExpenseService {
     const isTlRole = this.tlRoles.includes(role);
     const isFinalApproverAdminRole = this.finalApproverAdminRoles.includes(role);
     const activeQueue = (filters.queue || '').trim().toLowerCase();
-    let priorityStatuses = [];
 
     // Default behaviour (My expenses tab): always show current user's own records only.
     if (!activeQueue) {
@@ -416,7 +466,6 @@ class ExpenseService {
 
         query.userId = { $in: teamUsers.map((entry) => entry._id) };
       }
-      priorityStatuses = ['submitted'];
     } else if (activeQueue === 'finance') {
       // Final queue: only Finance/Expense department users or Admin can action after TL approval.
       const isFinalApproverDeptUser = await this.isFinalApproverDepartmentUser(
@@ -427,7 +476,6 @@ class ExpenseService {
       } else {
         query.team = user.team;
       }
-      priorityStatuses = ['tl-approved'];
     } else {
       query.userId = this.toObjectId(user.id);
     }
@@ -500,32 +548,37 @@ class ExpenseService {
       { path: 'tlId', select: 'firstName lastName email employeeId role' },
     ];
 
-    let data = [];
+    const requesterObjectId = this.toObjectId(user.id);
+    let hrPriorityTeamUserIds = [];
+    if (role === 'hr') {
+      const hrTeamMembers = await User.find({
+        team: user.team,
+        $or: [{ teamLeadId: user.id }, { subTeamLeadId: user.id }],
+        isDeleted: { $ne: true },
+      }).select('_id');
+      hrPriorityTeamUserIds = hrTeamMembers.map((u) => this.toObjectId(u._id));
+    }
+
     const totalDocs = await Expense.countDocuments(query);
 
-    if (priorityStatuses.length > 0) {
-      const pipeline = [
-        { $match: query },
-        {
-          $addFields: {
-            __actionPriority: {
-              $cond: [{ $in: ['$status', priorityStatuses] }, 0, 1],
-            },
-          },
+    const pipeline = [
+      { $match: query },
+      {
+        $addFields: {
+          __sortPriority: this.buildExpenseSortPriorityBranches(
+            requesterObjectId,
+            role,
+            hrPriorityTeamUserIds
+          ),
         },
-        { $sort: { __actionPriority: 1, createdAt: -1 } },
-        { $skip: skip },
-        { $limit: perPage },
-      ];
-      data = await Expense.aggregate(pipeline);
-      data = await Expense.populate(data, populateOptions);
-    } else {
-      data = await Expense.find(query)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(perPage)
-        .populate(populateOptions);
-    }
+      },
+      { $sort: { __sortPriority: 1, createdAt: -1 } },
+      { $skip: skip },
+      { $limit: perPage },
+    ];
+
+    let data = await Expense.aggregate(pipeline);
+    data = await Expense.populate(data, populateOptions);
 
     const totalPages = Math.ceil(totalDocs / perPage);
     return {
@@ -631,6 +684,62 @@ class ExpenseService {
       httpStatus.CONFLICT,
       `Expense in '${expense.status}' state cannot be modified.`
     );
+  }
+
+  async bulkUpdateExpenseStatus({ expenseIds, remark, action, currentUser }) {
+    const succeeded = [];
+    const failed = [];
+    const actionVerb = action === 'approved' ? 'approve' : 'reject';
+
+    for (const expenseId of expenseIds) {
+      try {
+        const existing = await Expense.findById(expenseId).select('status');
+        if (!existing) {
+          failed.push({
+            expenseId,
+            message: 'Expense not found.',
+          });
+          continue;
+        }
+
+        const previousStatus = existing.status;
+        const updated = await this.updateExpenseStatus({
+          expenseId,
+          action,
+          remark,
+          currentUser,
+        });
+
+        succeeded.push({ updated, previousStatus });
+      } catch (err) {
+        failed.push({
+          expenseId,
+          message: err.message || `Failed to ${actionVerb} expense.`,
+        });
+      }
+    }
+
+    return { succeeded, failed };
+  }
+
+  async bulkApproveExpenses({ expenseIds, remark, currentUser }) {
+    const { succeeded, failed } = await this.bulkUpdateExpenseStatus({
+      expenseIds,
+      remark,
+      action: 'approved',
+      currentUser,
+    });
+    return { approved: succeeded, failed };
+  }
+
+  async bulkRejectExpenses({ expenseIds, remark, currentUser }) {
+    const { succeeded, failed } = await this.bulkUpdateExpenseStatus({
+      expenseIds,
+      remark,
+      action: 'rejected',
+      currentUser,
+    });
+    return { rejected: succeeded, failed };
   }
 
   async deleteExpense({ expenseId, currentUser }) {

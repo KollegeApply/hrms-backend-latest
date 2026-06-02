@@ -131,6 +131,17 @@ function fullName(user = {}) {
   return `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'User';
 }
 
+const expensePopulatePaths = [
+  {
+    path: 'userId',
+    select: 'firstName lastName email employeeId',
+  },
+  {
+    path: 'tlId',
+    select: 'firstName lastName email employeeId',
+  },
+];
+
 async function getFinalApproverEmails(team) {
   const approvers = await User.find({
     team,
@@ -581,16 +592,9 @@ const updateExpenseStatus = catchAsync(async (req, res) => {
     currentUser: req.user,
   });
 
-  const updatedExpense = await Expense.findById(updated._id).populate([
-    {
-      path: 'userId',
-      select: 'firstName lastName email employeeId',
-    },
-    {
-      path: 'tlId',
-      select: 'firstName lastName email employeeId',
-    },
-  ]);
+  const updatedExpense = await Expense.findById(updated._id).populate(
+    expensePopulatePaths
+  );
 
   const sendMail = !(req?.body?.sendMail === false || req?.body?.sendMail === 'false');
   if (sendMail && previousStatus) {
@@ -607,6 +611,136 @@ const updateExpenseStatus = catchAsync(async (req, res) => {
     status: true,
     message: 'Expense status updated successfully.',
     data: applyAttachmentUrlTransform(updatedExpense || updated),
+  });
+});
+
+const bulkRejectExpenses = catchAsync(async (req, res) => {
+  const validated = await expenseValidator.bulkRejectExpenseSchema.validateAsync(
+    req.body
+  );
+
+  const { rejected, failed } = await expenseService.bulkRejectExpenses({
+    expenseIds: validated.expenseIds,
+    remark: validated.remark,
+    currentUser: req.user,
+  });
+
+  const sendMail = !(
+    req?.body?.sendMail === false || req?.body?.sendMail === 'false'
+  );
+
+  const rejectedExpenses = [];
+  for (const item of rejected) {
+    const updatedExpense = await Expense.findById(item.updated._id).populate(
+      expensePopulatePaths
+    );
+
+    if (sendMail && item.previousStatus) {
+      await sendExpenseStatusUpdateEmail({
+        previousStatus: item.previousStatus,
+        updatedExpense,
+        action: 'rejected',
+        currentUser: req.user,
+        team: req.user.team,
+      });
+    }
+
+    rejectedExpenses.push(applyAttachmentUrlTransform(updatedExpense || item.updated));
+  }
+
+  const summary = {
+    total: validated.expenseIds.length,
+    succeeded: rejectedExpenses.length,
+    failed: failed.length,
+  };
+
+  if (rejectedExpenses.length === 0) {
+    return res.status(httpStatus.BAD_REQUEST).json({
+      status: false,
+      message: 'No expenses could be rejected.',
+      data: { rejected: [], failed },
+      summary,
+    });
+  }
+
+  const message =
+    failed.length === 0
+      ? `${rejectedExpenses.length} expense(s) rejected successfully.`
+      : `${rejectedExpenses.length} expense(s) rejected successfully. ${failed.length} failed.`;
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message,
+    data: {
+      rejected: rejectedExpenses,
+      failed,
+    },
+    summary,
+  });
+});
+
+const bulkApproveExpenses = catchAsync(async (req, res) => {
+  const validated = await expenseValidator.bulkApproveExpenseSchema.validateAsync(
+    req.body
+  );
+
+  const { approved, failed } = await expenseService.bulkApproveExpenses({
+    expenseIds: validated.expenseIds,
+    remark: validated.remark,
+    currentUser: req.user,
+  });
+
+  const sendMail = !(
+    req?.body?.sendMail === false || req?.body?.sendMail === 'false'
+  );
+
+  const approvedExpenses = [];
+  for (const item of approved) {
+    const updatedExpense = await Expense.findById(item.updated._id).populate(
+      expensePopulatePaths
+    );
+
+    if (sendMail && item.previousStatus) {
+      await sendExpenseStatusUpdateEmail({
+        previousStatus: item.previousStatus,
+        updatedExpense,
+        action: 'approved',
+        currentUser: req.user,
+        team: req.user.team,
+      });
+    }
+
+    approvedExpenses.push(applyAttachmentUrlTransform(updatedExpense || item.updated));
+  }
+
+  const summary = {
+    total: validated.expenseIds.length,
+    succeeded: approvedExpenses.length,
+    failed: failed.length,
+  };
+
+  if (approvedExpenses.length === 0) {
+    return res.status(httpStatus.BAD_REQUEST).json({
+      status: false,
+      message: 'No expenses could be approved.',
+      data: { approved: [], failed },
+      summary,
+    });
+  }
+
+  const message =
+    failed.length === 0
+      ? `${approvedExpenses.length} expense(s) approved successfully.`
+      : `${approvedExpenses.length} expense(s) approved successfully. ${failed.length} failed.`;
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message,
+    data: {
+      approved: approvedExpenses,
+      failed,
+    },
+    summary,
   });
 });
 
@@ -631,5 +765,7 @@ module.exports = {
   createExpense,
   getExpenses,
   updateExpenseStatus,
+  bulkApproveExpenses,
+  bulkRejectExpenses,
   deleteExpense,
 };
