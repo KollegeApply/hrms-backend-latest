@@ -195,12 +195,12 @@ class ExpenseService {
           'Mobile Bill already claimed for this month.'
         );
       }
-      if (this.roundMoney(payload.amount) !== MOBILE_BILL_FIXED_AMOUNT) {
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          `Mobile Bill amount must be exactly Rs.${MOBILE_BILL_FIXED_AMOUNT}.`
-        );
-      }
+      // if (this.roundMoney(payload.amount) !== MOBILE_BILL_FIXED_AMOUNT) {
+      //   throw new ApiError(
+      //     httpStatus.BAD_REQUEST,
+      //     `Mobile Bill amount must be exactly Rs.${MOBILE_BILL_FIXED_AMOUNT}.`
+      //   );
+      // }
     }
 
     if (payload.type === 'Travel') {
