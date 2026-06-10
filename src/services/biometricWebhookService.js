@@ -463,6 +463,14 @@ async function syncBiometricToAttendance({ user, logDate, direction }) {
       attendance.biometricCheckOut = logTime;
     }
 
+    // --- Calculate biometricStatus based on biometric times ---
+    attendance.biometricStatus = await calculateBiometricStatus(
+      user._id,
+      attendance.biometricCheckIn,
+      attendance.biometricCheckOut,
+      attendance
+    );
+
     await attendance.save();
   } catch (error) {
     logger.error(
@@ -475,6 +483,131 @@ async function syncBiometricToAttendance({ user, logDate, direction }) {
       },
       'Failed to sync biometric log to attendance'
     );
+  }
+}
+
+/**
+ * Calculates biometricStatus based on biometric check-in/check-out times.
+ * Follows the same logic as normal attendance status:
+ *  - Check-in after cutoff (shiftTime or 10:15 AM) → late_in
+ *  - Work duration < required hours (9h or 4.5h for half-day leave) → early_out
+ *  - Both → late_in_early_out
+ *  - Otherwise → present
+ *
+ * @param {ObjectId} userId
+ * @param {Date} biometricCheckIn
+ * @param {Date|null} biometricCheckOut
+ * @param {object} attendance - The attendance document (to check leave status)
+ * @param {string} [passedShiftTime] - Optional shift time if already fetched
+ * @returns {string} - The calculated biometric status
+ */
+async function calculateBiometricStatus(userId, biometricCheckIn, biometricCheckOut, attendance, passedShiftTime = undefined) {
+  try {
+    // Fetch user's shiftTime
+    let shiftTime = passedShiftTime;
+    if (shiftTime === undefined) {
+      const userDoc = await User.findById(userId).select('shiftTime').lean();
+      shiftTime = userDoc?.shiftTime || null;
+    }
+
+    // Parse shiftTime to minutes
+    let shiftTimeInMinutes = null;
+    if (shiftTime && typeof shiftTime === 'string') {
+      const timeParts = shiftTime.split(':');
+      if (timeParts.length === 2) {
+        const hours = parseInt(timeParts[0], 10);
+        const minutes = parseInt(timeParts[1], 10);
+        if (!isNaN(hours) && !isNaN(minutes)) {
+          shiftTimeInMinutes = hours * 60 + minutes;
+        }
+      }
+    }
+
+    // Default cutoff: 10:15 AM
+    const normalCutoff = 10 * 60 + 15;
+    const cutoffTime = shiftTimeInMinutes !== null ? shiftTimeInMinutes : normalCutoff;
+
+    // First half leave cutoff: shiftTime + 4h15m, or default 2:30 PM
+    const defaultFirstHalfLeaveCutoff = 14 * 60 + 30;
+    const fourHoursFifteenMinutes = 4 * 60 + 15;
+    const firstHalfLeaveCutoff = shiftTimeInMinutes !== null
+      ? shiftTimeInMinutes + fourHoursFifteenMinutes
+      : defaultFirstHalfLeaveCutoff;
+
+    // Check for half-day leave
+    let hasHalfDayLeave = false;
+    let isFirstHalfLeave = false;
+    const baseStatus = attendance?.status || null;
+
+    if (attendance?.leaveId) {
+      try {
+        const LeaveApplication = require('../models/leaveApplicationModel');
+        const linkedLeave = await LeaveApplication.findById(attendance.leaveId)
+          .select('isHalfDay halfDayType')
+          .lean();
+        hasHalfDayLeave = !!linkedLeave && linkedLeave.isHalfDay === true;
+        isFirstHalfLeave = hasHalfDayLeave && linkedLeave.halfDayType === 'first';
+      } catch (_) {
+        // Fallback to status-based check
+        hasHalfDayLeave = ['leave_applied_first_half', 'leave_applied_second_half'].includes(baseStatus);
+        isFirstHalfLeave = baseStatus === 'leave_applied_first_half';
+      }
+    } else {
+      hasHalfDayLeave = ['leave_applied_first_half', 'leave_applied_second_half'].includes(baseStatus);
+      isFirstHalfLeave = baseStatus === 'leave_applied_first_half';
+    }
+
+    // --- Determine late_in ---
+    let isLateIn = false;
+    if (biometricCheckIn) {
+      const checkInMoment = moment(biometricCheckIn).tz('Asia/Kolkata');
+      const checkInMinutes = checkInMoment.hour() * 60 + checkInMoment.minute();
+
+      // If first half leave, use firstHalfLeaveCutoff, otherwise normal cutoff
+      const appliedCutoff = isFirstHalfLeave ? firstHalfLeaveCutoff : cutoffTime;
+      if (checkInMinutes > appliedCutoff) {
+        isLateIn = true;
+      }
+    }
+
+    // --- Determine early_out ---
+    let isEarlyOut = false;
+    if (biometricCheckIn && biometricCheckOut) {
+      const checkInTime = new Date(biometricCheckIn).getTime();
+      const checkOutTime = new Date(biometricCheckOut).getTime();
+      const durationMs = checkOutTime - checkInTime;
+      const durationHours = durationMs / (1000 * 60 * 60);
+
+      // If check-in and check-out are identical, it's a single punch.
+      // If it is the current day (today in IST), don't mark as early_out yet because the employee is still working.
+      // Otherwise (past day), a single punch is indeed early_out.
+      const isToday = moment(biometricCheckIn).tz('Asia/Kolkata').isSame(moment().tz('Asia/Kolkata'), 'day');
+      
+      if (checkInTime === checkOutTime && isToday) {
+        isEarlyOut = false;
+      } else {
+        const requiredHours = hasHalfDayLeave ? 4.5 : 9;
+        if (durationHours < requiredHours) {
+          isEarlyOut = true;
+        }
+      }
+    }
+
+    // --- Determine final biometricStatus ---
+    if (isLateIn && isEarlyOut) {
+      return 'late_in_early_out';
+    } else if (isLateIn) {
+      return 'late_in';
+    } else if (isEarlyOut) {
+      return 'early_out';
+    }
+    return 'present';
+  } catch (error) {
+    logger.error(
+      { err: error, userId },
+      'Error calculating biometric status, defaulting to present'
+    );
+    return 'present';
   }
 }
 
@@ -495,5 +628,6 @@ function getAttendanceDateRangeIST(logDate) {
 
 module.exports = {
   processBiometricWebhook,
+  calculateBiometricStatus,
 };
 

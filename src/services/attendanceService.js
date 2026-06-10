@@ -3,6 +3,7 @@ const User = require('../models/userModel');
 const LeaveApplication = require('../models/leaveApplicationModel');
 const { startOfDay, endOfDay } = require('date-fns');
 const moment = require('moment-timezone');
+const { calculateBiometricStatus } = require('./biometricWebhookService');
 
 // Helper function to get the start and end of the current month
 const getCurrentMonthRange = () => {
@@ -517,29 +518,42 @@ async getTeamMembers(leaderId) {
       // For HR/Admin/SubAdmin or Finance teamlead, no user filter is applied (they see all attendance)
 
       const attendance = await Attendance.find(query)
-        .populate('user', '_id firstName lastName employeeId workType hireDate')
+        .populate('user', '_id firstName lastName employeeId workType hireDate shiftTime')
         .populate('leaveId')
         .populate('wfhId')
         .sort({ date: -1, checkInTime: -1 })
         .lean();
 
-      const attendanceWithDisplayStatus = attendance.map((record) => {
-        const regStatus = record?.regularization?.status;
-        if (!regStatus) return record;
+      const attendanceWithDisplayStatus = await Promise.all(
+        attendance.map(async (record) => {
+          // If biometric check-in exists but biometricStatus is not set, calculate it on the fly
+          if (record.biometricCheckIn && !record.biometricStatus) {
+            record.biometricStatus = await calculateBiometricStatus(
+              record.user?._id || record.user,
+              record.biometricCheckIn,
+              record.biometricCheckOut,
+              record,
+              record.user?.shiftTime
+            );
+          }
 
-        // When regularization is approved, attendance should be treated as present.
-        if (regStatus === 'approved') {
-          return { ...record, status: 'present' };
-        }
+          const regStatus = record?.regularization?.status;
+          if (!regStatus) return record;
 
-        // Only pending workflow statuses should replace late/early indicators.
-        if (regStatus === 'tl-pending' || regStatus === 'hr-pending') {
-          return { ...record, status: regStatus };
-        }
+          // When regularization is approved, attendance should be treated as present.
+          if (regStatus === 'approved') {
+            return { ...record, status: 'present' };
+          }
 
-        // For rejected/revoked, fall back to the base attendance status.
-        return record;
-      });
+          // Only pending workflow statuses should replace late/early indicators.
+          if (regStatus === 'tl-pending' || regStatus === 'hr-pending') {
+            return { ...record, status: regStatus };
+          }
+
+          // For rejected/revoked, fall back to the base attendance status.
+          return record;
+        })
+      );
 
       return {
         status: 'success',

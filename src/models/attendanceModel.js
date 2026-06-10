@@ -49,6 +49,12 @@ const RegularizationSchema = new Schema({
     decidedAt: Date
   },
 
+  regularizationMode: {
+    type: String,
+    enum: ['normal', 'both'],
+    default: 'normal'
+  },
+
   appliedAt: { type: Date, default: Date.now },
   appliedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true }
 }, { _id: false });
