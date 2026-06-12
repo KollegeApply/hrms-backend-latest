@@ -8,10 +8,57 @@ const Helper = require('../utility/helper');
 const { getTeamEmailConfig } = require('../utility/constants');
 const User = require('../models/userModel');
 const { formatDateToKolkata } = require('../utility/common');
+const { uploadToAWS } = require('../utility/awsBlob');
 const LeaveApplication = require('../models/leaveApplicationModel');
 const leaveTypeModel = require('../models/leaveTypeModel');
 const EmployeeLeaveBalance = require('../models/employeeLeaveBalanceModel');
 const moment = require("moment-timezone");
+
+function parseBool(val, defaultValue = false) {
+  if (val === true || val === 'true') return true;
+  if (val === false || val === 'false') return false;
+  return defaultValue;
+}
+
+function getUploadedFile(req) {
+  if (req.file) return req.file;
+  if (Array.isArray(req.files) && req.files.length > 0) return req.files[0];
+  return null;
+}
+
+function parseApplyLeaveBody(req) {
+  const { leaveData } = req.body;
+
+  let parsed = null;
+  if (typeof leaveData === 'string') {
+    try {
+      parsed = JSON.parse(leaveData);
+    } catch {
+      return null;
+    }
+  } else if (leaveData && typeof leaveData === 'object' && !Array.isArray(leaveData)) {
+    parsed = { ...leaveData };
+  }
+
+  const flat = {
+    from: req.body.from,
+    to: req.body.to,
+    leaveType: req.body.leaveType,
+    leaveReason: req.body.leaveReason,
+    halfDayType: req.body.halfDayType,
+  };
+
+  if (req.body.isHalfDay !== undefined && req.body.isHalfDay !== '') {
+    flat.isHalfDay = parseBool(req.body.isHalfDay, false);
+  }
+
+  const merged = parsed ? { ...parsed, ...flat } : flat;
+  if (merged.isHalfDay !== undefined) {
+    merged.isHalfDay = parseBool(merged.isHalfDay, false);
+  }
+
+  return merged;
+}
 
 const getAllLeave = catchAsync(async (req, res) => {
   const currentUser = req.user;
@@ -293,7 +340,40 @@ const deleteLeave = catchAsync(async (req, res) => {
 const applyForLeave = catchAsync(async (req, res) => {
   try {
     const userId = req.user.id;
-    const leaveData = req.body;
+    const leaveData = parseApplyLeaveBody(req);
+    if (!leaveData) {
+      return res.status(httpStatus.BAD_REQUEST).json({
+        success: false,
+        message: 'Invalid payload for leave application',
+      });
+    }
+
+    const uploadedFile = getUploadedFile(req);
+    if (!uploadedFile) {
+      return res.status(httpStatus.BAD_REQUEST).json({
+        success: false,
+        message: 'Attachment is required. Please upload an image or PDF.',
+      });
+    }
+
+    let uploadedPath;
+    try {
+      uploadedPath = await uploadToAWS(
+        uploadedFile.buffer,
+        uploadedFile.originalname,
+        'hrms-leave-documents/'
+      );
+      logger.info(`Leave attachment uploaded: ${uploadedPath}`);
+    } catch (error) {
+      logger.error('Failed to upload leave attachment:', error);
+      return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        message: 'Failed to upload attachment. Please try again.',
+      });
+    }
+
+    leaveData.attachmentUrl = uploadedPath;
+
     const team = req.user.team;
 
     const user = await User.findById(userId)
@@ -350,7 +430,7 @@ const applyForLeave = catchAsync(async (req, res) => {
       leaveBalance: totalAvailable
     };
 
-    const sendMail = req?.body?.sendMail === true;
+    const sendMail = parseBool(req?.body?.sendMail, false);
     if (sendMail && process?.env?.HRMS_FRONTEND_URL) {
       logger.info(`Sending leave application email`);
 
@@ -420,7 +500,7 @@ const applyForLeave = catchAsync(async (req, res) => {
     return res.status(201).json({
       success: true,
       message: result.message,
-      data: result.data,
+      data: leaveService.formatLeaveRecord(result.data),
     });
   } catch (error) {
     console.error('Error in applyForLeave controller:', error);
@@ -439,7 +519,10 @@ const getLeaveApplications = catchAsync(async (req, res) => {
   const applications = await LeaveApplication.find(query).sort({
     appliedOn: -1,
   });
-  res.status(200).json({ status: true, data: applications });
+  res.status(200).json({
+    status: true,
+    data: leaveService.formatLeaveList(applications),
+  });
 });
 
 module.exports = {

@@ -108,13 +108,19 @@ const respondMulterError = (res, err) => {
   });
 };
 
-/** Expense create: accept a single file under any multipart field name (e.g. receipt, attachment, file). */
-const safeExpenseAttachmentUpload = (req, res, next) => {
+/** Single image/PDF under any multipart field name (e.g. receipt, attachment, file). */
+const safeSingleAttachmentUpload = (req, res, next) => {
   uploadExpenseAttachment.any()(req, res, (err) => {
     if (err) return respondMulterError(res, err);
     next();
   });
 };
+
+/** Expense create: accept a single file under any multipart field name (e.g. receipt, attachment, file). */
+const safeExpenseAttachmentUpload = safeSingleAttachmentUpload;
+
+/** Leave apply: accept a single mandatory attachment (image or PDF). */
+const safeLeaveAttachmentUpload = safeSingleAttachmentUpload;
 
 // Helper to wrap multer middleware with error handling
 const safeUpload = (fields) => {
@@ -142,4 +148,9 @@ const safeUpload = (fields) => {
   };
 };
 
-module.exports = { upload, safeUpload, safeExpenseAttachmentUpload };
+module.exports = {
+  upload,
+  safeUpload,
+  safeExpenseAttachmentUpload,
+  safeLeaveAttachmentUpload,
+};

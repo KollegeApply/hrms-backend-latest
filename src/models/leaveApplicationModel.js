@@ -12,6 +12,7 @@ const leaveApplicationSchema = new Schema(
     dates: { type: [Date], required: true },
     totalDays: { type: Number, required: true },
     leaveReason: { type: String, required: true },
+    attachmentUrl: { type: String },
     status: {
       type: String,
       enum: ['tl-pending', 'hr-pending', 'tl-rejected', 'hr-rejected', 'approved', 'auto-rejected', 'revoked'],
