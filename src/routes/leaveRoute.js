@@ -1,6 +1,7 @@
 const express = require('express');
 const leaveController = require('../controllers/leaveController');
 const { authenticateUser } = require('../middleware/authMiddleware');
+const { safeLeaveAttachmentUpload } = require('../middleware/uploadMiddleware');
 const leavePolicyController = require('../controllers/leavePolicyController');
 const employeeLeaveBalanceController = require('../controllers/employeeLeaveBalanceController');
 
@@ -30,7 +31,7 @@ router.get(
 );
 
 // Policy-driven leave application
-router.post('/apply', authenticateUser, leaveController.applyForLeave);
+router.post('/apply', authenticateUser, safeLeaveAttachmentUpload, leaveController.applyForLeave);
 // Fetch leave applications (new model)
 router.get(
   '/applications',

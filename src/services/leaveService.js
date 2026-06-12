@@ -12,7 +12,7 @@ const LeavePolicy = require('../models/leavePolicyModel');
 const LeavePolicyMapping = require('../models/leavePolicyMappingModel');
 const EmployeeLeaveBalance = require('../models/employeeLeaveBalanceModel');
 const moment = require('moment-timezone');
-const { paginate } = require('../utility/common');
+const { paginate, transformDocumentPaths } = require('../utility/common');
 
 class leaveService {
   buildSearchConditions(search) {
@@ -65,6 +65,28 @@ class leaveService {
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean);
+  }
+
+  formatLeaveRecord(leave) {
+    if (!leave) return leave;
+    const plain =
+      typeof leave.toObject === 'function'
+        ? leave.toObject({ virtuals: true })
+        : { ...leave };
+    delete plain.__sortPriority;
+    delete plain.priority;
+    if (plain.attachmentUrl) {
+      const transformed = transformDocumentPaths({
+        attachmentUrl: plain.attachmentUrl,
+      });
+      plain.attachmentUrl = transformed.attachmentUrl;
+    }
+    return plain;
+  }
+
+  formatLeaveList(leaves) {
+    if (!Array.isArray(leaves)) return leaves;
+    return leaves.map((leave) => this.formatLeaveRecord(leave));
   }
   /**
    * Create a new Leave (HR/Admin only).
@@ -245,7 +267,7 @@ class leaveService {
       const hasPrevPage = page > 1;
 
       return {
-        data: leaves,
+        data: this.formatLeaveList(leaves),
         pagination: {
           totalDocs,
           limit,
@@ -331,7 +353,7 @@ class leaveService {
 
     const totalPages = Math.ceil(totalDocs / limit);
     return {
-      data: leaves,
+      data: this.formatLeaveList(leaves),
       pagination: {
         totalDocs,
         limit,
@@ -419,7 +441,7 @@ class leaveService {
 
     const totalPages = Math.ceil(totalDocs / limit);
     return {
-      data: leaves,
+      data: this.formatLeaveList(leaves),
       pagination: {
         totalDocs,
         limit,
@@ -703,7 +725,8 @@ async updateLeaveStatus({ leaveId, action, editor }) {
   }
 
   // 3. Save the updated document
-  return await leave.save();
+  const saved = await leave.save();
+  return this.formatLeaveRecord(saved);
 }
 
   async getLeaveTl({ id, team }, page = 1, limit = 10, filters = {}) {
@@ -800,7 +823,7 @@ async updateLeaveStatus({ leaveId, action, editor }) {
 
     const totalPages = Math.ceil(totalDocs / limit);
     return {
-      data: leaves,
+      data: this.formatLeaveList(leaves),
       pagination: {
         totalDocs,
         limit,
@@ -1522,6 +1545,7 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
         leaveReason: reason,
         isHalfDay = false,
         halfDayType,
+        attachmentUrl,
       } = leaveData;
 
       // Validate dates
@@ -1552,6 +1576,13 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
         return {
           status: false,
           message: 'Invalid half day type. Must be "first" or "second"',
+        };
+      }
+
+      if (!attachmentUrl || !String(attachmentUrl).trim()) {
+        return {
+          status: false,
+          message: 'Attachment is required. Please upload an image or PDF.',
         };
       }
 
@@ -1603,6 +1634,7 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
           status: 'auto-rejected',
           rejectionReason: validationResult.autoRejectReason,
           appliedOn: new Date(),
+          attachmentUrl,
         });
 
         await autoRejectedLeave.save();
@@ -1655,6 +1687,7 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
         halfDayType: isHalfDay ? halfDayType : undefined,
         status: initialStatus,
         appliedAt: new Date(),
+        attachmentUrl,
       });
 
       await leaveApplication.save();
