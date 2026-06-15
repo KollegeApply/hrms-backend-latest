@@ -575,6 +575,31 @@ const getExpenses = catchAsync(async (req, res) => {
   });
 });
 
+const getExpenseDashboard = catchAsync(async (req, res) => {
+  const validatedQuery = await expenseValidator.expenseDashboardSchema.validateAsync(
+    req.query
+  );
+
+  const dashboard = await expenseService.getExpenseDashboard(
+    req.user,
+    validatedQuery,
+    validatedQuery.page,
+    validatedQuery.limit
+  );
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message:
+      validatedQuery.groupBy === 'department'
+        ? 'Department expense dashboard fetched successfully.'
+        : 'Expense dashboard fetched successfully.',
+    summary: dashboard.summary,
+    data: dashboard.data,
+    pagination: dashboard.pagination,
+    filters: dashboard.filters,
+  });
+});
+
 const updateExpenseStatus = catchAsync(async (req, res) => {
   const validated = await expenseValidator.updateExpenseStatusSchema.validateAsync({
     id: req.params.id,
@@ -764,6 +789,7 @@ const deleteExpense = catchAsync(async (req, res) => {
 module.exports = {
   createExpense,
   getExpenses,
+  getExpenseDashboard,
   updateExpenseStatus,
   bulkApproveExpenses,
   bulkRejectExpenses,

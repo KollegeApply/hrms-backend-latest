@@ -249,6 +249,28 @@ const bulkApproveExpenseSchema = Joi.object({
   sendMail: Joi.boolean().optional(),
 }).options({ stripUnknown: true });
 
+const expenseDashboardSchema = Joi.object({
+  month: Joi.number().integer().min(1).max(12).required().messages({
+    'any.required': 'Month is required.',
+    'number.min': 'Month must be between 1 and 12.',
+    'number.max': 'Month must be between 1 and 12.',
+  }),
+  year: Joi.number().integer().min(2000).max(2100).required().messages({
+    'any.required': 'Year is required.',
+  }),
+  team: Joi.string().trim().allow('').optional(),
+  employeeId: Joi.alternatives()
+    .try(objectIdSchema, Joi.string().trim().min(1))
+    .optional()
+    .messages({
+      'alternatives.match': 'employeeId must be a valid user id or employee code.',
+    }),
+  status: Joi.string().trim().allow('').optional(),
+  groupBy: Joi.string().valid('employee', 'department').default('employee'),
+  page: Joi.number().integer().min(1).default(1),
+  limit: Joi.number().integer().min(1).max(10000).default(10),
+}).options({ stripUnknown: true });
+
 const bulkRejectExpenseSchema = Joi.object({
   expenseIds: Joi.array()
     .items(objectIdSchema)
@@ -277,6 +299,7 @@ const bulkRejectExpenseSchema = Joi.object({
 module.exports = {
   createExpenseSchema,
   listExpenseSchema,
+  expenseDashboardSchema,
   expenseIdSchema,
   updateExpenseStatusSchema,
   bulkApproveExpenseSchema,
