@@ -68,5 +68,15 @@ expenseSchema.index(
   { team: 1, date: 1, type: 1 },
   { partialFilterExpression: { isDeleted: { $ne: true }, type: 'Team Lunch' } }
 );
+/** Dashboard: month/year + team/status filters on non-deleted expenses. */
+expenseSchema.index(
+  { date: 1, team: 1, status: 1, userId: 1 },
+  { partialFilterExpression: { isDeleted: { $ne: true } } }
+);
+/** Dashboard: employee-scoped monthly rollups. */
+expenseSchema.index(
+  { userId: 1, date: 1, status: 1 },
+  { partialFilterExpression: { isDeleted: { $ne: true } } }
+);
 
 module.exports = mongoose.model('Expense', expenseSchema);

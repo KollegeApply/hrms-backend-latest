@@ -761,6 +761,601 @@ class ExpenseService {
     await expense.save();
     return expense;
   }
+
+  buildExpenseDashboardDateRange(month, year) {
+    const m = Number(month);
+    const y = Number(year);
+    const startDate = new Date(y, m - 1, 1, 0, 0, 0, 0);
+    const endDate = new Date(y, m, 0, 23, 59, 59, 999);
+    return { startDate, endDate };
+  }
+
+  /** Map display team name (e.g. Sportsdunia) to stored team code (e.g. SD). */
+  resolveDashboardTeamKey(teamInput) {
+    const team = (teamInput || '').trim();
+    if (!team) return team;
+
+    const upper = team.toUpperCase();
+    if (upper === 'SD' || upper === 'KAP') return upper;
+
+    const stripQuotes = (value) => String(value || '').replace(/^"|"$/g, '').trim();
+    const sdName = stripQuotes(process.env.TEAM_SD);
+    const kapName = stripQuotes(process.env.TEAM_KAP);
+
+    if (sdName && team.toLowerCase() === sdName.toLowerCase()) return 'SD';
+    if (kapName && team.toLowerCase() === kapName.toLowerCase()) return 'KAP';
+
+    return team;
+  }
+
+  resolveDashboardStatusFilter(status) {
+    const statuses = this.splitCsvFilter(status);
+    if (!statuses.length) return null;
+
+    const mapped = [];
+    for (const entry of statuses) {
+      const normalized = entry.toLowerCase();
+      if (normalized === 'approved') {
+        mapped.push('finance-approved');
+      } else if (normalized === 'pending') {
+        mapped.push(...this.expensePendingStatuses());
+      } else {
+        mapped.push(entry);
+      }
+    }
+
+    return [...new Set(mapped)];
+  }
+
+  async resolveDashboardEmployeeUserId(employeeId) {
+    if (!employeeId) return null;
+
+    if (mongoose.Types.ObjectId.isValid(employeeId)) {
+      const byId = await User.findOne({
+        _id: employeeId,
+        isDeleted: { $ne: true },
+      })
+        .select('_id')
+        .lean();
+      if (byId) return this.toObjectId(byId._id);
+    }
+
+    const byEmployeeCode = await User.findOne({
+      employeeId: String(employeeId).trim(),
+      isDeleted: { $ne: true },
+    })
+      .select('_id')
+      .lean();
+
+    if (!byEmployeeCode) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'Employee not found.');
+    }
+
+    return this.toObjectId(byEmployeeCode._id);
+  }
+
+  async buildExpenseDashboardMatch(user, filters) {
+    const { startDate, endDate } = this.buildExpenseDashboardDateRange(
+      filters.month,
+      filters.year
+    );
+
+    const match = {
+      isDeleted: { $ne: true },
+      date: { $gte: startDate, $lte: endDate },
+    };
+
+    const role = user.role;
+    const isAdminRole = this.adminRoles.includes(role);
+    const isSuperAdminRole = this.superAdminRoles.includes(role);
+    const isTlRole = this.tlRoles.includes(role);
+    const isFinalApproverAdminRole = this.finalApproverAdminRoles.includes(role);
+    const isFinalApproverDeptUser = await this.isFinalApproverDepartmentUser(user.id);
+
+    const teamKey = this.resolveDashboardTeamKey(
+      (filters.team || user.team || '').trim() || user.team
+    );
+
+    if (filters.employeeId) {
+      match.userId = await this.resolveDashboardEmployeeUserId(filters.employeeId);
+    } else if (isAdminRole || isFinalApproverDeptUser || isFinalApproverAdminRole) {
+      match.team = teamKey;
+    } else if (isTlRole || role === 'hr') {
+      const reporteeQuery = {
+        team: teamKey,
+        isDeleted: { $ne: true },
+      };
+
+      if (!isSuperAdminRole) {
+        reporteeQuery.$or = [
+          { teamLeadId: user.id },
+          { subTeamLeadId: user.id },
+        ];
+      }
+
+      const reportees = await User.find(reporteeQuery).select('_id').lean();
+      const reporteeIds = reportees.map((entry) => this.toObjectId(entry._id));
+
+      if (!reporteeIds.length) {
+        match.userId = { $in: [] };
+      } else {
+        match.userId = { $in: reporteeIds };
+      }
+    } else {
+      match.userId = this.toObjectId(user.id);
+    }
+
+    const statuses = this.resolveDashboardStatusFilter(filters.status);
+    if (statuses?.length) {
+      match.status = { $in: statuses };
+    }
+
+    return match;
+  }
+
+  buildExpenseDashboardPipeline(match, page, limit, groupBy = 'employee') {
+    const isDepartmentView = groupBy === 'department';
+    const currentPage = Math.max(1, Number(page) || 1);
+    const perPage = Math.max(1, Number(limit) || 10);
+    const skip = (currentPage - 1) * perPage;
+    const pendingStatuses = this.expensePendingStatuses();
+    const approvedStatus = 'finance-approved';
+
+    const summaryFacet = [
+      {
+        $group: {
+          _id: null,
+          employeeIds: { $addToSet: '$userId' },
+          totalAppliedExpense: { $sum: '$amount' },
+          totalApprovedExpense: {
+            $sum: {
+              $cond: [{ $eq: ['$status', approvedStatus] }, '$amount', 0],
+            },
+          },
+          totalPendingExpense: {
+            $sum: {
+              $cond: [{ $in: ['$status', pendingStatuses] }, '$amount', 0],
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          totalEmployees: { $size: '$employeeIds' },
+          totalAppliedExpense: 1,
+          totalApprovedExpense: 1,
+          totalPendingExpense: 1,
+        },
+      },
+    ];
+
+    const groupByEmployeeAndType = {
+      $group: {
+        _id: {
+          userId: '$userId',
+          type: '$type',
+          subCategory: {
+            $let: {
+              vars: {
+                sc: { $trim: { input: { $ifNull: ['$subCategory', ''] } } },
+                misc: { $trim: { input: { $ifNull: ['$miscellaneousType', ''] } } },
+              },
+              in: {
+                $cond: [{ $ne: ['$$sc', ''] }, '$$sc', '$$misc'],
+              },
+            },
+          },
+        },
+        applied: { $sum: '$amount' },
+        approved: {
+          $sum: {
+            $cond: [{ $eq: ['$status', approvedStatus] }, '$amount', 0],
+          },
+        },
+      },
+    };
+
+    const groupByEmployee = {
+      $group: {
+        _id: '$_id.userId',
+        totalExpenseApplied: { $sum: '$applied' },
+        totalExpenseApproved: { $sum: '$approved' },
+        expensesByType: {
+          $push: {
+            type: '$_id.type',
+            subCategory: '$_id.subCategory',
+            applied: '$applied',
+            approved: '$approved',
+          },
+        },
+      },
+    };
+
+    const sortByAppliedDesc = { $sort: { totalExpenseApplied: -1 } };
+
+    const joinEmployee = {
+      $lookup: {
+        from: 'users',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'employee',
+      },
+    };
+
+    const unwindEmployee = {
+      $unwind: { path: '$employee', preserveNullAndEmptyArrays: true },
+    };
+
+    const joinTeamLead = {
+      $lookup: {
+        from: 'users',
+        let: {
+          tlId: {
+            $ifNull: ['$employee.teamLeadId', '$employee.subTeamLeadId'],
+          },
+        },
+        pipeline: [
+          { $match: { $expr: { $eq: ['$_id', '$$tlId'] } } },
+          { $project: { firstName: 1, lastName: 1 } },
+        ],
+        as: 'teamLead',
+      },
+    };
+
+    const projectEmployeeRow = {
+      $project: {
+        _id: 0,
+        employeeId: '$_id',
+        kappId: { $ifNull: ['$employee.employeeId', ''] },
+        employeeName: {
+          $trim: {
+            input: {
+              $concat: [
+                { $ifNull: ['$employee.firstName', ''] },
+                ' ',
+                { $ifNull: ['$employee.lastName', ''] },
+              ],
+            },
+          },
+        },
+        designation: { $ifNull: ['$employee.jobTitle', ''] },
+        team: { $ifNull: ['$employee.team', ''] },
+        tlName: {
+          $let: {
+            vars: { tl: { $arrayElemAt: ['$teamLead', 0] } },
+            in: {
+              $trim: {
+                input: {
+                  $concat: [
+                    { $ifNull: ['$$tl.firstName', ''] },
+                    ' ',
+                    { $ifNull: ['$$tl.lastName', ''] },
+                  ],
+                },
+              },
+            },
+          },
+        },
+        totalExpenseApplied: 1,
+        totalExpenseApproved: 1,
+        expensesByType: 1,
+      },
+    };
+
+    const joinEmployeeFromExpense = {
+      $lookup: {
+        from: 'users',
+        localField: 'userId',
+        foreignField: '_id',
+        as: 'employee',
+      },
+    };
+
+    const unwindEmployeeFromExpense = {
+      $unwind: { path: '$employee', preserveNullAndEmptyArrays: true },
+    };
+
+    const groupByDepartmentAndType = {
+      $group: {
+        _id: {
+          departmentId: '$employee.department',
+          type: '$type',
+          subCategory: {
+            $let: {
+              vars: {
+                sc: { $trim: { input: { $ifNull: ['$subCategory', ''] } } },
+                misc: { $trim: { input: { $ifNull: ['$miscellaneousType', ''] } } },
+              },
+              in: {
+                $cond: [{ $ne: ['$$sc', ''] }, '$$sc', '$$misc'],
+              },
+            },
+          },
+        },
+        applied: { $sum: '$amount' },
+        approved: {
+          $sum: {
+            $cond: [{ $eq: ['$status', approvedStatus] }, '$amount', 0],
+          },
+        },
+        employeeIds: { $addToSet: '$userId' },
+      },
+    };
+
+    const groupByDepartment = {
+      $group: {
+        _id: '$_id.departmentId',
+        totalExpenseApplied: { $sum: '$applied' },
+        totalExpenseApproved: { $sum: '$approved' },
+        expensesByType: {
+          $push: {
+            type: '$_id.type',
+            subCategory: '$_id.subCategory',
+            applied: '$applied',
+            approved: '$approved',
+          },
+        },
+        employeeIds: { $push: '$employeeIds' },
+      },
+    };
+
+    const addDepartmentEmployeeCount = {
+      $addFields: {
+        employeeCount: {
+          $size: {
+            $reduce: {
+              input: '$employeeIds',
+              initialValue: [],
+              in: { $setUnion: ['$$value', '$$this'] },
+            },
+          },
+        },
+      },
+    };
+
+    const joinDepartment = {
+      $lookup: {
+        from: 'departments',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'department',
+      },
+    };
+
+    const joinDepartmentTl = {
+      $lookup: {
+        from: 'users',
+        let: { deptId: '$_id' },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ['$department', '$$deptId'] },
+                  { $in: ['$role', ['teamlead', 'subteamlead']] },
+                  { $ne: ['$isDeleted', true] },
+                ],
+              },
+            },
+          },
+          {
+            $addFields: {
+              rolePriority: {
+                $cond: [{ $eq: ['$role', 'teamlead'] }, 0, 1],
+              },
+            },
+          },
+          { $sort: { rolePriority: 1, firstName: 1 } },
+          {
+            $project: {
+              tlName: {
+                $trim: {
+                  input: {
+                    $concat: [
+                      { $ifNull: ['$firstName', ''] },
+                      ' ',
+                      { $ifNull: ['$lastName', ''] },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+          { $limit: 1 },
+        ],
+        as: 'departmentTl',
+      },
+    };
+
+    const projectDepartmentRow = {
+      $project: {
+        _id: 0,
+        departmentId: '$_id',
+        departmentName: {
+          $cond: {
+            if: { $eq: ['$_id', null] },
+            then: 'Unassigned',
+            else: {
+              $ifNull: [{ $arrayElemAt: ['$department.name', 0] }, 'Unassigned'],
+            },
+          },
+        },
+        tlName: {
+          $ifNull: [{ $arrayElemAt: ['$departmentTl.tlName', 0] }, ''],
+        },
+        employeeCount: 1,
+        totalExpenseApplied: 1,
+        totalExpenseApproved: 1,
+        expensesByType: 1,
+      },
+    };
+
+    const employeeDataPipeline = [
+      groupByEmployeeAndType,
+      groupByEmployee,
+      sortByAppliedDesc,
+      { $skip: skip },
+      { $limit: perPage },
+      joinEmployee,
+      unwindEmployee,
+      joinTeamLead,
+      projectEmployeeRow,
+    ];
+
+    const departmentDataPipeline = [
+      joinEmployeeFromExpense,
+      unwindEmployeeFromExpense,
+      groupByDepartmentAndType,
+      groupByDepartment,
+      addDepartmentEmployeeCount,
+      sortByAppliedDesc,
+      { $skip: skip },
+      { $limit: perPage },
+      joinDepartment,
+      joinDepartmentTl,
+      projectDepartmentRow,
+    ];
+
+    const employeeMetaPipeline = [
+      groupByEmployeeAndType,
+      groupByEmployee,
+      { $count: 'totalEmployees' },
+    ];
+
+    const departmentMetaPipeline = [
+      joinEmployeeFromExpense,
+      unwindEmployeeFromExpense,
+      groupByDepartmentAndType,
+      groupByDepartment,
+      { $count: 'totalDepartments' },
+    ];
+
+    return {
+      currentPage,
+      perPage,
+      groupBy,
+      pipeline: [
+        { $match: match },
+        {
+          $facet: {
+            summary: summaryFacet,
+            data: isDepartmentView ? departmentDataPipeline : employeeDataPipeline,
+            meta: isDepartmentView ? departmentMetaPipeline : employeeMetaPipeline,
+          },
+        },
+      ],
+    };
+  }
+
+  formatExpenseDashboardMoney(value) {
+    return this.roundMoney(value || 0);
+  }
+
+  formatExpenseDashboardRow(row) {
+    return {
+      employeeId: row.employeeId,
+      kappId: row.kappId || '',
+      employeeName: row.employeeName || '',
+      designation: row.designation || '',
+      team: row.team || '',
+      tlName: row.tlName || '',
+      totalExpenseApplied: this.formatExpenseDashboardMoney(row.totalExpenseApplied),
+      totalExpenseApproved: this.formatExpenseDashboardMoney(row.totalExpenseApproved),
+      expensesByType: (row.expensesByType || []).map((entry) => ({
+        type: entry.type,
+        subCategory: entry.subCategory || '',
+        applied: this.formatExpenseDashboardMoney(entry.applied),
+        approved: this.formatExpenseDashboardMoney(entry.approved),
+      })),
+    };
+  }
+
+  formatExpenseDashboardDepartmentRow(row) {
+    return {
+      departmentId: row.departmentId || null,
+      departmentName: row.departmentName || 'Unassigned',
+      tlName: row.tlName || '',
+      employeeCount: row.employeeCount || 0,
+      totalExpenseApplied: this.formatExpenseDashboardMoney(row.totalExpenseApplied),
+      totalExpenseApproved: this.formatExpenseDashboardMoney(row.totalExpenseApproved),
+      expensesByType: (row.expensesByType || []).map((entry) => ({
+        type: entry.type,
+        subCategory: entry.subCategory || '',
+        applied: this.formatExpenseDashboardMoney(entry.applied),
+        approved: this.formatExpenseDashboardMoney(entry.approved),
+      })),
+    };
+  }
+
+  async getExpenseDashboard(user, filters, page = 1, limit = 10) {
+    const groupBy = filters.groupBy || 'employee';
+    const isDepartmentView = groupBy === 'department';
+    const match = await this.buildExpenseDashboardMatch(user, filters);
+    const { pipeline, currentPage, perPage } = this.buildExpenseDashboardPipeline(
+      match,
+      page,
+      limit,
+      groupBy
+    );
+
+    const [result] = await Expense.aggregate(pipeline);
+    const summaryDoc = result?.summary?.[0] || {
+      totalEmployees: 0,
+      totalAppliedExpense: 0,
+      totalApprovedExpense: 0,
+      totalPendingExpense: 0,
+    };
+    const totalDocs = isDepartmentView
+      ? result?.meta?.[0]?.totalDepartments || 0
+      : result?.meta?.[0]?.totalEmployees || 0;
+    const totalPages = Math.ceil(totalDocs / perPage) || 0;
+
+    const summary = {
+      totalEmployees: summaryDoc.totalEmployees || 0,
+      totalAppliedExpense: this.formatExpenseDashboardMoney(
+        summaryDoc.totalAppliedExpense
+      ),
+      totalApprovedExpense: this.formatExpenseDashboardMoney(
+        summaryDoc.totalApprovedExpense
+      ),
+      totalPendingExpense: this.formatExpenseDashboardMoney(
+        summaryDoc.totalPendingExpense
+      ),
+    };
+
+    if (isDepartmentView) {
+      summary.totalDepartments = totalDocs;
+    }
+
+    const formatRow = isDepartmentView
+      ? (row) => this.formatExpenseDashboardDepartmentRow(row)
+      : (row) => this.formatExpenseDashboardRow(row);
+
+    return {
+      summary,
+      data: (result?.data || []).map(formatRow),
+      pagination: {
+        totalDocs,
+        limit: perPage,
+        totalPages,
+        currentPage,
+        pagingCounter: totalDocs ? (currentPage - 1) * perPage + 1 : 0,
+        hasPrevPage: currentPage > 1,
+        hasNextPage: currentPage < totalPages,
+        prevPage: currentPage > 1 ? currentPage - 1 : null,
+        nextPage: currentPage < totalPages ? currentPage + 1 : null,
+      },
+      filters: {
+        month: Number(filters.month),
+        year: Number(filters.year),
+        team: filters.team || null,
+        employeeId: filters.employeeId || null,
+        status: filters.status || null,
+        groupBy,
+      },
+    };
+  }
 }
 
 module.exports = new ExpenseService();
