@@ -1337,6 +1337,166 @@ class Helper {
     </div>`;
   }
 
+  static getProfileChangeHrContactEmail(team) {
+    const normalized = String(team || '').toUpperCase();
+    if (normalized === 'KAP' || normalized === 'KAPP') {
+      return 'hr@kollegeapply.com';
+    }
+    return 'hr@sportsdunia.com';
+  }
+
+  static profileChangeSubmittedEmailEmployee({
+    firstName,
+    submittedOn,
+    category,
+    fieldsChanged,
+    team,
+  }) {
+    const displayTeam = getTeamEmailConfig(team);
+
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #333; font-size: 22px;">Request Submitted</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.08);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">Hi <strong>${firstName}</strong>,</p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Your request to update your profile has been successfully submitted and is currently awaiting HR review.
+          No changes have been applied to your profile yet.
+        </p>
+        <div style="background-color: #f8f9fa; padding: 15px 20px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #007bff;">
+          <ul style="list-style: none; padding: 0; margin: 0;">
+            <li style="color: #333; margin-bottom: 8px; font-size: 15px;"><strong>Submitted on</strong> - ${submittedOn}</li>
+            <li style="color: #333; margin-bottom: 8px; font-size: 15px;"><strong>Category</strong> - ${category}</li>
+            <li style="color: #333; margin-bottom: 8px; font-size: 15px;"><strong>Fields changed</strong> - ${fieldsChanged}</li>
+            <li style="color: #333; margin-bottom: 0; font-size: 15px;"><strong>Status</strong> - <span style="color: #f59e0b; font-weight: bold;">HR Pending</span></li>
+          </ul>
+        </div>
+        <p style="color: #555; font-size: 15px; line-height: 1.6;">
+          You will receive an email once HR has reviewed your request.
+        </p>
+        <p style="font-size: 14px; color: #777; margin-top: 24px;">Regards,<br><strong>Team ${displayTeam?.TEAM_NAME || 'HRMS'}</strong></p>
+      </div>
+    </div>`;
+  }
+
+  static profileChangeApprovedEmailEmployee({
+    firstName,
+    approvedOn,
+    category,
+    fieldsUpdated,
+    team,
+  }) {
+    const displayTeam = getTeamEmailConfig(team);
+    const hrContact = this.getProfileChangeHrContactEmail(team);
+
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #28a745; font-size: 22px;">Your profile update has been approved</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.08);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">Hi <strong>${firstName}</strong>,</p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Great news! Your profile update request has been reviewed and approved by HR.
+          Your profile has been updated with the new information effective immediately.
+        </p>
+        <div style="background-color: #d4edda; padding: 15px 20px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #28a745;">
+          <ul style="list-style: none; padding: 0; margin: 0;">
+            <li style="color: #155724; margin-bottom: 8px; font-size: 15px;"><strong>Approved on</strong> - ${approvedOn}</li>
+            <li style="color: #155724; margin-bottom: 8px; font-size: 15px;"><strong>Category</strong> - ${category}</li>
+            <li style="color: #155724; margin-bottom: 8px; font-size: 15px;"><strong>Fields updated</strong> - ${fieldsUpdated}</li>
+            <li style="color: #155724; margin-bottom: 0; font-size: 15px;"><strong>Approved by</strong> - HR Department</li>
+          </ul>
+        </div>
+        <p style="color: #555; font-size: 15px; line-height: 1.6;">
+          If you notice any discrepancy in the updated information, please contact HR at
+          <a href="mailto:${hrContact}" style="color: #007bff;">${hrContact}</a>.
+        </p>
+        <p style="font-size: 14px; color: #777; margin-top: 24px;">Regards,<br><strong>HR Department</strong></p>
+      </div>
+    </div>`;
+  }
+
+  static profileChangeRejectedEmailEmployee({
+    firstName,
+    rejectedOn,
+    category,
+    fieldsRequested,
+    rejectionNote,
+    team,
+  }) {
+    const displayTeam = getTeamEmailConfig(team);
+
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #dc3545; font-size: 22px;">Your profile update request was not approved</h1>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.08);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">Hi <strong>${firstName}</strong>,</p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          Your profile update request has been reviewed by HR. Unfortunately, the request could not be approved at this time.
+          Your current profile information remains unchanged.
+        </p>
+        <div style="background-color: #f8d7da; padding: 15px 20px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #dc3545;">
+          <ul style="list-style: none; padding: 0; margin: 0;">
+            <li style="color: #721c24; margin-bottom: 8px; font-size: 15px;"><strong>Rejected on</strong> - ${rejectedOn}</li>
+            <li style="color: #721c24; margin-bottom: 8px; font-size: 15px;"><strong>Category</strong> - ${category}</li>
+            <li style="color: #721c24; margin-bottom: 8px; font-size: 15px;"><strong>Fields requested</strong> - ${fieldsRequested}</li>
+            <li style="color: #721c24; margin-bottom: 8px; font-size: 15px;"><strong>Rejected by</strong> - HR Department</li>
+            <li style="color: #721c24; margin-bottom: 0; font-size: 15px;"><strong>Rejection Note</strong> - ${rejectionNote || '—'}</li>
+          </ul>
+        </div>
+        <p style="font-size: 14px; color: #777; margin-top: 24px;">Regards,<br><strong>HR Department</strong></p>
+      </div>
+    </div>`;
+  }
+
+  static profileChangeNewRequestEmailHR({
+    employeeName,
+    employeeId,
+    department,
+    tlName,
+    submittedOn,
+    category,
+    subCategory,
+    attachmentLabel,
+    team,
+  }) {
+    const displayTeam = getTeamEmailConfig(team);
+
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <h1 style="color: #333; font-size: 22px;">Action required: New profile update request</h1>
+        <p style="color: #777; font-size: 14px; margin: 0;">New request from <strong>${employeeName}</strong></p>
+      </div>
+      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.08);">
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">Hi HR Team,</p>
+        <p style="color: #555; font-size: 16px; line-height: 1.6;">
+          A new profile update request has been submitted and is awaiting your review and approval.
+        </p>
+        <div style="background-color: #f8f9fa; padding: 15px 20px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #007bff;">
+          <ul style="list-style: none; padding: 0; margin: 0;">
+            <li style="color: #333; margin-bottom: 8px; font-size: 15px;"><strong>Employee name</strong> - ${employeeName} (${employeeId})</li>
+            <li style="color: #333; margin-bottom: 8px; font-size: 15px;"><strong>Department</strong> - ${department || 'N/A'}</li>
+            <li style="color: #333; margin-bottom: 8px; font-size: 15px;"><strong>TL</strong> - ${tlName || 'N/A'}</li>
+            <li style="color: #333; margin-bottom: 8px; font-size: 15px;"><strong>Submitted on</strong> - ${submittedOn}</li>
+            <li style="color: #333; margin-bottom: 8px; font-size: 15px;"><strong>Category</strong> - ${category}</li>
+            <li style="color: #333; margin-bottom: 8px; font-size: 15px;"><strong>Sub-category</strong> - ${subCategory}</li>
+            <li style="color: #333; margin-bottom: 0; font-size: 15px;"><strong>Attachment</strong> - ${attachmentLabel}</li>
+          </ul>
+        </div>
+        <p style="color: #555; font-size: 15px; line-height: 1.6;">
+          Please log in to the HRMS portal to review the full request, compare the old and new values, and take action.
+        </p>
+        <p style="font-size: 14px; color: #777; margin-top: 24px;">Regards,<br><strong>Team ${displayTeam?.TEAM_NAME || 'HRMS'}</strong></p>
+      </div>
+    </div>`;
+  }
+
   static getTicketCreatedEmailForTeam(subject, type, raisedByName, baseUrl, ticketId, team) {
     const displayTeam = getTeamEmailConfig(team);
 

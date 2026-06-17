@@ -1,5 +1,6 @@
 // src/routes/userRoutes.js
 const express = require('express');
+const { default: httpStatus } = require('http-status');
 const userController = require('../controllers/userController');
 const {
   authenticateUser,
@@ -7,8 +8,64 @@ const {
 } = require('../middleware/authMiddleware');
 const { safeUpload } = require('../middleware/uploadMiddleware');
 const { USER_ROLES } = require('../utility/constants');
+const ApiError = require('../utility/ApiError');
 
 const router = express.Router();
+
+const toIdString = (value) => (value ? String(value) : '');
+
+// Any authenticated user can edit their own profile sections; HR/Admin/SubAdmin can edit others too.
+const canEditUserProfile = (req, res, next) => {
+  const targetUserId = toIdString(req.params?.userId);
+  const requesterId = toIdString(req.user?.id || req.user?._id);
+
+  const isSelf = Boolean(targetUserId && requesterId && targetUserId === requesterId);
+  const isPrivileged = [USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN].includes(
+    req?.user?.role
+  );
+
+  if (isSelf || isPrivileged) {
+    return next();
+  }
+
+  return next(
+    new ApiError(
+      httpStatus.FORBIDDEN,
+      'You can only update your own profile. HR/Admin can update other users.'
+    )
+  );
+};
+
+const profileSectionRoutes = [
+  { path: 'personalInfo', handler: userController.updateUserProfilePersonalInfo },
+  { path: 'addressInfo', handler: userController.updateUserProfileAddressInfo },
+  { path: 'education', handler: userController.updateUserProfileEducation },
+  {
+    path: 'employmentHistory',
+    handler: userController.updateUserProfileEmploymentHistory,
+  },
+  { path: 'medicalInfo', handler: userController.updateUserProfileMedicalInfo },
+  {
+    path: 'backgroundInfo',
+    handler: userController.updateUserProfileBackgroundInfo,
+  },
+  { path: 'bankDetails', handler: userController.updateUserProfileBankDetails },
+  {
+    path: 'documents',
+    handler: userController.updateUserProfileDocuments,
+    upload: true,
+  },
+];
+
+profileSectionRoutes.forEach(({ path, handler, upload = false }) => {
+  router.put(
+    `/:userId/profile/${path}`,
+    authenticateUser,
+    canEditUserProfile,
+    ...(upload ? [safeUpload([])] : []),
+    handler
+  );
+});
 
 // --- Public Routes ---
 router.post('/login', userController.login);
@@ -37,6 +94,25 @@ router.get('/', authenticateUser, userController?.getAllUsers);
 router.get('/meeting-attendees', authenticateUser, userController?.getAllUsersForMeeting);
 
 router.get('/tl-id', authenticateUser, userController?.getUserByTlId);
+
+// Profile change approvals (HR queue — same pattern as leaves & regularisation)
+router.get(
+  '/profile-change-requests',
+  authenticateUser,
+  userController.getProfileChangeRequests
+);
+router.put(
+  '/profile-change-requests/:id/approve',
+  authenticateUser,
+  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]),
+  userController.approveProfileChangeRequest
+);
+router.put(
+  '/profile-change-requests/:id/reject',
+  authenticateUser,
+  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR, USER_ROLES?.SUBADMIN]),
+  userController.rejectProfileChangeRequest
+);
 
 // Get Team Details: Only for TL and SubTL, returns full team details without flag
 router.get('/team-details', authenticateUser, userController?.getTeamDetails);
