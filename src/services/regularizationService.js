@@ -52,7 +52,7 @@ const regularizationService = {
   // Create regularization request
   async createRegularization(userId, requestData) {
     try {
-      const { date, correctedCheckIn, correctedCheckOut, reason, type, evidence } = requestData;
+      const { date, correctedCheckIn, correctedCheckOut, reason, type, evidence, regularizationMode } = requestData;
 
       // Validate date is not in the future
       const requestDate = moment.tz(date, 'Asia/Kolkata').startOf('day');
@@ -102,6 +102,7 @@ const regularizationService = {
         requestedCheckInTime: moment.tz(`${date} ${correctedCheckIn}`, 'Asia/Kolkata').toDate(),
         requestedCheckOutTime: moment.tz(`${date} ${correctedCheckOut}`, 'Asia/Kolkata').toDate(),
         evidence: type === 'emergency' ? { url: evidence } : undefined,
+        regularizationMode: regularizationMode || 'normal',
         status: 'tl-pending',
         appliedAt: new Date(),
         appliedBy: userId
@@ -714,14 +715,19 @@ const regularizationService = {
     try {
       const regularization = attendance.regularization;
       
-      if (!attendance.checkInTime) {
-        attendance.checkInTime = regularization.requestedCheckInTime;
-      }
-      if (!attendance.checkOutTime) {
-        attendance.checkOutTime = regularization.requestedCheckOutTime;
-      }
+      // Update HRMS times (normal behavior)
+      attendance.checkInTime = regularization.requestedCheckInTime;
+      attendance.checkOutTime = regularization.requestedCheckOutTime;
       
       attendance.status = 'present';
+
+      // When mode is 'both', also update biometric fields
+      if (regularization.regularizationMode === 'both') {
+        attendance.biometricCheckIn = regularization.requestedCheckInTime;
+        attendance.biometricCheckOut = regularization.requestedCheckOutTime;
+        attendance.biometricStatus = 'present';
+      }
+
       await attendance.save();
       
       return attendance;

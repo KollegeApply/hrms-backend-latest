@@ -7,10 +7,13 @@ const Helper = require('../utility/helper');
 const ApiError = require('../utility/ApiError'); // Ensure this utility exists
 const catchAsync = require('../utility/catchAsync'); // Ensure this utility exists
 const logger = require('../config/logger');
-const { CSV_TYPES, RANK, TEAM_SD, TEAM_KAP, getTeamEmailConfig } = require('../utility/constants');
+const { CSV_TYPES, RANK, TEAM_SD, TEAM_KAP, getTeamEmailConfig, USER_ROLES } = require('../utility/constants');
 const User = require('../models/userModel');
 const UserDetails = require('../models/userDetailsModel');
 const candidateValidator = require('../validators/candidateValidator');
+const userProfileValidator = require('../validators/userProfileValidator');
+const profileChangeRequestService = require('../services/profileChangeRequestService');
+const profileChangeRequestValidator = require('../validators/profileChangeRequestValidator');
 const { uploadToAWS } = require('../utility/awsBlob');
 const { transformDocumentPaths } = require('../utility/common');
 const EmployeeHistory = require('../models/employeeHistory');
@@ -158,24 +161,18 @@ const getUserById = catchAsync(async (req, res) => {
   }
 
   // 2. Call service to get user
-  const user = await userService?.getUserById(userId);
+  const user = await userService?.getUserByIdForApi(userId);
 
   // 3. Handle not found
   if (!user) {
     throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
   }
 
-  // 4. Transform profile photo to full URL if needed
-  if (user.profilePhoto && !user.profilePhoto.startsWith('http')) {
-    const transformedPaths = transformDocumentPaths({ profilePhoto: user.profilePhoto });
-    user.profilePhoto = transformedPaths.profilePhoto;
-  }
-
-  // 5. Send response
+  // 4. Send response
   res?.status(httpStatus.OK).json({
     status: true,
     message: 'User retrieved successfully.',
-    data: user, // User object already cleaned by toJSON
+    data: user,
   });
 });
 
@@ -301,7 +298,7 @@ const deleteUser = catchAsync(async (req, res) => {
   // check for hierarchy
   if (currentUserRank < targetedUserRank) {
     // 2. Call service to delete user (soft delete)
-    const success = await userService.deleteUser(userId, team);
+    const success = await userService.deleteUser(userId, team, req.user.id);
 
     // 3. Handle not found
     if (!success) {
@@ -920,6 +917,211 @@ const updateShiftTime = catchAsync(async (req, res) => {
   });
 });
 
+// TL/SubTL: PUT sets or updates reportee expense band (K1–K4)
+const updateReporteeExpenseBand = catchAsync(async (req, res) => {
+  await userValidator?.mongoIdSchema?.validateAsync(req.params);
+  const userId = req?.params?.id;
+
+  if (!Helper.isValidMongoId(userId)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid user ID format.');
+  }
+
+  const validatedData = await userValidator?.updateReporteeExpenseBandSchema?.validateAsync(
+    req?.body
+  );
+
+  const data = await userService.upsertReporteeExpenseBand(
+    req.user,
+    userId,
+    validatedData.expenseBand
+  );
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Expense band saved successfully.',
+    data,
+  });
+});
+
+const buildProfileDocumentsPayload = async (req) => {
+  const uploadedPaths = {};
+  const newUploadFields = [];
+  const files = req.files || [];
+
+  for (const file of files) {
+    const relativePath = await uploadToAWS(
+      file.buffer,
+      file.originalname,
+      'hrms-cif-documents/'
+    );
+    const simpleField = file.fieldname.replace(/^documents\./, '');
+    uploadedPaths[simpleField] = relativePath;
+    newUploadFields.push(simpleField);
+  }
+
+  let parsedBody = {};
+  if (req.body && typeof req.body === 'object') {
+    for (const key of Object.keys(req.body)) {
+      try {
+        parsedBody[key] = JSON.parse(req.body[key]);
+      } catch {
+        parsedBody[key] = req.body[key];
+      }
+    }
+  }
+
+  const existingDocuments = parsedBody.documents || parsedBody;
+  const mergedDocuments = {
+    ...(existingDocuments && typeof existingDocuments === 'object'
+      ? existingDocuments
+      : {}),
+    ...uploadedPaths,
+  };
+
+  const cleanedDocuments = {};
+  Object.entries(mergedDocuments).forEach(([key, value]) => {
+    if (value && typeof value === 'string' && value.trim() !== '') {
+      cleanedDocuments[key] = value;
+    }
+  });
+
+  return { documents: cleanedDocuments, newUploadFields };
+};
+
+const createProfileSectionUpdater = (routeKey, { supportsUpload = false } = {}) =>
+  catchAsync(async (req, res) => {
+    await userValidator.mongoIdSchema.validateAsync({ id: req.params.userId });
+    const userId = req.params.userId;
+
+    if (!Helper.isValidMongoId(userId)) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid user ID format.');
+    }
+
+    let payload = req.body;
+    let submitOptions = {};
+
+    if (routeKey === 'employmentHistory') {
+      payload = Array.isArray(req.body) ? req.body : req.body?.employment;
+    } else if (supportsUpload) {
+      const documentPayload = await buildProfileDocumentsPayload(req);
+      payload = documentPayload.documents;
+      submitOptions = { newUploadFields: documentPayload.newUploadFields };
+    }
+
+    const fieldKey = userProfileValidator.PROFILE_SECTION_MAP[routeKey];
+    const validatedSection = await userProfileValidator.validateProfileSection(
+      routeKey,
+      payload
+    );
+
+    const isSelfEdit =
+      String(req.user?.id || req.user?._id) === String(userId);
+    const isHrEdit =
+      !isSelfEdit &&
+      [USER_ROLES.ADMIN, USER_ROLES.HR, USER_ROLES.SUBADMIN].includes(req.user.role);
+
+    if (isSelfEdit) {
+      const requests = await profileChangeRequestService.submitProfileChangeRequests(
+        userId,
+        routeKey,
+        validatedSection,
+        req.user.team,
+        submitOptions
+      );
+
+      return res.status(httpStatus.OK).json({
+        status: true,
+        message: `${userProfileValidator.PROFILE_SECTION_LABELS[routeKey]} change submitted for HR approval.`,
+        data: { requests },
+      });
+    }
+
+    const updatedUser = await userService.updateUserProfileSection(
+      userId,
+      fieldKey,
+      validatedSection,
+      { markUnderReview: isHrEdit }
+    );
+
+    res.status(httpStatus.OK).json({
+      status: true,
+      message: `${userProfileValidator.PROFILE_SECTION_LABELS[routeKey]} updated successfully.`,
+      data: updatedUser,
+    });
+  });
+
+const updateUserProfilePersonalInfo = createProfileSectionUpdater('personalInfo');
+const updateUserProfileAddressInfo = createProfileSectionUpdater('addressInfo');
+const updateUserProfileEducation = createProfileSectionUpdater('education');
+const updateUserProfileEmploymentHistory =
+  createProfileSectionUpdater('employmentHistory');
+const updateUserProfileMedicalInfo = createProfileSectionUpdater('medicalInfo');
+const updateUserProfileBackgroundInfo = createProfileSectionUpdater('backgroundInfo');
+const updateUserProfileBankDetails = createProfileSectionUpdater('bankDetails');
+const updateUserProfileDocuments = createProfileSectionUpdater('documents', {
+  supportsUpload: true,
+});
+
+const getProfileChangeRequests = catchAsync(async (req, res) => {
+  const filters = await profileChangeRequestValidator.profileChangeRequestListSchema.validateAsync(
+    req.query,
+    { stripUnknown: true }
+  );
+
+  const result = await profileChangeRequestService.getProfileChangeRequests(
+    req.user,
+    filters,
+    filters.page,
+    filters.limit
+  );
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Profile change requests retrieved successfully.',
+    ...result,
+  });
+});
+
+const approveProfileChangeRequest = catchAsync(async (req, res) => {
+  await userValidator.mongoIdSchema.validateAsync({ id: req.params.id });
+  const { note } = await profileChangeRequestValidator.profileChangeDecisionSchema.validateAsync(
+    req.body,
+    { stripUnknown: true }
+  );
+
+  const data = await profileChangeRequestService.approveProfileChangeRequest(
+    req.params.id,
+    req.user,
+    note
+  );
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Profile change approved successfully.',
+    data,
+  });
+});
+
+const rejectProfileChangeRequest = catchAsync(async (req, res) => {
+  await userValidator.mongoIdSchema.validateAsync({ id: req.params.id });
+  const { note } = await profileChangeRequestValidator.profileChangeDecisionSchema.validateAsync(
+    req.body,
+    { stripUnknown: true }
+  );
+
+  const data = await profileChangeRequestService.rejectProfileChangeRequest(
+    req.params.id,
+    req.user,
+    note
+  );
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Profile change rejected successfully.',
+    data,
+  });
+});
+
 module.exports = {
   createUser,
   getAllUsers,
@@ -942,6 +1144,18 @@ module.exports = {
   uploadProfilePhoto,
   getAllUsersForMeeting,
   updateShiftTime,
+  updateReporteeExpenseBand,
+  updateUserProfilePersonalInfo,
+  updateUserProfileAddressInfo,
+  updateUserProfileEducation,
+  updateUserProfileEmploymentHistory,
+  updateUserProfileMedicalInfo,
+  updateUserProfileBackgroundInfo,
+  updateUserProfileBankDetails,
+  updateUserProfileDocuments,
+  getProfileChangeRequests,
+  approveProfileChangeRequest,
+  rejectProfileChangeRequest,
 };
 
 // --- Utility: catchAsync (Place in src/utility/catchAsync.js) ---

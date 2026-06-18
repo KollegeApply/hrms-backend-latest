@@ -10,32 +10,83 @@ const User = require('../models/userModel');
 const Expense = require('../models/expenseModel');
 const { getTeamEmailConfig } = require('../utility/constants');
 
+function parseMaybeJsonArray(val) {
+  if (val == null || val === '') return undefined;
+  if (Array.isArray(val)) return val.map(String).filter(Boolean);
+  if (typeof val === 'string') {
+    try {
+      const p = JSON.parse(val);
+      return Array.isArray(p) ? p.map(String).filter(Boolean) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+function pickDefined(obj) {
+  const o = {};
+  if (!obj) return o;
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== undefined && v !== '') o[k] = v;
+  }
+  return o;
+}
+
 function parseCreateExpenseBody(req) {
   const { expenseData } = req.body;
 
+  let parsed = null;
   if (typeof expenseData === 'string') {
     try {
-      return JSON.parse(expenseData);
+      parsed = JSON.parse(expenseData);
     } catch {
       return null;
     }
+  } else if (expenseData && typeof expenseData === 'object' && !Array.isArray(expenseData)) {
+    parsed = { ...expenseData };
   }
 
-  if (expenseData && typeof expenseData === 'object' && !Array.isArray(expenseData)) {
-    return expenseData;
+  const flat = pickDefined({
+    date: req.body.date,
+    name: req.body.name,
+    type: req.body.type,
+    amount:
+      req.body.amount != null && req.body.amount !== ''
+        ? Number(req.body.amount)
+        : undefined,
+    purpose: req.body.purpose,
+    attachmentUrl: req.body.attachmentUrl,
+    miscellaneousType: req.body.miscellaneousType ?? req.body.otherType ?? req.body.customType,
+    subCategory: req.body.subCategory,
+    distanceKm:
+      req.body.distanceKm !== '' && req.body.distanceKm != null
+        ? Number(req.body.distanceKm)
+        : undefined,
+    clientName: req.body.clientName,
+    clientPocName: req.body.clientPocName,
+    clientPocDesignation: req.body.clientPocDesignation,
+    attendeeUserIds: parseMaybeJsonArray(req.body.attendeeUserIds),
+    miscOthersDescription: req.body.miscOthersDescription,
+    travelMiscDescription: req.body.travelMiscDescription,
+    cityTier: req.body.cityTier,
+  });
+
+  const merged = parsed ? { ...parsed, ...flat } : flat;
+  if (merged.attendeeUserIds != null) {
+    merged.attendeeUserIds =
+      parseMaybeJsonArray(merged.attendeeUserIds) ?? merged.attendeeUserIds;
+  }
+  if (merged.distanceKm != null && typeof merged.distanceKm === 'string') {
+    merged.distanceKm = Number(merged.distanceKm);
+  }
+  if (merged.amount != null && typeof merged.amount === 'string') {
+    merged.amount = Number(merged.amount);
   }
 
-  const { date, name, type, amount, purpose, attachmentUrl, miscellaneousType, otherType, customType } =
-    req.body;
-  return {
-    date,
-    name,
-    type,
-    amount,
-    purpose,
-    attachmentUrl,
-    miscellaneousType: miscellaneousType ?? otherType ?? customType,
-  };
+  if (parsed) return merged;
+  if (Object.keys(flat).length === 0) return null;
+  return merged;
 }
 
 function getUploadedFile(req) {
@@ -51,8 +102,8 @@ function applyAttachmentUrlTransform(expense) {
     const t = transformDocumentPaths({ attachmentUrl: plain.attachmentUrl });
     plain.attachmentUrl = t.attachmentUrl;
   }
-  if (plain.type === 'Miscellaneous' && plain.miscellaneousType) {
-    plain.type = plain.miscellaneousType;
+  if (plain.type === 'Miscellaneous' && plain.subCategory) {
+    plain.displayExpenseLabel = `${plain.type} — ${plain.subCategory}`;
   }
   return plain;
 }
@@ -79,6 +130,17 @@ function currencyInr(amount) {
 function fullName(user = {}) {
   return `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'User';
 }
+
+const expensePopulatePaths = [
+  {
+    path: 'userId',
+    select: 'firstName lastName email employeeId',
+  },
+  {
+    path: 'tlId',
+    select: 'firstName lastName email employeeId',
+  },
+];
 
 async function getFinalApproverEmails(team) {
   const approvers = await User.find({
@@ -114,10 +176,13 @@ async function getFinalApproverEmails(team) {
 
 function getMailPayload(expenseDoc) {
   const employee = expenseDoc?.userId || {};
-  const resolvedExpenseType =
-    expenseDoc?.type === 'Miscellaneous' && expenseDoc?.miscellaneousType
-      ? `Miscellaneous (${expenseDoc.miscellaneousType})`
-      : expenseDoc?.type || 'N/A';
+  const resolvedExpenseType = (() => {
+    const t = expenseDoc?.type;
+    const sc = expenseDoc?.subCategory;
+    if (t === 'Miscellaneous' && sc) return `Miscellaneous (${sc})`;
+    if (sc && (t === 'Travel' || t === 'Food')) return `${t} (${sc})`;
+    return t || 'N/A';
+  })();
   return {
     employeeName: fullName(employee),
     employeeEmail: employee.email,
@@ -249,7 +314,9 @@ async function sendExpenseSubmissionEmails(expenseDoc, team) {
         intro:
           expenseDoc.status === 'submitted'
             ? 'Your expense claim has been submitted and is pending review by your Team Lead.'
-            : 'Your expense claim has been submitted and is pending final approval.',
+            : expenseDoc.type === 'Team Lunch'
+              ? 'Your Team Lunch claim has been submitted and is pending Finance approval (TL review is skipped for this type).'
+              : 'Your expense claim has been submitted and is pending final approval.',
         team,
         detailRowsHtml:
           renderExpenseDetailRow('Expense Type', payload.expenseType) +
@@ -269,15 +336,17 @@ async function sendExpenseSubmissionEmails(expenseDoc, team) {
       );
     }
 
-    // If no TL is mapped and expense directly reaches final queue, notify final approvers.
-    if (expenseDoc.status === 'tl-approved' && !tlEmail) {
+    // Direct-to-Finance: no TL mapped, or Team Lunch (Finance-only per policy).
+    if (expenseDoc.status === 'tl-approved' && (!tlEmail || expenseDoc.type === 'Team Lunch')) {
       const finalApproverEmails = await getFinalApproverEmails(team);
       if (finalApproverEmails.length > 0) {
         const finalQueueMsg = renderExpenseEmailTemplate({
           heading: 'Expense Awaiting Final Approval',
           greeting: 'Team',
           intro:
-            'An expense claim has reached the final review stage and requires your action.',
+            expenseDoc.type === 'Team Lunch'
+              ? 'A Team Lunch expense was submitted by a Team Lead and requires Finance approval.'
+              : 'An expense claim has reached the final review stage and requires your action.',
           team,
           detailRowsHtml:
             renderExpenseDetailRow(
@@ -292,7 +361,10 @@ async function sendExpenseSubmissionEmails(expenseDoc, team) {
 
         Helper.sendEmail({
           receiverEmails: finalApproverEmails,
-          subject: 'Expense Awaiting Final Approval',
+          subject:
+            expenseDoc.type === 'Team Lunch'
+              ? 'Team Lunch — Awaiting Finance Approval'
+              : 'Expense Awaiting Final Approval',
           message: finalQueueMsg,
           team,
         }).catch((err) =>
@@ -503,6 +575,32 @@ const getExpenses = catchAsync(async (req, res) => {
   });
 });
 
+const getExpenseDashboard = catchAsync(async (req, res) => {
+  const validatedQuery = await expenseValidator.expenseDashboardSchema.validateAsync(
+    req.query
+  );
+
+  const dashboard = await expenseService.getExpenseDashboard(
+    req.user,
+    validatedQuery,
+    validatedQuery.page,
+    validatedQuery.limit
+  );
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message:
+      validatedQuery.groupBy === 'department'
+        ? 'Department expense dashboard fetched successfully.'
+        : 'Expense dashboard fetched successfully.',
+    summary: dashboard.summary,
+    data: dashboard.data,
+    pagination: dashboard.pagination,
+    filters: dashboard.filters,
+    access: dashboard.access,
+  });
+});
+
 const updateExpenseStatus = catchAsync(async (req, res) => {
   const validated = await expenseValidator.updateExpenseStatusSchema.validateAsync({
     id: req.params.id,
@@ -520,16 +618,9 @@ const updateExpenseStatus = catchAsync(async (req, res) => {
     currentUser: req.user,
   });
 
-  const updatedExpense = await Expense.findById(updated._id).populate([
-    {
-      path: 'userId',
-      select: 'firstName lastName email employeeId',
-    },
-    {
-      path: 'tlId',
-      select: 'firstName lastName email employeeId',
-    },
-  ]);
+  const updatedExpense = await Expense.findById(updated._id).populate(
+    expensePopulatePaths
+  );
 
   const sendMail = !(req?.body?.sendMail === false || req?.body?.sendMail === 'false');
   if (sendMail && previousStatus) {
@@ -546,6 +637,136 @@ const updateExpenseStatus = catchAsync(async (req, res) => {
     status: true,
     message: 'Expense status updated successfully.',
     data: applyAttachmentUrlTransform(updatedExpense || updated),
+  });
+});
+
+const bulkRejectExpenses = catchAsync(async (req, res) => {
+  const validated = await expenseValidator.bulkRejectExpenseSchema.validateAsync(
+    req.body
+  );
+
+  const { rejected, failed } = await expenseService.bulkRejectExpenses({
+    expenseIds: validated.expenseIds,
+    remark: validated.remark,
+    currentUser: req.user,
+  });
+
+  const sendMail = !(
+    req?.body?.sendMail === false || req?.body?.sendMail === 'false'
+  );
+
+  const rejectedExpenses = [];
+  for (const item of rejected) {
+    const updatedExpense = await Expense.findById(item.updated._id).populate(
+      expensePopulatePaths
+    );
+
+    if (sendMail && item.previousStatus) {
+      await sendExpenseStatusUpdateEmail({
+        previousStatus: item.previousStatus,
+        updatedExpense,
+        action: 'rejected',
+        currentUser: req.user,
+        team: req.user.team,
+      });
+    }
+
+    rejectedExpenses.push(applyAttachmentUrlTransform(updatedExpense || item.updated));
+  }
+
+  const summary = {
+    total: validated.expenseIds.length,
+    succeeded: rejectedExpenses.length,
+    failed: failed.length,
+  };
+
+  if (rejectedExpenses.length === 0) {
+    return res.status(httpStatus.BAD_REQUEST).json({
+      status: false,
+      message: 'No expenses could be rejected.',
+      data: { rejected: [], failed },
+      summary,
+    });
+  }
+
+  const message =
+    failed.length === 0
+      ? `${rejectedExpenses.length} expense(s) rejected successfully.`
+      : `${rejectedExpenses.length} expense(s) rejected successfully. ${failed.length} failed.`;
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message,
+    data: {
+      rejected: rejectedExpenses,
+      failed,
+    },
+    summary,
+  });
+});
+
+const bulkApproveExpenses = catchAsync(async (req, res) => {
+  const validated = await expenseValidator.bulkApproveExpenseSchema.validateAsync(
+    req.body
+  );
+
+  const { approved, failed } = await expenseService.bulkApproveExpenses({
+    expenseIds: validated.expenseIds,
+    remark: validated.remark,
+    currentUser: req.user,
+  });
+
+  const sendMail = !(
+    req?.body?.sendMail === false || req?.body?.sendMail === 'false'
+  );
+
+  const approvedExpenses = [];
+  for (const item of approved) {
+    const updatedExpense = await Expense.findById(item.updated._id).populate(
+      expensePopulatePaths
+    );
+
+    if (sendMail && item.previousStatus) {
+      await sendExpenseStatusUpdateEmail({
+        previousStatus: item.previousStatus,
+        updatedExpense,
+        action: 'approved',
+        currentUser: req.user,
+        team: req.user.team,
+      });
+    }
+
+    approvedExpenses.push(applyAttachmentUrlTransform(updatedExpense || item.updated));
+  }
+
+  const summary = {
+    total: validated.expenseIds.length,
+    succeeded: approvedExpenses.length,
+    failed: failed.length,
+  };
+
+  if (approvedExpenses.length === 0) {
+    return res.status(httpStatus.BAD_REQUEST).json({
+      status: false,
+      message: 'No expenses could be approved.',
+      data: { approved: [], failed },
+      summary,
+    });
+  }
+
+  const message =
+    failed.length === 0
+      ? `${approvedExpenses.length} expense(s) approved successfully.`
+      : `${approvedExpenses.length} expense(s) approved successfully. ${failed.length} failed.`;
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message,
+    data: {
+      approved: approvedExpenses,
+      failed,
+    },
+    summary,
   });
 });
 
@@ -569,6 +790,9 @@ const deleteExpense = catchAsync(async (req, res) => {
 module.exports = {
   createExpense,
   getExpenses,
+  getExpenseDashboard,
   updateExpenseStatus,
+  bulkApproveExpenses,
+  bulkRejectExpenses,
   deleteExpense,
 };

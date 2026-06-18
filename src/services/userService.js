@@ -26,6 +26,8 @@ const { default: mongoose } = require('mongoose');
 const candidateModel = require('../models/candidateModel');
 const Feedback = require('../models/feedbackModel');
 const CompanyPolicy = require('../models/companypolicyModel');
+const UserDetails = require('../models/userDetailsModel');
+const _ = require('lodash');
 
 class UserService {
   /**
@@ -326,29 +328,68 @@ class UserService {
    * @param {string} id - The user's MongoDB ObjectId.
    * @returns {Promise<User|null>} - The user document or null if not found.
    */
-async getUserById(id) {
-  logger.info(`Fetching user by ID: ${id}`);
-  
-  const userDoc = await User.findOne({ _id: id, isDeleted: false })
-    .populate('department', 'name')
-    .populate('teamLeadId', 'firstName lastName')
-    .populate('subTeamLeadId', 'firstName lastName')
-    .populate('hrPocId', 'firstName lastName email')
-    .populate('userDetails');
+  formatUserApiResponse(userData) {
+    if (!userData) return null;
 
-  if (!userDoc) {
-    logger.warn(`User not found with ID: ${id}`);
-    return null;
+    const userObject = userData?.toObject
+      ? userData.toObject({ virtuals: true })
+      : { ...userData };
+
+    if (userObject._id) {
+      userObject.id = String(userObject._id);
+      delete userObject._id;
+    }
+    delete userObject.__v;
+    delete userObject.password;
+    delete userObject.isDeleted;
+
+    if (userObject.profilePhoto && !String(userObject.profilePhoto).startsWith('http')) {
+      const transformed = transformDocumentPaths({
+        profilePhoto: userObject.profilePhoto,
+      });
+      userObject.profilePhoto = transformed.profilePhoto;
+    }
+
+    if (userObject.userDetails) {
+      if (userObject.userDetails._id) {
+        userObject.userDetails.id = String(userObject.userDetails._id);
+        delete userObject.userDetails._id;
+      }
+      delete userObject.userDetails.__v;
+
+      if (userObject.userDetails.documents) {
+        userObject.userDetails.documents = transformDocumentPaths(
+          userObject.userDetails.documents
+        );
+      }
+    }
+
+    return userObject;
   }
 
-  const userObject = userDoc.toObject();
-
-  if (userObject.userDetails?.documents) {
-    userDoc.userDetails.documents = transformDocumentPaths(userObject.userDetails.documents);
+  async getUserByIdForApi(id) {
+    const userDoc = await this.getUserById(id);
+    if (!userDoc) return null;
+    return this.formatUserApiResponse(userDoc);
   }
 
-  return userDoc;
-}
+  async getUserById(id) {
+    logger.info(`Fetching user by ID: ${id}`);
+
+    const userDoc = await User.findOne({ _id: id, isDeleted: false })
+      .populate('department', 'name')
+      .populate('teamLeadId', 'firstName lastName')
+      .populate('subTeamLeadId', 'firstName lastName')
+      .populate('hrPocId', 'firstName lastName email')
+      .populate('userDetails');
+
+    if (!userDoc) {
+      logger.warn(`User not found with ID: ${id}`);
+      return null;
+    }
+
+    return userDoc;
+  }
 
   /**
    * Get a single user by their email.
@@ -556,6 +597,22 @@ async getUserById(id) {
     }
 
     const oldUser = user.toObject();
+
+    // HR-only: allow setting expenseBand via main update-user API
+    if (Object.prototype.hasOwnProperty.call(updateData, 'expenseBand')) {
+      const actorRole = changedByUser?.role;
+      if (actorRole !== 'hr') {
+        throw new ApiError(
+          httpStatus.FORBIDDEN,
+          'Only HR can set expense band.'
+        );
+      }
+
+      // Normalize unset values
+      if (updateData.expenseBand === '' || updateData.expenseBand === null) {
+        updateData.expenseBand = undefined;
+      }
+    }
 
     // Check for email conflict if email is being updated
     updateData.email = updateData?.email?.toLowerCase();
@@ -782,10 +839,14 @@ async getUserById(id) {
   /**
    * Soft delete a user by ID.
    * @param {string} id - The user's MongoDB ObjectId.
+   * @param {string} team - Requester's team.
+   * @param {string} deletedById - ID of the user performing the delete.
    * @returns {Promise<boolean>} - True if deletion was successful, false otherwise.
    */
-  async deleteUser(id, team) {
-    logger.info(`Attempting to soft delete user with ID: ${id}`);
+  async deleteUser(id, team, deletedById) {
+    logger.info(
+      `Attempting to soft delete user with ID: ${id}, deleted by user ID: ${deletedById}`
+    );
     const result1 = await User.findById(id);
     if (result1.isDeleted) {
       return false;
@@ -793,7 +854,7 @@ async getUserById(id) {
 
     if (result1.team !== team) {
       logger.warn(
-        `Unauthorized delete attempt: Team mismatch. User team: ${userToDelete.team}, Requester team: ${team}`
+        `Unauthorized delete attempt by user ID: ${deletedById}. Team mismatch. Target user team: ${result1.team}, Requester team: ${team}`
       );
       return false;
     }
@@ -805,10 +866,14 @@ async getUserById(id) {
     );
 
     if (result) {
-      logger.info(`User soft deleted successfully: ${id}`);
+      logger.info(
+        `User soft deleted successfully. Target user ID: ${id}, deleted by user ID: ${deletedById}`
+      );
       return true;
     } else {
-      logger.warn(`Soft delete failed: User not found with ID: ${id}`);
+      logger.warn(
+        `Soft delete failed: User not found with ID: ${id}, attempted by user ID: ${deletedById}`
+      );
       return false;
     }
   }
@@ -1523,7 +1588,8 @@ async getUserById(id) {
       }
 
       // Select all required fields
-      const selectFields = '_id firstName lastName email role employeeId department phoneNumber hireDate workType status jobTitle formStatus teamLeadId subTeamLeadId shiftTime isEmergencyRegularizationAllowed';
+      const selectFields =
+        '_id firstName lastName email role employeeId department phoneNumber hireDate workType status jobTitle formStatus teamLeadId subTeamLeadId shiftTime isEmergencyRegularizationAllowed expenseBand';
 
       let users;
 
@@ -1584,6 +1650,153 @@ async getUserById(id) {
         message: 'An unexpected server error occurred.',
       };
     }
+  }
+
+  /**
+   * TL/SubTL: set or update reportee expense band (K1–K4 only). Same logic for first save and edits.
+   */
+  async upsertReporteeExpenseBand(currentUser, reporteeId, expenseBand) {
+    const targetUser = await User.findById(reporteeId);
+    if (!targetUser || targetUser.isDeleted) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
+    }
+
+    const leadId = currentUser.id?.toString?.() ?? String(currentUser.id);
+    const isDirectReport =
+      targetUser.teamLeadId?.toString() === leadId ||
+      targetUser.subTeamLeadId?.toString() === leadId;
+
+    if (!isDirectReport) {
+      throw new ApiError(
+        httpStatus.FORBIDDEN,
+        'You can only set expense band for your direct reportees.'
+      );
+    }
+
+    if (targetUser.team !== currentUser.team) {
+      throw new ApiError(
+        httpStatus.FORBIDDEN,
+        'You can only set expense band for users in your team.'
+      );
+    }
+
+    targetUser.expenseBand = expenseBand;
+    await targetUser.save();
+
+    return {
+      id: targetUser.id,
+      expenseBand: targetUser.expenseBand,
+    };
+  }
+
+  async syncUserFieldsFromProfileSection(user, fieldKey, userDetailsDoc) {
+    let userChanged = false;
+
+    if (fieldKey === 'personalInfo') {
+      const personalInfo =
+        userDetailsDoc.personalInfo?.toObject?.() || userDetailsDoc.personalInfo || {};
+
+      if (personalInfo.firstName) {
+        user.firstName = personalInfo.firstName;
+        userChanged = true;
+      }
+      if (personalInfo.lastName) {
+        user.lastName = personalInfo.lastName;
+        userChanged = true;
+      }
+      if (personalInfo.email) {
+        const email = String(personalInfo.email).toLowerCase().trim();
+        const existingUser = await this.getUserByEmail(email);
+        if (existingUser && String(existingUser.id) !== String(user._id)) {
+          throw new ApiError(
+            httpStatus.CONFLICT,
+            'Email address is already registered by another user.'
+          );
+        }
+        user.email = email;
+        userChanged = true;
+      }
+      if (personalInfo.phoneNumber !== undefined && personalInfo.phoneNumber !== null) {
+        user.phoneNumber = personalInfo.phoneNumber;
+        userChanged = true;
+      }
+      if (personalInfo.dateOfBirth) {
+        user.dateOfBirth = new Date(personalInfo.dateOfBirth);
+        userChanged = true;
+      }
+    }
+
+    if (fieldKey === 'addressDetails') {
+      const addressDetails =
+        userDetailsDoc.addressDetails?.toObject?.() ||
+        userDetailsDoc.addressDetails ||
+        {};
+      const currentAddress = addressDetails.currentAddress || {};
+
+      user.address = {
+        street: currentAddress.address || user.address?.street || '',
+        city: currentAddress.city || user.address?.city || '',
+        state: currentAddress.state || user.address?.state || '',
+        zipCode: currentAddress.pincode || user.address?.zipCode || '',
+        country: currentAddress.country || user.address?.country || '',
+      };
+      userChanged = true;
+    }
+
+    if (userChanged) {
+      await user.save();
+    }
+  }
+
+  async updateUserProfileSection(userId, fieldKey, sectionData, options = {}) {
+    const user = await User.findOne({ _id: userId, isDeleted: { $ne: true } });
+    if (!user) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
+    }
+
+    let userDetailsDoc = null;
+    if (user.userDetails) {
+      userDetailsDoc = await UserDetails.findById(user.userDetails);
+    }
+
+    if (!userDetailsDoc) {
+      userDetailsDoc = await UserDetails.create({ [fieldKey]: sectionData });
+      user.userDetails = userDetailsDoc._id;
+      await user.save();
+    } else {
+      let mergedData = sectionData;
+
+      if (fieldKey === 'employment') {
+        mergedData = sectionData;
+      } else if (fieldKey === 'documents') {
+        const existing =
+          userDetailsDoc.documents?.toObject?.() || userDetailsDoc.documents || {};
+        mergedData = { ...existing, ...sectionData };
+      } else {
+        const existing =
+          userDetailsDoc[fieldKey]?.toObject?.() || userDetailsDoc[fieldKey] || {};
+        mergedData = _.merge({}, existing, sectionData);
+      }
+
+      userDetailsDoc = await UserDetails.findByIdAndUpdate(
+        userDetailsDoc._id,
+        { $set: { [fieldKey]: mergedData } },
+        { new: true }
+      );
+    }
+
+    if (!userDetailsDoc) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'User details not found.');
+    }
+
+    await this.syncUserFieldsFromProfileSection(user, fieldKey, userDetailsDoc);
+
+    if (options.markUnderReview && user.formStatus !== 'approved') {
+      user.formStatus = 'underReview';
+      await user.save();
+    }
+
+    return this.getUserByIdForApi(userId);
   }
 }
 

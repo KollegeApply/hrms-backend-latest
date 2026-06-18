@@ -3,6 +3,7 @@ const { Schema } = mongoose;
 const {
   VALID_USER_ROLES,
   VALID_EMPLOYEE_STATUS,
+  VALID_EXPENSE_BANDS,
   USER_ROLES,
   EMPLOYEE_STATUS,
 } = require('../utility/constants');
@@ -160,6 +161,14 @@ const userSchema = new Schema(
     shiftTime: {
       type: String,
       trim: true,
+      required: false,
+    },
+    expenseBand: {
+      type: String,
+      enum: {
+        values: VALID_EXPENSE_BANDS,
+        message: 'Expense band must be K1, K2, K3, or K4.',
+      },
       required: false,
     },
   },

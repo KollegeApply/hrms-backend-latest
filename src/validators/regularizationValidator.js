@@ -21,7 +21,10 @@ const createRegularizationSchema = Joi.object({
   type: Joi.string().valid('standard', 'emergency').default('standard').messages({
     'any.only': 'Type must be either standard or emergency'
   }),
-  evidence: Joi.optional() // Evidence comes from file upload, not body
+  evidence: Joi.optional(), // Evidence comes from file upload, not body
+  regularizationMode: Joi.string().valid('normal', 'both').default('normal').messages({
+    'any.only': 'Regularization mode must be either normal or both'
+  })
 }).custom((value, helpers) => {
   // Custom validation for check-out time being after check-in time
   const [checkInHour, checkInMin] = value.correctedCheckIn.split(':').map(Number);
