@@ -597,6 +597,7 @@ const getExpenseDashboard = catchAsync(async (req, res) => {
     data: dashboard.data,
     pagination: dashboard.pagination,
     filters: dashboard.filters,
+    access: dashboard.access,
   });
 });
 
