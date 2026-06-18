@@ -20,6 +20,8 @@ class ExpenseService {
     this.superAdminRoles = ['admin', 'subadmin'];
     this.tlRoles = ['teamlead', 'subteamlead'];
     this.finalApproverAdminRoles = ['admin'];
+    // Full team expense dashboard: admin, subadmin, hr, or Finance/Expense department.
+    this.expenseDashboardTeamViewRoles = ['admin', 'subadmin', 'hr'];
   }
 
   splitCsvFilter(value) {
@@ -807,6 +809,21 @@ class ExpenseService {
     return [...new Set(mapped)];
   }
 
+  async resolveExpenseDashboardAccess(user) {
+    const role = (user.role || '').toLowerCase();
+    const isTeamViewRole = this.expenseDashboardTeamViewRoles.includes(role);
+    const isTlRole = this.tlRoles.includes(role);
+    const isFinalApproverDeptUser = await this.isFinalApproverDepartmentUser(user.id);
+
+    if (isTeamViewRole || isFinalApproverDeptUser) {
+      return { scope: 'team', hasTeamView: true };
+    }
+    if (isTlRole) {
+      return { scope: 'reportees', hasTeamView: true };
+    }
+    return { scope: 'self', hasTeamView: false };
+  }
+
   async resolveDashboardEmployeeUserId(employeeId) {
     if (!employeeId) return null;
 
@@ -846,11 +863,8 @@ class ExpenseService {
     };
 
     const role = user.role;
-    const isAdminRole = this.adminRoles.includes(role);
     const isSuperAdminRole = this.superAdminRoles.includes(role);
-    const isTlRole = this.tlRoles.includes(role);
-    const isFinalApproverAdminRole = this.finalApproverAdminRoles.includes(role);
-    const isFinalApproverDeptUser = await this.isFinalApproverDepartmentUser(user.id);
+    const access = await this.resolveExpenseDashboardAccess(user);
 
     const teamKey = this.resolveDashboardTeamKey(
       (filters.team || user.team || '').trim() || user.team
@@ -858,9 +872,9 @@ class ExpenseService {
 
     if (filters.employeeId) {
       match.userId = await this.resolveDashboardEmployeeUserId(filters.employeeId);
-    } else if (isAdminRole || isFinalApproverDeptUser || isFinalApproverAdminRole) {
+    } else if (access.scope === 'team') {
       match.team = teamKey;
-    } else if (isTlRole || role === 'hr') {
+    } else if (access.scope === 'reportees') {
       const reporteeQuery = {
         team: teamKey,
         isDeleted: { $ne: true },
@@ -1291,6 +1305,7 @@ class ExpenseService {
   async getExpenseDashboard(user, filters, page = 1, limit = 10) {
     const groupBy = filters.groupBy || 'employee';
     const isDepartmentView = groupBy === 'department';
+    const access = await this.resolveExpenseDashboardAccess(user);
     const match = await this.buildExpenseDashboardMatch(user, filters);
     const { pipeline, currentPage, perPage } = this.buildExpenseDashboardPipeline(
       match,
@@ -1354,6 +1369,7 @@ class ExpenseService {
         status: filters.status || null,
         groupBy,
       },
+      access,
     };
   }
 }
