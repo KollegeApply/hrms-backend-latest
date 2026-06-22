@@ -90,8 +90,13 @@ const regularizationService = {
       }
       
 
-      // Check if user already has present status (no need for regularization)
-      if (existingAttendance && existingAttendance.status === 'present') {
+      // Block regularization when already present (normal mode only).
+      // In 'both' mode, allow correcting HRMS + biometric even if app check-in marked present.
+      if (
+        existingAttendance &&
+        existingAttendance.status === 'present' &&
+        regularizationMode !== 'both'
+      ) {
         throw new Error('Cannot create regularization request when attendance is already marked as present');
       }
 

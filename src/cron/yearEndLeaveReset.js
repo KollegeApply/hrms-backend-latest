@@ -125,7 +125,7 @@ const runYearEndLeaveReset = async () => {
           }
           accrued = 0; // Monthly accrual handled by monthly cron
         } else if (accrualType === 'yearly' || quota > 0) {
-          // For fixed quota like Marriage, Birthday, Bereavement
+          // For fixed quota like Birthday
           accrued = quota;
           carryForwarded = 0;
         }
