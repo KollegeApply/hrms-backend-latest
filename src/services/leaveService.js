@@ -1181,47 +1181,7 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
         pointer.add(1, 'day');
       }
 
-      // ✅ 10. Bereavement Leave Rule
-      if (leaveType.code === 'BEREAVEMENT') {
-        const usedBereavement = await this.getUsedBereavementDays(
-          userId,
-          currentYear
-        );
-        const totalRequested = validDates.length;
-        const quota = mapping?.quota ?? 3;
-
-        if (usedBereavement >= quota) {
-          return {
-            isValid: false,
-            reason:
-              'Annual bereavement leave quota (3 days) has been exhausted',
-          };
-        }
-
-        if (usedBereavement + totalRequested > 3) {
-          return {
-            isValid: false,
-            reason: `Only ${3 - usedBereavement} bereavement days remaining this year`,
-          };
-        }
-      }
-
-      if (leaveType.code === 'MARRIAGE') {
-        const requestedDays = validDates.length;
-        const quota = balance?.total - balance?.used || 5;
-
-        if (requestedDays > quota) {
-          return {
-            isValid: false,
-            reason: `Marriage leave cannot exceed ${quota} days. Requested: ${requestedDays}`,
-            rejectedReasons: [
-              `Requested: ${requestedDays}, Available: ${quota}`,
-            ],
-          };
-        }
-      }
-
-      // ✅ 11. First 30 Days Check - Auto-reject PROBATION leaves within first 30 days from joining
+      // ✅ 10. First 30 Days Check - Auto-reject PROBATION leaves within first 30 days from joining
 
       const hireDate = moment.tz(employee.hireDate, 'Asia/Kolkata').startOf('day');
       const leaveStartDate = currentDate.clone();
@@ -1323,28 +1283,6 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
         reason: error.message || 'Error validating leave dates',
       };
     }
-  }
-
-  async getUsedBereavementDays(userId, year) {
-    const startOfYear = new Date(year, 0, 1);
-    const endOfYear = new Date(year, 11, 31, 23, 59, 59, 999);
-
-    const bereavementLeaves = await LeaveApplication.find({
-      userId,
-      leaveTypeId: await LeaveType.findOne({ code: 'BEREAVEMENT' }).select(
-        '_id'
-      ),
-      status: { $in: ['approved', 'pending', 'tl-approved', 'hr-approved'] },
-      dates: {
-        $gte: startOfYear,
-        $lte: endOfYear,
-      },
-    });
-
-    return bereavementLeaves.reduce(
-      (total, leave) => total + leave.totalDays,
-      0
-    );
   }
 
   async getUsedProbationLeaves(userId) {
