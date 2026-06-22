@@ -31,8 +31,6 @@ const EMPLOYEE_STATUS = {
 const LEAVETYPES = {
   casualSickLeave: 'Casual or Sick Leave',
   annualLeave: 'Annual Leave',
-  bereavementLeaves: 'Bereavement Leave',
-  marriageLeave: 'Marriage Leave',
   birthdayLeave: 'Birthday Leave',
 };
 
