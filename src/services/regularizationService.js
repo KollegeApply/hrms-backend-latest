@@ -76,8 +76,13 @@ const regularizationService = {
         date: requestDate.toDate()
       });
 
-      // Check if regularization already exists (but allow if it's revoked)
-      if (existingAttendance && existingAttendance.regularization && existingAttendance.regularization.status !== 'revoked') {
+      // Block duplicate requests; allow re-apply after revoke or TL/HR rejection
+      const reapplyAllowedStatuses = ['revoked', 'tl-rejected', 'hr-rejected'];
+      if (
+        existingAttendance &&
+        existingAttendance.regularization &&
+        !reapplyAllowedStatuses.includes(existingAttendance.regularization.status)
+      ) {
         throw new Error('Regularization request already exists for this date');
       }
 
