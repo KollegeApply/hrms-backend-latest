@@ -539,6 +539,13 @@ async function calculateBiometricStatus(userId, biometricCheckIn, biometricCheck
     let isFirstHalfLeave = false;
     const baseStatus = attendance?.status || null;
 
+    if (!biometricCheckIn) {
+      if (baseStatus === 'leave_applied') return 'leave_applied_full';
+      if (['leave_applied_full', 'leave_applied_first_half', 'leave_applied_second_half'].includes(baseStatus)) {
+        return baseStatus;
+      }
+    }
+
     if (attendance?.leaveId) {
       try {
         const LeaveApplication = require('../models/leaveApplicationModel');

@@ -13,6 +13,7 @@ const LeavePolicyMapping = require('../models/leavePolicyMappingModel');
 const EmployeeLeaveBalance = require('../models/employeeLeaveBalanceModel');
 const moment = require('moment-timezone');
 const { paginate, transformDocumentPaths } = require('../utility/common');
+const { calculateBiometricStatus } = require('./biometricWebhookService');
 
 class leaveService {
   buildSearchConditions(search) {
@@ -608,6 +609,22 @@ async updateLeaveStatus({ leaveId, action, editor }) {
               : defaultFirstHalfLeaveCutoff;
 
             // Iterate all leave dates and adjust if an attendance record already exists
+            const syncBiometricStatus = async (attendance) => {
+              if (attendance.biometricCheckIn) {
+                attendance.biometricStatus = await calculateBiometricStatus(
+                  leave.userId,
+                  attendance.biometricCheckIn,
+                  attendance.biometricCheckOut,
+                  attendance
+                );
+              } else if (
+                attendance.status?.startsWith('leave_applied') ||
+                attendance.status === 'leave_applied'
+              ) {
+                attendance.biometricStatus = attendance.status;
+              }
+            };
+
             for (const date of leave.dates || []) {
               try {
                 const dayStartIST = moment(date).tz('Asia/Kolkata').startOf('day').toDate();
@@ -622,6 +639,7 @@ async updateLeaveStatus({ leaveId, action, editor }) {
                   // Checked in but not checked out yet
                   // Keep original check-in status, just add leave linkage
                   attendance.leaveId = leave._id;
+                  await syncBiometricStatus(attendance);
                   await attendance.save();
                 } else if (attendance.checkInTime && attendance.checkOutTime) {
                   // Already checked out - apply 4.5h rule retroactively
@@ -644,6 +662,7 @@ async updateLeaveStatus({ leaveId, action, editor }) {
 
                   attendance.status = newStatus;
                   attendance.leaveId = leave._id;
+                  await syncBiometricStatus(attendance);
                   await attendance.save();
                 } else if (!attendance.checkInTime) {
                   // No check-in yet, apply normal half-day logic
@@ -662,6 +681,7 @@ async updateLeaveStatus({ leaveId, action, editor }) {
 
                   attendance.status = normalizedStatus;
                   attendance.leaveId = leave._id;
+                  await syncBiometricStatus(attendance);
                   await attendance.save();
                 }
               } catch (normErr) {
