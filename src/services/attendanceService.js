@@ -5,6 +5,13 @@ const { startOfDay, endOfDay } = require('date-fns');
 const moment = require('moment-timezone');
 const { calculateBiometricStatus } = require('./biometricWebhookService');
 
+const LEAVE_ATTENDANCE_STATUSES = [
+  'leave_applied',
+  'leave_applied_full',
+  'leave_applied_first_half',
+  'leave_applied_second_half',
+];
+
 // Helper function to get the start and end of the current month
 const getCurrentMonthRange = () => {
   const now = new Date();
@@ -526,14 +533,28 @@ async getTeamMembers(leaderId) {
 
       const attendanceWithDisplayStatus = await Promise.all(
         attendance.map(async (record) => {
-          // If biometric check-in exists but biometricStatus is not set, calculate it on the fly
-          if (record.biometricCheckIn && !record.biometricStatus) {
+          const userId = record.user?._id || record.user;
+          const shiftTime = record.user?.shiftTime;
+
+          if (LEAVE_ATTENDANCE_STATUSES.includes(record.status)) {
+            if (record.biometricCheckIn) {
+              record.biometricStatus = await calculateBiometricStatus(
+                userId,
+                record.biometricCheckIn,
+                record.biometricCheckOut,
+                record,
+                shiftTime
+              );
+            } else {
+              record.biometricStatus = record.status;
+            }
+          } else if (record.biometricCheckIn && !record.biometricStatus) {
             record.biometricStatus = await calculateBiometricStatus(
-              record.user?._id || record.user,
+              userId,
               record.biometricCheckIn,
               record.biometricCheckOut,
               record,
-              record.user?.shiftTime
+              shiftTime
             );
           }
 
@@ -679,6 +700,7 @@ async getTeamMembers(leaderId) {
                 user: userId,
                 date: standardizedDate,
                 status: attendanceStatus,
+                biometricStatus: attendanceStatus,
                 leaveId,
               },
             },
