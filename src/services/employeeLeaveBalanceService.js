@@ -9,6 +9,91 @@ const leaveApplicationModel = require('../models/leaveApplicationModel');
 const EmployeeHistory = require('../models/employeeHistory');
 
 class EmployeeLeaveBalanceService {
+  getYearBounds(year = new Date().getFullYear()) {
+    return {
+      yearStart: new Date(year, 0, 1),
+      yearEnd: new Date(year, 11, 31, 23, 59, 59, 999),
+    };
+  }
+
+  async getApprovedUsedDays(userId, leaveTypeId, yearStart, yearEnd) {
+    const leaves = await leaveApplicationModel.find({
+      userId,
+      leaveTypeId,
+      status: 'approved',
+      isDeleted: false,
+      dates: {
+        $elemMatch: {
+          $gte: yearStart,
+          $lte: yearEnd,
+        },
+      },
+    });
+
+    return leaves.reduce((acc, leave) => acc + (leave.totalDays || 0), 0);
+  }
+
+  async consolidateDuplicateBalances(userId, leaveTypeId) {
+    const records = await EmployeeLeaveBalance.find({ userId, leaveTypeId }).sort({
+      updatedAt: -1,
+      _id: -1,
+    });
+
+    if (records.length === 0) return null;
+    if (records.length === 1) return records[0];
+
+    const canonical = records[0];
+    for (const record of records) {
+      canonical.used = Math.max(canonical.used || 0, record.used || 0);
+      canonical.total = Math.max(canonical.total || 0, record.total || 0);
+      canonical.accrued = Math.max(canonical.accrued || 0, record.accrued || 0);
+      canonical.carryForwarded = Math.max(
+        canonical.carryForwarded || 0,
+        record.carryForwarded || 0
+      );
+    }
+
+    const duplicateIds = records.slice(1).map((record) => record._id);
+    await EmployeeLeaveBalance.deleteMany({ _id: { $in: duplicateIds } });
+    canonical.updatedAt = new Date();
+    await canonical.save();
+
+    return canonical;
+  }
+
+  async getCanonicalBalance(userId, leaveTypeId, yearStart, yearEnd) {
+    const balance = await this.consolidateDuplicateBalances(userId, leaveTypeId);
+    if (!balance) return null;
+
+    const approvedUsed = await this.getApprovedUsedDays(
+      userId,
+      leaveTypeId,
+      yearStart,
+      yearEnd
+    );
+
+    if (approvedUsed !== (balance.used || 0)) {
+      balance.used = approvedUsed;
+      balance.updatedAt = new Date();
+      await balance.save();
+    }
+
+    return balance;
+  }
+
+  async consolidateAndSyncAllForEmployee(userId, yearStart, yearEnd) {
+    const allBalances = await EmployeeLeaveBalance.find({ userId }).select(
+      'leaveTypeId'
+    );
+    const leaveTypeIds = [
+      ...new Set(allBalances.map((balance) => String(balance.leaveTypeId))),
+    ];
+
+    for (const leaveTypeId of leaveTypeIds) {
+      await this.getCanonicalBalance(userId, leaveTypeId, yearStart, yearEnd);
+    }
+  }
+
   // Helper method to get status change date for probation to onroll transition
   async getStatusChangeDate(employeeId) {
     try {
@@ -66,12 +151,19 @@ class EmployeeLeaveBalanceService {
   async getBalancesForEmployee(employeeId) {
     try {
       const currentYear = new Date().getFullYear();
-      const currentYearStart = new Date(currentYear, 0, 1);
-      const currentYearEnd = new Date(currentYear, 11, 31, 23, 59, 59, 999);
+      const { yearStart: currentYearStart, yearEnd: currentYearEnd } =
+        this.getYearBounds(currentYear);
 
       // 1. Get user with leave policy
       const user = await User.findById(employeeId).populate('leavePolicyId');
       if (!user) throw new ApiError(httpStatus.NOT_FOUND, 'User not found');
+
+      // Merge duplicate balance rows and sync used from approved applications
+      await this.consolidateAndSyncAllForEmployee(
+        employeeId,
+        currentYearStart,
+        currentYearEnd
+      );
 
       // 2. Fetch policy mappings
       const policyMappings = await LeavePolicyMapping.find({
