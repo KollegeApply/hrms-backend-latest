@@ -11,6 +11,7 @@ const LeaveType = require('../models/leaveTypeModel');
 const LeavePolicy = require('../models/leavePolicyModel');
 const LeavePolicyMapping = require('../models/leavePolicyMappingModel');
 const EmployeeLeaveBalance = require('../models/employeeLeaveBalanceModel');
+const employeeLeaveBalanceService = require('./employeeLeaveBalanceService');
 const moment = require('moment-timezone');
 const { paginate, transformDocumentPaths } = require('../utility/common');
 const { calculateBiometricStatus } = require('./biometricWebhookService');
@@ -526,10 +527,16 @@ async updateLeaveStatus({ leaveId, action, editor }) {
         if (action === 'approved') {
           // --- Side Effects for Approval ---
           // A. Update leave balance (for tracking purposes)
-          const empBalance = await EmployeeLeaveBalance.findOne({
-            userId: leave.userId,
-            leaveTypeId: leave.leaveTypeId._id,
-          });
+          const currentYear = new Date().getFullYear();
+          const { yearStart, yearEnd } =
+            employeeLeaveBalanceService.getYearBounds(currentYear);
+
+          const empBalance = await employeeLeaveBalanceService.getCanonicalBalance(
+            leave.userId,
+            leave.leaveTypeId._id,
+            yearStart,
+            yearEnd
+          );
 
           const daysToAdd = leave.totalDays || 0;
 
@@ -715,10 +722,16 @@ async updateLeaveStatus({ leaveId, action, editor }) {
       // Logic for reverting an already approved leave (Admin/HR action)
       if (isAdminOrHR && action === 'rejected') {
           // A. Revert leave balance
-          const empBalance = await EmployeeLeaveBalance.findOne({
-            userId: leave.userId,
-            leaveTypeId: leave.leaveTypeId._id,
-          });
+          const currentYear = new Date().getFullYear();
+          const { yearStart, yearEnd } =
+            employeeLeaveBalanceService.getYearBounds(currentYear);
+
+          const empBalance = await employeeLeaveBalanceService.getCanonicalBalance(
+            leave.userId,
+            leave.leaveTypeId._id,
+            yearStart,
+            yearEnd
+          );
           
           if (empBalance) {
             const daysToRevert = leave.totalDays || 0;
@@ -968,11 +981,6 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
         }
       }
 
-      const balance = await EmployeeLeaveBalance.findOne({
-        userId,
-        leaveTypeId: leaveType._id,
-      });
-      
       const currentYear = startMoment.year();
       const yearStart = moment
         .tz({ year: currentYear, month: 0, day: 1 }, 'Asia/Kolkata')
@@ -982,6 +990,13 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
         .tz({ year: currentYear, month: 11, day: 31 }, 'Asia/Kolkata')
         .endOf('day')
         .toDate();
+
+      const balance = await employeeLeaveBalanceService.getCanonicalBalance(
+        userId,
+        leaveType._id,
+        yearStart,
+        yearEnd
+      );
       
       // Calculate pending leaves for this type - restrict to current leave year
       const pendingLeaves = await LeaveApplication.find({

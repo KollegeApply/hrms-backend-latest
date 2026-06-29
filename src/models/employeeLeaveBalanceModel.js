@@ -18,6 +18,11 @@ const employeeLeaveBalanceSchema = new Schema(
   { timestamps: true }
 );
 
+employeeLeaveBalanceSchema.index(
+  { userId: 1, leaveTypeId: 1 },
+  { unique: true }
+);
+
 module.exports = mongoose.model(
   'EmployeeLeaveBalance',
   employeeLeaveBalanceSchema
