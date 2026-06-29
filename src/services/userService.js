@@ -693,6 +693,9 @@ class UserService {
           })
           .populate('leaveTypeId');
 
+        // Remove stale balances so RESTRICTED/fixed-quota rows are not duplicated
+        await employeeLeaveBalanceModel.deleteMany({ userId: user._id });
+
         // Create new balances
         for (const mapping of onrollMappings) {
           const {
