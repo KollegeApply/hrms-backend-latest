@@ -64,7 +64,8 @@ const getAllLeave = catchAsync(async (req, res) => {
   const currentUser = req.user;
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
-  const { status, department, search } = req.query;
+  const { status, department, search, startDate, endDate } = req.query;
+  const listFilters = { status, department, search, startDate, endDate };
   let leaves;
 
   // Check if user is Finance department teamlead
@@ -87,7 +88,7 @@ const getAllLeave = catchAsync(async (req, res) => {
       page,
       limit,
       financeTeamLeadId,
-      { status, department, search },
+      listFilters,
       currentUser.id,
       currentUser.role
     );
@@ -99,10 +100,15 @@ const getAllLeave = catchAsync(async (req, res) => {
       { id: currentUser.id, team: currentUser.team },
       page,
       limit,
-      { status, department, search }
+      listFilters
     );
   } else {
-    leaves = await leaveService?.getLeaveById({ id: currentUser.id }, page, limit);
+    leaves = await leaveService?.getLeaveById(
+      { id: currentUser.id },
+      page,
+      limit,
+      listFilters
+    );
   }
 
   res?.status(httpStatus.OK).json({
@@ -118,9 +124,14 @@ const getLeaveById = catchAsync(async (req, res) => {
     id: req?.params?.id,
   });
   
+  const { startDate, endDate } = req.query;
+
   // Always get leaves by specific user ID, regardless of role
   // This endpoint is for getting a specific user's leaves (e.g., for personal calendar)
-  const leaveFound = await leaveService?.getLeaveById(validatedData);
+  const leaveFound = await leaveService?.getLeaveById(validatedData, 1, 10, {
+    startDate,
+    endDate,
+  });
   
   if (!leaveFound) {
     throw new ApiError(httpStatus.NOT_FOUND, 'Leave not found.');
