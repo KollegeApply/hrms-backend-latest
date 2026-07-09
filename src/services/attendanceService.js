@@ -12,6 +12,23 @@ const LEAVE_ATTENDANCE_STATUSES = [
   'leave_applied_second_half',
 ];
 
+const PENDING_WORKFLOW_STATUSES = ['tl-pending', 'hr-pending'];
+
+/**
+ * Applies the same leave/regularisation display overrides used for `status`
+ * to any attendance status field (e.g. `biometricStatus`).
+ */
+const resolveAttendanceDisplayStatus = (record, baseStatus) => {
+  const regStatus = record?.regularization?.status;
+  if (regStatus === 'approved') return 'present';
+  if (PENDING_WORKFLOW_STATUSES.includes(regStatus)) return regStatus;
+
+  const leaveStatus = record?.leaveId?.status;
+  if (PENDING_WORKFLOW_STATUSES.includes(leaveStatus)) return leaveStatus;
+
+  return baseStatus;
+};
+
 // Helper function to get the start and end of the current month
 const getCurrentMonthRange = () => {
   const now = new Date();
@@ -531,26 +548,57 @@ async getTeamMembers(leaderId) {
         .sort({ date: -1, checkInTime: -1 })
         .lean();
 
+      const pendingLeaveQuery = {
+        status: { $in: PENDING_WORKFLOW_STATUSES },
+        isDeleted: { $ne: true },
+        dates: dateQuery,
+      };
+      if (query.user) {
+        pendingLeaveQuery.userId = query.user;
+      }
+
+      const pendingLeaves = await LeaveApplication.find(pendingLeaveQuery)
+        .select('_id userId dates status')
+        .lean();
+
+      const pendingLeaveByUserDate = new Map();
+      for (const leave of pendingLeaves) {
+        for (const leaveDate of leave.dates || []) {
+          const dateKey = moment(leaveDate).tz('Asia/Kolkata').format('YYYY-MM-DD');
+          pendingLeaveByUserDate.set(`${leave.userId}_${dateKey}`, leave);
+        }
+      }
+
       const attendanceWithDisplayStatus = await Promise.all(
         attendance.map(async (record) => {
-          const userId = record.user?._id || record.user;
+          const recordUserId = record.user?._id || record.user;
           const shiftTime = record.user?.shiftTime;
+
+          if (!record.leaveId) {
+            const dateKey = moment(record.date).tz('Asia/Kolkata').format('YYYY-MM-DD');
+            const pendingLeave = pendingLeaveByUserDate.get(`${recordUserId}_${dateKey}`);
+            if (pendingLeave) {
+              record.leaveId = pendingLeave;
+            }
+          }
+
+          let biometricBase = record.biometricStatus;
 
           if (LEAVE_ATTENDANCE_STATUSES.includes(record.status)) {
             if (record.biometricCheckIn) {
-              record.biometricStatus = await calculateBiometricStatus(
-                userId,
+              biometricBase = await calculateBiometricStatus(
+                recordUserId,
                 record.biometricCheckIn,
                 record.biometricCheckOut,
                 record,
                 shiftTime
               );
             } else {
-              record.biometricStatus = record.status;
+              biometricBase = record.status;
             }
-          } else if (record.biometricCheckIn && !record.biometricStatus) {
-            record.biometricStatus = await calculateBiometricStatus(
-              userId,
+          } else if (record.biometricCheckIn) {
+            biometricBase = await calculateBiometricStatus(
+              recordUserId,
               record.biometricCheckIn,
               record.biometricCheckOut,
               record,
@@ -558,20 +606,9 @@ async getTeamMembers(leaderId) {
             );
           }
 
-          const regStatus = record?.regularization?.status;
-          if (!regStatus) return record;
+          record.status = resolveAttendanceDisplayStatus(record, record.status);
+          record.biometricStatus = resolveAttendanceDisplayStatus(record, biometricBase);
 
-          // When regularization is approved, attendance should be treated as present.
-          if (regStatus === 'approved') {
-            return { ...record, status: 'present' };
-          }
-
-          // Only pending workflow statuses should replace late/early indicators.
-          if (regStatus === 'tl-pending' || regStatus === 'hr-pending') {
-            return { ...record, status: regStatus };
-          }
-
-          // For rejected/revoked, fall back to the base attendance status.
           return record;
         })
       );
@@ -609,21 +646,7 @@ async getTeamMembers(leaderId) {
         // Determine if user is currently checked in
         const isCheckedIn = attendance.checkInTime && !attendance.checkOutTime;
         
-        // Determine display status based on current attendance state
-        let displayStatus = attendance.status;
-
-        // If regularization exists for this attendance, adjust display status:
-        // - approved -> present
-        // - tl-pending/hr-pending -> tl-pending/hr-pending
-        // - rejected/revoked -> keep base attendance.status
-        if (attendance?.regularization?.status) {
-          const regStatus = attendance.regularization.status;
-          if (regStatus === 'approved') {
-            displayStatus = 'present';
-          } else if (regStatus === 'tl-pending' || regStatus === 'hr-pending') {
-            displayStatus = regStatus;
-          }
-        }
+        let displayStatus = resolveAttendanceDisplayStatus(attendance, attendance.status);
         
         // If user is checked in but status is early_out or late_in_early_out, 
         // they might be in the middle of their work day, so show appropriate status
