@@ -69,6 +69,35 @@ class leaveService {
       .filter(Boolean);
   }
 
+  buildDateRangeFilter(startDate, endDate) {
+    if (!startDate && !endDate) return null;
+    if (!startDate || !endDate) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        'Both startDate and endDate are required for date filtering.'
+      );
+    }
+
+    const startMoment = moment.tz(startDate, 'Asia/Kolkata').startOf('day');
+    const endMoment = moment.tz(endDate, 'Asia/Kolkata').endOf('day');
+
+    if (!startMoment.isValid() || !endMoment.isValid()) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid startDate or endDate.');
+    }
+    if (startMoment.isAfter(endMoment)) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'startDate cannot be after endDate.');
+    }
+
+    return {
+      dates: {
+        $elemMatch: {
+          $gte: startMoment.toDate(),
+          $lte: endMoment.toDate(),
+        },
+      },
+    };
+  }
+
   formatLeaveRecord(leave) {
     if (!leave) return leave;
     const plain =
@@ -105,9 +134,10 @@ class leaveService {
    * @returns {Promise<object>} - Paginated list of all non-deleted Leaves, sorted by date.
    */
   async getAllLeave(team, page = 1, limit = 10, financeTeamLeadId = null, filters = {}, requesterId = null, requesterRole = null) {
-    const { status, department, search } = filters || {};
+    const { status, department, search, startDate, endDate } = filters || {};
     const statusFilter = this.normalizeStatusFilter(status);
     const searchConditions = this.buildSearchConditions(search);
+    const dateFilter = this.buildDateRangeFilter(startDate, endDate);
 
     const userQuery = { team, isDeleted: { $ne: true } };
     if (department) {
@@ -144,6 +174,9 @@ class leaveService {
     };
     if (statusFilter && statusFilter.length > 0) {
       query.status = { $in: statusFilter };
+    }
+    if (dateFilter) {
+      Object.assign(query, dateFilter);
     }
 
     const populateOptions = [
@@ -378,12 +411,17 @@ class leaveService {
    * @param {number} limit - Items per page (default: 10)
    * @returns {Promise<object>} - Paginated list of leaves for the user.
    */
-  async getLeaveById({ id }, page = 1, limit = 10) {
+  async getLeaveById({ id }, page = 1, limit = 10, filters = {}) {
+    const { startDate, endDate } = filters || {};
+    const dateFilter = this.buildDateRangeFilter(startDate, endDate);
     const userObjectId = mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id;
     const query = {
       userId: userObjectId,
       isDeleted: { $ne: true }
     };
+    if (dateFilter) {
+      Object.assign(query, dateFilter);
+    }
 
     const populateOptions = [
       {
@@ -763,9 +801,10 @@ async updateLeaveStatus({ leaveId, action, editor }) {
 }
 
   async getLeaveTl({ id, team }, page = 1, limit = 10, filters = {}) {
-    const { status, department, search } = filters || {};
+    const { status, department, search, startDate, endDate } = filters || {};
     const statusFilter = this.normalizeStatusFilter(status);
     const searchConditions = this.buildSearchConditions(search);
+    const dateFilter = this.buildDateRangeFilter(startDate, endDate);
 
     const leadUsers = await User.find(
       {
@@ -794,6 +833,9 @@ async updateLeaveStatus({ leaveId, action, editor }) {
     };
     if (statusFilter && statusFilter.length > 0) {
       query.status = { $in: statusFilter };
+    }
+    if (dateFilter) {
+      Object.assign(query, dateFilter);
     }
 
     const populateOptions = [

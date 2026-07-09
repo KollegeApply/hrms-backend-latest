@@ -730,12 +730,12 @@ const regularizationService = {
       attendance.checkOutTime = regularization.requestedCheckOutTime;
       
       attendance.status = 'present';
+      attendance.biometricStatus = 'present';
 
-      // When mode is 'both', also update biometric fields
+      // When mode is 'both', also update biometric punch times
       if (regularization.regularizationMode === 'both') {
         attendance.biometricCheckIn = regularization.requestedCheckInTime;
         attendance.biometricCheckOut = regularization.requestedCheckOutTime;
-        attendance.biometricStatus = 'present';
       }
 
       await attendance.save();
