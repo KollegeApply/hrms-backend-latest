@@ -452,6 +452,13 @@ class UserService {
       throw new ApiError(httpStatus.CONFLICT, 'Employee ID is already in use.');
     }
 
+    // Empty strings cannot be cast to ObjectId — treat as unset
+    ['teamLeadId', 'subTeamLeadId', 'hrPocId'].forEach((field) => {
+      if (userData[field] === '') {
+        userData[field] = null;
+      }
+    });
+
     // Validate IDs (Team Lead, Sub Team Lead, HR POC)
     const idsToValidate = [
       { id: userData?.teamLeadId, label: 'Team Lead' },
@@ -770,10 +777,14 @@ class UserService {
       }
     }
 
-    // Handle empty string for hrPocId
-    if (updateData?.hrPocId === '') {
-      updateData.hrPocId = undefined;
-    } else if (updateData?.hrPocId) {
+    // Empty strings cannot be cast to ObjectId — treat as unset
+    ['teamLeadId', 'subTeamLeadId', 'hrPocId'].forEach((field) => {
+      if (updateData?.[field] === '') {
+        updateData[field] = null;
+      }
+    });
+
+    if (updateData?.hrPocId) {
       try {
         const hrExist = await this.getUserById(updateData?.hrPocId);
         if (!hrExist) {
