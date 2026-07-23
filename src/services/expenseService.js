@@ -667,7 +667,7 @@ class ExpenseService {
       }
 
       if (action === 'approved') {
-        expense.status = 'finance-approved';
+        expense.status = 'expense-approved';
       } else {
         if (!remark) {
           throw new ApiError(
@@ -798,7 +798,7 @@ class ExpenseService {
     for (const entry of statuses) {
       const normalized = entry.toLowerCase();
       if (normalized === 'approved') {
-        mapped.push('finance-approved');
+        mapped.push('expense-approved');
       } else if (normalized === 'pending') {
         mapped.push(...this.expensePendingStatuses());
       } else {
@@ -913,7 +913,7 @@ class ExpenseService {
     const perPage = Math.max(1, Number(limit) || 10);
     const skip = (currentPage - 1) * perPage;
     const pendingStatuses = this.expensePendingStatuses();
-    const approvedStatus = 'finance-approved';
+    const approvedStatus = 'expense-approved';
 
     const summaryFacet = [
       {

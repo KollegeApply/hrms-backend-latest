@@ -46,7 +46,7 @@ const expenseSchema = new Schema(
         'submitted',
         'tl-approved',
         'tl-rejected',
-        'finance-approved',
+        'expense-approved',
         'rejected',
       ],
       default: 'submitted',
