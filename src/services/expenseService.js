@@ -45,17 +45,50 @@ class ExpenseService {
     return value;
   }
 
-  async isFinalApproverDepartmentUser(userId) {
+  async getUserDepartmentName(userId) {
     const userWithDepartment = await User.findById(userId)
       .populate('department', 'name')
       .select('department')
       .lean();
 
-    const deptName = userWithDepartment?.department?.name
-      ?.toLowerCase()
-      ?.trim();
+    return userWithDepartment?.department?.name?.toLowerCase()?.trim();
+  }
 
+  /**
+   * Combined check kept only for reporting/dashboard visibility
+   * (`resolveExpenseDashboardAccess`), which intentionally treats the
+   * Expense and Finance departments as equivalent for viewing team-wide
+   * numbers. Approval-action gating uses the split checks below instead.
+   */
+  async isFinalApproverDepartmentUser(userId) {
+    const deptName = await this.getUserDepartmentName(userId);
     return deptName === 'expense' || deptName === 'finance';
+  }
+
+  /** Expense Team stage gate: first-pass review and post-return resubmission. */
+  async isExpenseDepartmentUser(userId) {
+    const deptName = await this.getUserDepartmentName(userId);
+    return deptName === 'expense';
+  }
+
+  /** Finance Team stage gate: second-pass review (approve or return). */
+  async isFinanceDepartmentUser(userId) {
+    const deptName = await this.getUserDepartmentName(userId);
+    return deptName === 'finance';
+  }
+
+  /** Appends one audit entry to an expense's approvalHistory (in-memory; caller must save()). */
+  pushApprovalHistory(expense, { action, byUserId, remark, stage }) {
+    if (!Array.isArray(expense.approvalHistory)) {
+      expense.approvalHistory = [];
+    }
+    expense.approvalHistory.push({
+      action,
+      byUserId: byUserId || undefined,
+      remark: remark || undefined,
+      stage,
+      createdAt: new Date(),
+    });
   }
 
   hasAttachmentUrl(payload) {
@@ -374,12 +407,16 @@ class ExpenseService {
     let tlId = hasTeamLead ? undefined : user.id;
     let tlRemark = hasTeamLead
       ? undefined
-      : 'Auto-routed to finance because team lead is not mapped.';
+      : 'Auto-routed to Expense Team because team lead is not mapped.';
+    let financeReviewStatus = hasTeamLead
+      ? undefined
+      : 'pending-expense-review';
 
     if (payload.type === 'Team Lunch') {
       status = 'tl-approved';
       tlId = undefined;
-      tlRemark = 'Team Lunch: routed directly to Finance (policy).';
+      tlRemark = 'Team Lunch: routed directly to Expense Team (policy).';
+      financeReviewStatus = 'pending-expense-review';
     }
 
     const attendeeIds =
@@ -413,6 +450,7 @@ class ExpenseService {
       status,
       tlId,
       tlRemark,
+      financeReviewStatus,
     });
 
     return Expense.findById(expense._id).populate([
@@ -469,14 +507,42 @@ class ExpenseService {
         query.userId = { $in: teamUsers.map((entry) => entry._id) };
       }
     } else if (activeQueue === 'finance') {
-      // Final queue: only Finance/Expense department users or Admin can action after TL approval.
-      const isFinalApproverDeptUser = await this.isFinalApproverDepartmentUser(
-        user.id
-      );
-      if (!(isFinalApproverAdminRole || isFinalApproverDeptUser)) {
+      // Expense Team's own queue: team-scoped, Expense department or Admin.
+      const isExpenseDeptUser = await this.isExpenseDepartmentUser(user.id);
+      if (!(isFinalApproverAdminRole || isExpenseDeptUser)) {
         query.userId = this.toObjectId(user.id);
       } else {
         query.team = user.team;
+      }
+
+      const financeReviewStatuses = this.splitCsvFilter(
+        filters.financeReviewStatus
+      );
+      if (financeReviewStatuses.length) {
+        query.financeReviewStatus = { $in: financeReviewStatuses };
+      }
+    } else if (activeQueue === 'finance-review') {
+      // Finance Team's own queue: NOT scoped by team or userId — sees all employees.
+      const isFinanceDeptUser = await this.isFinanceDepartmentUser(user.id);
+      if (!(isFinalApproverAdminRole || isFinanceDeptUser)) {
+        throw new ApiError(
+          httpStatus.FORBIDDEN,
+          'Only Finance department or Admin can view the Finance review queue.'
+        );
+      }
+
+      const financeReviewStatuses = this.splitCsvFilter(
+        filters.financeReviewStatus
+      );
+      if (financeReviewStatuses.length) {
+        query.financeReviewStatus = { $in: financeReviewStatuses };
+      }
+
+      if (
+        filters.returnedOnly === true ||
+        filters.returnedOnly === 'true'
+      ) {
+        query.returnedCount = { $gt: 0 };
       }
     } else {
       query.userId = this.toObjectId(user.id);
@@ -548,6 +614,10 @@ class ExpenseService {
         populate: [{ path: 'department', select: 'name' }],
       },
       { path: 'tlId', select: 'firstName lastName email employeeId role' },
+      {
+        path: 'approvalHistory.byUserId',
+        select: 'firstName lastName email employeeId role',
+      },
     ];
 
     const requesterObjectId = this.toObjectId(user.id);
@@ -636,6 +706,7 @@ class ExpenseService {
 
       if (action === 'approved') {
         expense.status = 'tl-approved';
+        expense.financeReviewStatus = 'pending-expense-review';
       } else {
         if (!remark) {
           throw new ApiError(
@@ -648,6 +719,12 @@ class ExpenseService {
 
       expense.tlId = currentUser.id;
       expense.tlRemark = remark || undefined;
+      this.pushApprovalHistory(expense, {
+        action,
+        byUserId: currentUser.id,
+        remark,
+        stage: 'team-lead',
+      });
       return expense.save();
     }
 
@@ -655,31 +732,109 @@ class ExpenseService {
       const isFinalApproverAdminRole = this.finalApproverAdminRoles.includes(
         currentUser.role
       );
-      const isFinalApproverDeptUser = await this.isFinalApproverDepartmentUser(
-        currentUser.id
-      );
+      // Legacy records predating this feature have no financeReviewStatus;
+      // treat them as already at the Expense Team's first pass.
+      const reviewStage = expense.financeReviewStatus || 'pending-expense-review';
 
-      if (!(isFinalApproverAdminRole || isFinalApproverDeptUser)) {
-        throw new ApiError(
-          httpStatus.FORBIDDEN,
-          'Only Finance/Expense department or Admin can action TL-approved expenses.'
+      if (
+        reviewStage === 'pending-expense-review' ||
+        reviewStage === 'returned-to-expense'
+      ) {
+        // Expense Team stage: first pass, or resubmission after a Finance return.
+        const isExpenseDeptUser = await this.isExpenseDepartmentUser(
+          currentUser.id
         );
-      }
-
-      if (action === 'approved') {
-        expense.status = 'expense-approved';
-      } else {
-        if (!remark) {
+        if (!(isFinalApproverAdminRole || isExpenseDeptUser)) {
           throw new ApiError(
-            httpStatus.BAD_REQUEST,
-            'Remark is required for rejection.'
+            httpStatus.FORBIDDEN,
+            'Only Expense department or Admin can action this expense.'
           );
         }
-        expense.status = 'rejected';
+
+        if (action === 'returned') {
+          throw new ApiError(
+            httpStatus.BAD_REQUEST,
+            'Expense Team cannot return an expense.'
+          );
+        }
+
+        if (action === 'approved') {
+          expense.financeReviewStatus = 'pending-finance-review';
+        } else {
+          if (!remark) {
+            throw new ApiError(
+              httpStatus.BAD_REQUEST,
+              'Remark is required for rejection.'
+            );
+          }
+          expense.status = 'rejected';
+          expense.financeReviewStatus = 'rejected';
+        }
+
+        expense.expenseRemark = remark || undefined;
+        this.pushApprovalHistory(expense, {
+          action,
+          byUserId: currentUser.id,
+          remark,
+          stage:
+            reviewStage === 'returned-to-expense'
+              ? 'expense-resubmit'
+              : 'expense-review',
+        });
+        return expense.save();
       }
 
-      expense.financeRemark = remark || undefined;
-      return expense.save();
+      if (reviewStage === 'pending-finance-review') {
+        // Finance Team stage: approve permanently, or return to Expense Team.
+        const isFinanceDeptUser = await this.isFinanceDepartmentUser(
+          currentUser.id
+        );
+        if (!(isFinalApproverAdminRole || isFinanceDeptUser)) {
+          throw new ApiError(
+            httpStatus.FORBIDDEN,
+            'Only Finance department or Admin can action this expense.'
+          );
+        }
+
+        if (action === 'rejected') {
+          throw new ApiError(
+            httpStatus.BAD_REQUEST,
+            'Finance Team cannot reject directly — use Return to Expense.'
+          );
+        }
+
+        if (action === 'approved') {
+          expense.status = 'expense-approved';
+          expense.financeReviewStatus = 'approved';
+        } else if (action === 'returned') {
+          if (!remark || remark.trim().length < 10) {
+            throw new ApiError(
+              httpStatus.BAD_REQUEST,
+              'A remark of at least 10 characters is required to return an expense.'
+            );
+          }
+          expense.financeReviewStatus = 'returned-to-expense';
+          expense.returnedCount = (expense.returnedCount || 0) + 1;
+          expense.lastReturnedAt = new Date();
+        } else {
+          throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid action.');
+        }
+
+        expense.financeRemark = remark || undefined;
+        this.pushApprovalHistory(expense, {
+          action,
+          byUserId: currentUser.id,
+          remark,
+          stage: 'finance-review',
+        });
+        return expense.save();
+      }
+
+      // financeReviewStatus is 'approved' or 'rejected' — already terminal.
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        `Expense in '${expense.status}' state cannot be modified.`
+      );
     }
 
     throw new ApiError(
@@ -695,7 +850,9 @@ class ExpenseService {
 
     for (const expenseId of expenseIds) {
       try {
-        const existing = await Expense.findById(expenseId).select('status');
+        const existing = await Expense.findById(expenseId).select(
+          'status financeReviewStatus'
+        );
         if (!existing) {
           failed.push({
             expenseId,
@@ -705,6 +862,7 @@ class ExpenseService {
         }
 
         const previousStatus = existing.status;
+        const previousFinanceReviewStatus = existing.financeReviewStatus;
         const updated = await this.updateExpenseStatus({
           expenseId,
           action,
@@ -712,7 +870,7 @@ class ExpenseService {
           currentUser,
         });
 
-        succeeded.push({ updated, previousStatus });
+        succeeded.push({ updated, previousStatus, previousFinanceReviewStatus });
       } catch (err) {
         failed.push({
           expenseId,

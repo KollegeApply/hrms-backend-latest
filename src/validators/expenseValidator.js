@@ -15,7 +15,7 @@ const objectIdSchema = Joi.string()
   }, 'ObjectId Validation')
   .message({ 'any.invalid': 'Invalid MongoDB ObjectId' });
 
-const allowedActions = ['approved', 'rejected'];
+const allowedActions = ['approved', 'rejected', 'returned'];
 
 const createExpenseSchema = Joi.object({
   date: Joi.date().required().messages({
@@ -178,8 +178,10 @@ const listExpenseSchema = Joi.object({
   type: Joi.string().trim().allow(''),
   fromDate: Joi.date(),
   toDate: Joi.date(),
-  queue: Joi.string().trim().valid('team', 'finance').optional(),
+  queue: Joi.string().trim().valid('team', 'finance', 'finance-review').optional(),
   search: Joi.string().trim().allow(''),
+  financeReviewStatus: Joi.string().trim().allow(''),
+  returnedOnly: Joi.boolean().optional(),
 }).options({ stripUnknown: true });
 
 const expenseIdSchema = Joi.object({
@@ -211,16 +213,29 @@ const updateExpenseStatusSchema = Joi.object({
         'any.required': 'Approval remarks are required.',
         'string.empty': 'Approval remarks are required.',
       }),
-    otherwise: Joi.string()
-      .trim()
-      .min(10)
-      .max(500)
-      .required()
-      .messages({
-        'string.min': 'Rejection reason must be at least 10 characters.',
-        'any.required': 'Rejection reason is required.',
-        'string.empty': 'Rejection reason is required.',
-      }),
+    otherwise: Joi.when('action', {
+      is: 'returned',
+      then: Joi.string()
+        .trim()
+        .min(10)
+        .max(500)
+        .required()
+        .messages({
+          'string.min': 'Return reason must be at least 10 characters.',
+          'any.required': 'Return reason is required.',
+          'string.empty': 'Return reason is required.',
+        }),
+      otherwise: Joi.string()
+        .trim()
+        .min(10)
+        .max(500)
+        .required()
+        .messages({
+          'string.min': 'Rejection reason must be at least 10 characters.',
+          'any.required': 'Rejection reason is required.',
+          'string.empty': 'Rejection reason is required.',
+        }),
+    }),
   }),
 }).options({ stripUnknown: true });
 

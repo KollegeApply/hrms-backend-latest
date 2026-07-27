@@ -140,9 +140,14 @@ const expensePopulatePaths = [
     path: 'tlId',
     select: 'firstName lastName email employeeId',
   },
+  {
+    path: 'approvalHistory.byUserId',
+    select: 'firstName lastName email employeeId',
+  },
 ];
 
-async function getFinalApproverEmails(team) {
+/** Expense Team's approver emails: team-scoped, plus admins and the team's fallback inbox. */
+async function getExpenseApproverEmails(team) {
   const approvers = await User.find({
     team,
     isDeleted: { $ne: true },
@@ -155,11 +160,7 @@ async function getFinalApproverEmails(team) {
     .filter((entry) => {
       const role = (entry.role || '').toLowerCase();
       const departmentName = (entry.department?.name || '').toLowerCase().trim();
-      return (
-        role === 'admin' ||
-        departmentName === 'expense' ||
-        departmentName === 'finance'
-      );
+      return role === 'admin' || departmentName === 'expense';
     })
     .map((entry) => entry.email)
     .filter(Boolean);
@@ -172,6 +173,26 @@ async function getFinalApproverEmails(team) {
     logger.warn(`Expense email fallback config unavailable for team ${team}: ${error.message}`);
   }
   return [...new Set([...fromUsers, ...fallback])];
+}
+
+/** Finance Team's approver emails: NOT team-scoped — Finance reviews expenses across all teams. */
+async function getFinanceApproverEmails() {
+  const approvers = await User.find({
+    isDeleted: { $ne: true },
+  })
+    .populate('department', 'name')
+    .select('email role department')
+    .lean();
+
+  const fromUsers = approvers
+    .filter((entry) => {
+      const departmentName = (entry.department?.name || '').toLowerCase().trim();
+      return departmentName === 'finance';
+    })
+    .map((entry) => entry.email)
+    .filter(Boolean);
+
+  return [...new Set(fromUsers)];
 }
 
 function getMailPayload(expenseDoc) {
@@ -315,7 +336,7 @@ async function sendExpenseSubmissionEmails(expenseDoc, team) {
           expenseDoc.status === 'submitted'
             ? 'Your expense claim has been submitted and is pending review by your Team Lead.'
             : expenseDoc.type === 'Team Lunch'
-              ? 'Your Team Lunch claim has been submitted and is pending Finance approval (TL review is skipped for this type).'
+              ? 'Your Team Lunch claim has been submitted and is pending Expense approval (TL review is skipped for this type).'
               : 'Your expense claim has been submitted and is pending final approval.',
         team,
         detailRowsHtml:
@@ -336,16 +357,16 @@ async function sendExpenseSubmissionEmails(expenseDoc, team) {
       );
     }
 
-    // Direct-to-Finance: no TL mapped, or Team Lunch (Finance-only per policy).
+    // Direct-to-Expense-Team: no TL mapped, or Team Lunch (Expense-Team-only per policy).
     if (expenseDoc.status === 'tl-approved' && (!tlEmail || expenseDoc.type === 'Team Lunch')) {
-      const finalApproverEmails = await getFinalApproverEmails(team);
+      const finalApproverEmails = await getExpenseApproverEmails(team);
       if (finalApproverEmails.length > 0) {
         const finalQueueMsg = renderExpenseEmailTemplate({
           heading: 'Expense Awaiting Final Approval',
           greeting: 'Team',
           intro:
             expenseDoc.type === 'Team Lunch'
-              ? 'A Team Lunch expense was submitted by a Team Lead and requires Finance approval.'
+              ? 'A Team Lunch expense was submitted by a Team Lead and requires Expense approval.'
               : 'An expense claim has reached the final review stage and requires your action.',
           team,
           detailRowsHtml:
@@ -363,7 +384,7 @@ async function sendExpenseSubmissionEmails(expenseDoc, team) {
           receiverEmails: finalApproverEmails,
           subject:
             expenseDoc.type === 'Team Lunch'
-              ? 'Team Lunch — Awaiting Finance Approval'
+              ? 'Team Lunch — Awaiting Expense Approval'
               : 'Expense Awaiting Final Approval',
           message: finalQueueMsg,
           team,
@@ -379,6 +400,7 @@ async function sendExpenseSubmissionEmails(expenseDoc, team) {
 
 async function sendExpenseStatusUpdateEmail({
   previousStatus,
+  previousFinanceReviewStatus,
   updatedExpense,
   action,
   currentUser,
@@ -386,10 +408,11 @@ async function sendExpenseStatusUpdateEmail({
 }) {
   try {
     const payload = getMailPayload(updatedExpense);
+    const newFinanceReviewStatus = updatedExpense.financeReviewStatus;
 
     if (previousStatus === 'submitted') {
       if (action === 'approved') {
-        const finalApproverEmails = await getFinalApproverEmails(team);
+        const finalApproverEmails = await getExpenseApproverEmails(team);
         if (finalApproverEmails.length > 0) {
           const msg = renderExpenseEmailTemplate({
             heading: 'TL Approved Expense - Awaiting Final Approval',
@@ -447,8 +470,9 @@ async function sendExpenseStatusUpdateEmail({
       return;
     }
 
-    if (previousStatus === 'tl-approved' && payload.employeeEmail) {
-      if (action === 'approved') {
+    if (previousStatus === 'tl-approved') {
+      // Finance approves -> terminal approval, notify employee only.
+      if (newFinanceReviewStatus === 'approved' && payload.employeeEmail) {
         const msg = renderExpenseEmailTemplate({
           heading: 'Your Expense Claim Has Been Approved',
           greeting: payload.employeeName,
@@ -461,7 +485,7 @@ async function sendExpenseStatusUpdateEmail({
           ctaLabel: 'View Details',
           ctaLink: payload.expenseLink,
           ctaColor: '#15803d',
-          footerLabel: `${getTeamFooterLabel(team)} - Finance`,
+          footerLabel: `${getTeamFooterLabel(team)} - Expense Team`,
         });
         Helper.sendEmail({
           receiverEmails: [payload.employeeEmail],
@@ -471,7 +495,11 @@ async function sendExpenseStatusUpdateEmail({
         }).catch((err) =>
           logger.error('Failed to send final approval mail to employee:', err)
         );
-      } else if (action === 'rejected') {
+        return;
+      }
+
+      // Expense Team rejects (first pass, or permanently after a Finance return).
+      if (newFinanceReviewStatus === 'rejected' && payload.employeeEmail) {
         const msg = renderExpenseEmailTemplate({
           heading: 'Your Expense Claim Was Not Approved',
           greeting: payload.employeeName,
@@ -481,11 +509,11 @@ async function sendExpenseStatusUpdateEmail({
           detailRowsHtml:
             renderExpenseDetailRow('Type', payload.expenseType) +
             renderExpenseDetailRow('Amount', payload.amount),
-          remarks: updatedExpense.financeRemark || '-',
+          remarks: updatedExpense.expenseRemark || '-',
           ctaLabel: 'View Details',
           ctaLink: payload.expenseLink,
           ctaColor: '#dc2626',
-          footerLabel: `${getTeamFooterLabel(team)} - Finance`,
+          footerLabel: `${getTeamFooterLabel(team)} - Expense Team`,
         });
         Helper.sendEmail({
           receiverEmails: [payload.employeeEmail],
@@ -495,6 +523,90 @@ async function sendExpenseStatusUpdateEmail({
         }).catch((err) =>
           logger.error('Failed to send final rejection mail to employee:', err)
         );
+        return;
+      }
+
+      // Expense Team forwards (first pass) or resubmits (after a return) to Finance.
+      if (
+        newFinanceReviewStatus === 'pending-finance-review' &&
+        previousFinanceReviewStatus !== 'pending-finance-review'
+      ) {
+        const financeApproverEmails = await getFinanceApproverEmails();
+        if (financeApproverEmails.length > 0) {
+          const isResubmission = previousFinanceReviewStatus === 'returned-to-expense';
+          const msg = renderExpenseEmailTemplate({
+            heading: isResubmission
+              ? 'Expense Resubmitted for Finance Review'
+              : 'Expense Awaiting Finance Review',
+            greeting: 'Finance Team',
+            intro: isResubmission
+              ? 'The Expense Team has resubmitted a previously returned expense for your review.'
+              : 'An expense claim has been reviewed by the Expense Team and now requires Finance review.',
+            team,
+            detailRowsHtml:
+              renderExpenseDetailRow(
+                'Employee',
+                `${payload.employeeName} (${payload.employeeId})`
+              ) +
+              renderExpenseDetailRow('Expense Type', payload.expenseType) +
+              renderExpenseDetailRow('Amount', payload.amount),
+            remarks: updatedExpense.expenseRemark || '',
+            remarksLabel: 'Expense Team Remark',
+            ctaLabel: 'Review Now',
+            ctaLink: payload.expenseLink,
+            footerLabel: `${getTeamFooterLabel(team)} - Expense Team`,
+          });
+          Helper.sendEmail({
+            receiverEmails: financeApproverEmails,
+            subject: isResubmission
+              ? 'Expense Resubmitted for Finance Review'
+              : 'Expense Awaiting Finance Review',
+            message: msg,
+            team,
+          }).catch((err) =>
+            logger.error('Failed to notify Finance Team of expense review:', err)
+          );
+        }
+        return;
+      }
+
+      // Finance returns an expense back to the Expense Team.
+      if (newFinanceReviewStatus === 'returned-to-expense') {
+        const expenseApproverEmails = await getExpenseApproverEmails(team);
+        if (expenseApproverEmails.length > 0) {
+          const msg = renderExpenseEmailTemplate({
+            heading: 'Expense Returned by Finance',
+            greeting: 'Expense Team',
+            intro:
+              'Finance has returned an expense claim for further review or correction.',
+            team,
+            detailRowsHtml:
+              renderExpenseDetailRow(
+                'Employee',
+                `${payload.employeeName} (${payload.employeeId})`
+              ) +
+              renderExpenseDetailRow('Expense Type', payload.expenseType) +
+              renderExpenseDetailRow('Amount', payload.amount) +
+              renderExpenseDetailRow(
+                'Times Returned',
+                String(updatedExpense.returnedCount || 1)
+              ),
+            remarks: updatedExpense.financeRemark || '',
+            remarksLabel: 'Finance Remark',
+            ctaLabel: 'Review Now',
+            ctaLink: payload.expenseLink,
+            ctaColor: '#dc2626',
+            footerLabel: `${getTeamFooterLabel(team)} - Finance Team`,
+          });
+          Helper.sendEmail({
+            receiverEmails: expenseApproverEmails,
+            subject: 'Expense Returned by Finance — Action Required',
+            message: msg,
+            team,
+          }).catch((err) =>
+            logger.error('Failed to notify Expense Team of Finance return:', err)
+          );
+        }
       }
     }
   } catch (error) {
@@ -608,8 +720,11 @@ const updateExpenseStatus = catchAsync(async (req, res) => {
     remark: req.body.remark,
   });
 
-  const existingExpense = await Expense.findById(validated.id).select('status');
+  const existingExpense = await Expense.findById(validated.id).select(
+    'status financeReviewStatus'
+  );
   const previousStatus = existingExpense?.status;
+  const previousFinanceReviewStatus = existingExpense?.financeReviewStatus;
 
   const updated = await expenseService.updateExpenseStatus({
     expenseId: validated.id,
@@ -626,6 +741,7 @@ const updateExpenseStatus = catchAsync(async (req, res) => {
   if (sendMail && previousStatus) {
     await sendExpenseStatusUpdateEmail({
       previousStatus,
+      previousFinanceReviewStatus,
       updatedExpense,
       action: validated.action,
       currentUser: req.user,
@@ -664,6 +780,7 @@ const bulkRejectExpenses = catchAsync(async (req, res) => {
     if (sendMail && item.previousStatus) {
       await sendExpenseStatusUpdateEmail({
         previousStatus: item.previousStatus,
+        previousFinanceReviewStatus: item.previousFinanceReviewStatus,
         updatedExpense,
         action: 'rejected',
         currentUser: req.user,
@@ -729,6 +846,7 @@ const bulkApproveExpenses = catchAsync(async (req, res) => {
     if (sendMail && item.previousStatus) {
       await sendExpenseStatusUpdateEmail({
         previousStatus: item.previousStatus,
+        previousFinanceReviewStatus: item.previousFinanceReviewStatus,
         updatedExpense,
         action: 'approved',
         currentUser: req.user,

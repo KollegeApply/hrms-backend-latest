@@ -53,7 +53,40 @@ const expenseSchema = new Schema(
     },
     tlId: { type: Schema.Types.ObjectId, ref: 'User' },
     tlRemark: { type: String, trim: true, maxlength: 500 },
+    expenseRemark: { type: String, trim: true, maxlength: 500 },
+    /**
+     * Finance Team Review sub-stage tracker. Only meaningful while
+     * `status === 'tl-approved'` — it tracks progress through the
+     * Expense Team <-> Finance Team loop without changing the coarse
+     * `status` value. Absent on legacy records (pre-dates this feature)
+     * and on records that never reached the Expense Team stage.
+     */
+    financeReviewStatus: {
+      type: String,
+      enum: [
+        'pending-expense-review',
+        'pending-finance-review',
+        'returned-to-expense',
+        'approved',
+        'rejected',
+      ],
+    },
+    /** Finance Team's latest remark (approve or return). */
     financeRemark: { type: String, trim: true, maxlength: 500 },
+    /** Number of times Finance has returned this expense to the Expense Team. */
+    returnedCount: { type: Number, default: 0 },
+    /** Timestamp of the most recent Finance return, if any. */
+    lastReturnedAt: { type: Date },
+    /** Full audit trail of every approval-workflow action on this expense. */
+    approvalHistory: [
+      {
+        action: { type: String, required: true },
+        byUserId: { type: Schema.Types.ObjectId, ref: 'User' },
+        remark: { type: String, trim: true, maxlength: 500 },
+        stage: { type: String },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
     isDeleted: { type: Boolean, default: false },
   },
   { timestamps: true }
@@ -76,6 +109,11 @@ expenseSchema.index(
 /** Dashboard: employee-scoped monthly rollups. */
 expenseSchema.index(
   { userId: 1, date: 1, status: 1 },
+  { partialFilterExpression: { isDeleted: { $ne: true } } }
+);
+/** Expense Team (team-scoped) and Finance Team (cross-team) review queues. */
+expenseSchema.index(
+  { financeReviewStatus: 1, team: 1 },
   { partialFilterExpression: { isDeleted: { $ne: true } } }
 );
 
