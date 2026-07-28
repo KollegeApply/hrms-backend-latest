@@ -46,8 +46,8 @@ const createExpenseSchema = Joi.object({
   clientPocName: Joi.string().trim().max(100).allow('', null).optional(),
   clientPocDesignation: Joi.string().trim().max(100).allow('', null).optional(),
   attendeeUserIds: Joi.array().items(objectIdSchema).max(200).optional(),
-  miscOthersDescription: Joi.string().trim().max(300).allow('', null).optional(),
-  travelMiscDescription: Joi.string().trim().max(200).allow('', null).optional(),
+  miscOthersDescription: Joi.string().trim().allow('', null).optional(),
+  travelMiscDescription: Joi.string().trim().allow('', null).optional(),
   cityTier: Joi.string().valid('Metro', 'Non-Metro').allow('', null).optional(),
   miscellaneousType: Joi.string().trim().max(200).allow('', null).optional(),
   amount: Joi.number().precision(2).greater(0).required().messages({
@@ -55,9 +55,8 @@ const createExpenseSchema = Joi.object({
     'number.greater': 'Amount must be greater than 0.',
     'any.required': 'Amount is required.',
   }),
-  purpose: Joi.string().trim().max(500).required().messages({
+  purpose: Joi.string().trim().required().messages({
     'string.empty': 'Purpose is required.',
-    'string.max': 'Purpose cannot exceed 500 characters.',
     'any.required': 'Purpose is required.',
   }),
   attachmentUrl: Joi.string()
@@ -90,7 +89,7 @@ const createExpenseSchema = Joi.object({
         const desc = (value.travelMiscDescription || '').trim();
         if (!desc) {
           return helpers.message({
-            custom: 'Description is required for Travel > Misc (max 200 characters).',
+            custom: 'Description is required for Travel > Misc.',
           });
         }
       }
@@ -122,8 +121,7 @@ const createExpenseSchema = Joi.object({
         const d = (value.miscOthersDescription || '').trim();
         if (!d) {
           return helpers.message({
-            custom:
-              'Description is required for Miscellaneous > Others (max 300 characters).',
+            custom: 'Description is required for Miscellaneous > Others.',
           });
         }
       }
@@ -180,8 +178,6 @@ const listExpenseSchema = Joi.object({
   toDate: Joi.date(),
   queue: Joi.string().trim().valid('team', 'finance', 'finance-review').optional(),
   search: Joi.string().trim().allow(''),
-  financeReviewStatus: Joi.string().trim().allow(''),
-  returnedOnly: Joi.boolean().optional(),
 }).options({ stripUnknown: true });
 
 const expenseIdSchema = Joi.object({
@@ -189,6 +185,16 @@ const expenseIdSchema = Joi.object({
     'any.required': 'Expense id is required.',
   }),
 });
+
+const allowedStatuses = [
+  'submitted',
+  'tl-approved',
+  'tl-rejected',
+  'expense-approved',
+  'expense-rejected',
+  'finance-returned',
+  'finance-approved',
+];
 
 const updateExpenseStatusSchema = Joi.object({
   id: objectIdSchema.required().messages({
@@ -201,12 +207,15 @@ const updateExpenseStatusSchema = Joi.object({
       'any.required': 'Action is required.',
       'any.only': `Action must be one of: ${allowedActions.join(', ')}`,
     }),
+  expectedStatus: Joi.string()
+    .trim()
+    .valid(...allowedStatuses)
+    .optional(),
   remark: Joi.when('action', {
     is: 'approved',
     then: Joi.string()
       .trim()
       .min(8)
-      .max(500)
       .required()
       .messages({
         'string.min': 'Approval remarks must be at least 8 characters.',
@@ -218,7 +227,6 @@ const updateExpenseStatusSchema = Joi.object({
       then: Joi.string()
         .trim()
         .min(10)
-        .max(500)
         .required()
         .messages({
           'string.min': 'Return reason must be at least 10 characters.',
@@ -228,7 +236,6 @@ const updateExpenseStatusSchema = Joi.object({
       otherwise: Joi.string()
         .trim()
         .min(10)
-        .max(500)
         .required()
         .messages({
           'string.min': 'Rejection reason must be at least 10 characters.',
@@ -254,7 +261,6 @@ const bulkApproveExpenseSchema = Joi.object({
   remark: Joi.string()
     .trim()
     .min(8)
-    .max(500)
     .required()
     .messages({
       'string.min': 'Approval remarks must be at least 8 characters.',
@@ -301,7 +307,6 @@ const bulkRejectExpenseSchema = Joi.object({
   remark: Joi.string()
     .trim()
     .min(10)
-    .max(500)
     .required()
     .messages({
       'string.min': 'Rejection reason must be at least 10 characters.',

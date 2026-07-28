@@ -29,60 +29,40 @@ const expenseSchema = new Schema(
     clientPocName: { type: String, trim: true, maxlength: 100 },
     clientPocDesignation: { type: String, trim: true, maxlength: 100 },
     attendeeUserIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
-    miscOthersDescription: { type: String, trim: true, maxlength: 300 },
-    travelMiscDescription: { type: String, trim: true, maxlength: 200 },
+    miscOthersDescription: { type: String, trim: true },
+    travelMiscDescription: { type: String, trim: true },
     /** Miscellaneous > Hotel Accommodation — Metro vs Non-Metro nightly cap (PRD). */
     cityTier: {
       type: String,
       enum: ['Metro', 'Non-Metro'],
     },
     amount: { type: Number, required: true, min: 0.01 },
-    purpose: { type: String, required: true, trim: true, maxlength: 500 },
+    purpose: { type: String, required: true, trim: true },
     attachmentUrl: { type: String, trim: true, maxlength: 500 },
     status: {
       type: String,
       enum: [
-        'draft',
         'submitted',
         'tl-approved',
         'tl-rejected',
         'expense-approved',
-        'rejected',
+        'expense-rejected',
+        'finance-returned',
+        'finance-approved',
       ],
       default: 'submitted',
     },
     tlId: { type: Schema.Types.ObjectId, ref: 'User' },
-    tlRemark: { type: String, trim: true, maxlength: 500 },
-    expenseRemark: { type: String, trim: true, maxlength: 500 },
-    /**
-     * Finance Team Review sub-stage tracker. Only meaningful while
-     * `status === 'tl-approved'` — it tracks progress through the
-     * Expense Team <-> Finance Team loop without changing the coarse
-     * `status` value. Absent on legacy records (pre-dates this feature)
-     * and on records that never reached the Expense Team stage.
-     */
-    financeReviewStatus: {
-      type: String,
-      enum: [
-        'pending-expense-review',
-        'pending-finance-review',
-        'returned-to-expense',
-        'approved',
-        'rejected',
-      ],
-    },
-    /** Finance Team's latest remark (approve or return). */
-    financeRemark: { type: String, trim: true, maxlength: 500 },
-    /** Number of times Finance has returned this expense to the Expense Team. */
-    returnedCount: { type: Number, default: 0 },
-    /** Timestamp of the most recent Finance return, if any. */
-    lastReturnedAt: { type: Date },
+    tlRemark: { type: String, trim: true },
+    expenseRemark: { type: String, trim: true },
+    /** Finance Department's latest remark (approve or return). */
+    financeRemark: { type: String, trim: true },
     /** Full audit trail of every approval-workflow action on this expense. */
     approvalHistory: [
       {
         action: { type: String, required: true },
         byUserId: { type: Schema.Types.ObjectId, ref: 'User' },
-        remark: { type: String, trim: true, maxlength: 500 },
+        remark: { type: String, trim: true },
         stage: { type: String },
         createdAt: { type: Date, default: Date.now },
       },
@@ -109,11 +89,6 @@ expenseSchema.index(
 /** Dashboard: employee-scoped monthly rollups. */
 expenseSchema.index(
   { userId: 1, date: 1, status: 1 },
-  { partialFilterExpression: { isDeleted: { $ne: true } } }
-);
-/** Expense Team (team-scoped) and Finance Team (cross-team) review queues. */
-expenseSchema.index(
-  { financeReviewStatus: 1, team: 1 },
   { partialFilterExpression: { isDeleted: { $ne: true } } }
 );
 
