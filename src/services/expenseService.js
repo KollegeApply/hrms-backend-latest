@@ -466,7 +466,7 @@ class ExpenseService {
 
   async getExpenses(user, filters, page = 1, limit = 10) {
     const query = { isDeleted: { $ne: true } };
-    const role = String(user.role || '').toLowerCase();
+    const role = (user.role || '').toLowerCase();
     const isAdminRole = this.adminRoles.includes(role);
     const isSuperAdminRole = this.superAdminRoles.includes(role);
     const isTlRole = this.tlRoles.includes(role);
@@ -688,7 +688,7 @@ class ExpenseService {
       throw new ApiError(httpStatus.NOT_FOUND, 'Expense not found.');
     }
 
-    const role = String(currentUser.role || '').toLowerCase();
+    const role = (currentUser.role || '').toLowerCase();
     const actorId = String(currentUser.id || currentUser._id || '');
     const isSuperAdmin = this.superAdminRoles.includes(role);
     const isTeamLead = this.tlRoles.includes(role);

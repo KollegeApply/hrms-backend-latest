@@ -29,15 +29,15 @@ const expenseSchema = new Schema(
     clientPocName: { type: String, trim: true, maxlength: 100 },
     clientPocDesignation: { type: String, trim: true, maxlength: 100 },
     attendeeUserIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
-    miscOthersDescription: { type: String, trim: true },
-    travelMiscDescription: { type: String, trim: true },
+    miscOthersDescription: { type: String, trim: true, maxlength: 300 },
+    travelMiscDescription: { type: String, trim: true, maxlength: 200 },
     /** Miscellaneous > Hotel Accommodation — Metro vs Non-Metro nightly cap (PRD). */
     cityTier: {
       type: String,
       enum: ['Metro', 'Non-Metro'],
     },
     amount: { type: Number, required: true, min: 0.01 },
-    purpose: { type: String, required: true, trim: true },
+    purpose: { type: String, required: true, trim: true, maxlength: 500 },
     attachmentUrl: { type: String, trim: true, maxlength: 500 },
     status: {
       type: String,
@@ -53,16 +53,16 @@ const expenseSchema = new Schema(
       default: 'submitted',
     },
     tlId: { type: Schema.Types.ObjectId, ref: 'User' },
-    tlRemark: { type: String, trim: true },
-    expenseRemark: { type: String, trim: true },
+    tlRemark: { type: String, trim: true, maxlength: 500 },
+    expenseRemark: { type: String, trim: true, maxlength: 500 },
     /** Finance Department's latest remark (approve or return). */
-    financeRemark: { type: String, trim: true },
+    financeRemark: { type: String, trim: true, maxlength: 500 },
     /** Full audit trail of every approval-workflow action on this expense. */
     approvalHistory: [
       {
         action: { type: String, required: true },
         byUserId: { type: Schema.Types.ObjectId, ref: 'User' },
-        remark: { type: String, trim: true },
+        remark: { type: String, trim: true, maxlength: 500 },
         stage: { type: String },
         createdAt: { type: Date, default: Date.now },
       },
