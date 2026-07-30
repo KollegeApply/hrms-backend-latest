@@ -192,10 +192,10 @@ const allowedStatuses = [
   'submitted',
   'tl-approved',
   'tl-rejected',
-  'expense-approved',
+  'admin-approved',
   'expense-rejected',
-  'finance-returned',
-  'finance-approved',
+  'expense-returned',
+  'expense-approved',
 ];
 
 const updateExpenseStatusSchema = Joi.object({
