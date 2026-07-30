@@ -123,8 +123,8 @@ class ExpenseService {
     return [
       'submitted',
       'tl-approved',
-      'expense-approved',
-      'finance-returned',
+      'admin-approved',
+      'expense-returned',
     ];
   }
 
@@ -530,16 +530,16 @@ class ExpenseService {
     const statuses = this.splitCsvFilter(filters.status);
     const expenseQueueStatuses = [
       'tl-approved',
+      'admin-approved',
+      'expense-returned',
       'expense-approved',
-      'finance-returned',
-      'finance-approved',
       'expense-rejected',
     ];
     // Finance Review Fin. Status dropdown options only — "All" must match the dropdown.
     const financeQueueStatuses = [
+      'admin-approved',
+      'expense-returned',
       'expense-approved',
-      'finance-returned',
-      'finance-approved',
     ];
 
     if (statuses.length) {
@@ -758,7 +758,7 @@ class ExpenseService {
       return expense.save();
     }
 
-    if (currentStatus === 'tl-approved' || currentStatus === 'finance-returned') {
+    if (currentStatus === 'tl-approved' || currentStatus === 'expense-returned') {
       const isExpenseDeptUser = await this.isExpenseDepartmentUser(actorId);
       if (!(isFinalApproverAdminRole || isExpenseDeptUser)) {
         throw new ApiError(
@@ -775,7 +775,7 @@ class ExpenseService {
       }
 
       if (action === 'approved') {
-        expense.status = 'expense-approved';
+        expense.status = 'admin-approved';
       } else if (action === 'rejected') {
         if (!remark) {
           throw new ApiError(
@@ -794,14 +794,14 @@ class ExpenseService {
         byUserId: actorId,
         remark,
         stage:
-          currentStatus === 'finance-returned'
+          currentStatus === 'expense-returned'
             ? 'expense-resubmit'
             : 'expense-review',
       });
       return expense.save();
     }
 
-    if (currentStatus === 'expense-approved') {
+    if (currentStatus === 'admin-approved') {
       const isFinanceDeptUser = await this.isFinanceDepartmentUser(actorId);
       if (!(isFinalApproverAdminRole || isFinanceDeptUser)) {
         throw new ApiError(
@@ -818,7 +818,7 @@ class ExpenseService {
       }
 
       if (action === 'approved') {
-        expense.status = 'finance-approved';
+        expense.status = 'expense-approved';
       } else if (action === 'returned') {
         if (!remark || remark.trim().length < 10) {
           throw new ApiError(
@@ -826,7 +826,7 @@ class ExpenseService {
             'A remark of at least 10 characters is required to return an expense.'
           );
         }
-        expense.status = 'finance-returned';
+        expense.status = 'expense-returned';
       } else {
         throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid action.');
       }
@@ -957,7 +957,7 @@ class ExpenseService {
     for (const entry of statuses) {
       const normalized = entry.toLowerCase();
       if (normalized === 'approved') {
-        mapped.push('finance-approved');
+        mapped.push('expense-approved');
       } else if (normalized === 'pending') {
         mapped.push(...this.expensePendingStatuses());
       } else if (normalized === 'rejected') {
@@ -1074,7 +1074,7 @@ class ExpenseService {
     const perPage = Math.max(1, Number(limit) || 10);
     const skip = (currentPage - 1) * perPage;
     const pendingStatuses = this.expensePendingStatuses();
-    const approvedStatus = 'finance-approved';
+    const approvedStatus = 'expense-approved';
 
     const summaryFacet = [
       {

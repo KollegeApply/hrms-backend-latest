@@ -470,12 +470,12 @@ async function sendExpenseStatusUpdateEmail({
     }
 
     if (
-      (previousStatus === 'tl-approved' || previousStatus === 'finance-returned') &&
-      newStatus === 'expense-approved'
+      (previousStatus === 'tl-approved' || previousStatus === 'expense-returned') &&
+      newStatus === 'admin-approved'
     ) {
       const financeApproverEmails = await getFinanceApproverEmails();
       if (financeApproverEmails.length > 0) {
-        const isResubmission = previousStatus === 'finance-returned';
+        const isResubmission = previousStatus === 'expense-returned';
         const msg = renderExpenseEmailTemplate({
           heading: isResubmission
             ? 'Expense Resubmitted for Finance Review'
@@ -513,7 +513,7 @@ async function sendExpenseStatusUpdateEmail({
     }
 
     if (
-      (previousStatus === 'tl-approved' || previousStatus === 'finance-returned') &&
+      (previousStatus === 'tl-approved' || previousStatus === 'expense-returned') &&
       newStatus === 'expense-rejected' &&
       payload.employeeEmail
     ) {
@@ -544,8 +544,8 @@ async function sendExpenseStatusUpdateEmail({
     }
 
     if (
-      previousStatus === 'expense-approved' &&
-      newStatus === 'finance-approved' &&
+      previousStatus === 'admin-approved' &&
+      newStatus === 'expense-approved' &&
       payload.employeeEmail
     ) {
       const msg = renderExpenseEmailTemplate({
@@ -574,8 +574,8 @@ async function sendExpenseStatusUpdateEmail({
     }
 
     if (
-      previousStatus === 'expense-approved' &&
-      newStatus === 'finance-returned'
+      previousStatus === 'admin-approved' &&
+      newStatus === 'expense-returned'
     ) {
       const expenseApproverEmails = await getExpenseApproverEmails(team);
       if (expenseApproverEmails.length > 0) {
