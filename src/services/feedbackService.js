@@ -1,6 +1,7 @@
 const Feedback = require("../models/feedbackModel");
 const User = require("../models/userModel");
 const Department = require("../models/departmentModel");
+const mongoose = require("mongoose");
 const aiService = require("./aiService");
 const kpiService = require("./kpiService");
 const { getPeriodById, validatePeriod } = require("../utility/periodUtils");
@@ -765,6 +766,25 @@ class FeedbacksService {
 };
 
 
+
+    /**
+     * Latest non-deleted feedback received by an employee (givenTo).
+     * Sorted by createdAt desc — same newest-first rule as feedback listing.
+     * Returns lean {_id} only; null when none exist.
+     */
+    async getLatestFeedbackForEmployee(employeeUserId) {
+        if (!employeeUserId || !mongoose.Types.ObjectId.isValid(employeeUserId)) {
+            return null;
+        }
+
+        return Feedback.findOne({
+            givenTo: employeeUserId,
+            isDeleted: false,
+        })
+            .sort({ createdAt: -1 })
+            .select('_id')
+            .lean();
+    }
 
     async getFeedbackById(feedbackId, userId, userRole) {
         const feedback = await Feedback.findById(feedbackId)

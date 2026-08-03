@@ -304,6 +304,17 @@ const getFeedbackById = catchAsync(async (req, res) => {
   res.status(200).json({ success: true, data: feedback });
 });
 
+const getLatestFeedbackForEmployee = catchAsync(async (req, res) => {
+  const employeeUserId = req.params.userId;
+  const latest = await feedbackService.getLatestFeedbackForEmployee(employeeUserId);
+
+  // Always 200: null data means no feedback (no error / no redirect on client)
+  return res.status(200).json({
+    success: true,
+    data: latest ? { _id: latest._id } : null,
+  });
+});
+
 const raiseConcern = catchAsync(async (req, res) => {
   const userId = req.user.id;
   const {role, team} = req.user
@@ -550,6 +561,7 @@ module.exports = {
   createFeedback,
   getAllFeedbacks,
   getFeedbackById,
+  getLatestFeedbackForEmployee,
   raiseConcern,
   requestEdit,
   updateEditRequestStatus,
