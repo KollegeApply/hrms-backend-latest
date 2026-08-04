@@ -45,17 +45,50 @@ class ExpenseService {
     return value;
   }
 
-  async isFinalApproverDepartmentUser(userId) {
+  async getUserDepartmentName(userId) {
     const userWithDepartment = await User.findById(userId)
       .populate('department', 'name')
       .select('department')
       .lean();
 
-    const deptName = userWithDepartment?.department?.name
-      ?.toLowerCase()
-      ?.trim();
+    return userWithDepartment?.department?.name?.toLowerCase()?.trim();
+  }
 
+  /**
+   * Combined check kept only for reporting/dashboard visibility
+   * (`resolveExpenseDashboardAccess`), which intentionally treats the
+   * Expense and Finance departments as equivalent for viewing team-wide
+   * numbers. Approval-action gating uses the split checks below instead.
+   */
+  async isFinalApproverDepartmentUser(userId) {
+    const deptName = await this.getUserDepartmentName(userId);
     return deptName === 'expense' || deptName === 'finance';
+  }
+
+  /** Expense Department stage gate: first-pass review and post-return resubmission. */
+  async isExpenseDepartmentUser(userId) {
+    const deptName = await this.getUserDepartmentName(userId);
+    return deptName === 'expense';
+  }
+
+  /** Finance Department stage gate: second-pass review (approve or return). */
+  async isFinanceDepartmentUser(userId) {
+    const deptName = await this.getUserDepartmentName(userId);
+    return deptName === 'finance';
+  }
+
+  /** Appends one audit entry to an expense's approvalHistory (in-memory; caller must save()). */
+  pushApprovalHistory(expense, { action, byUserId, remark, stage }) {
+    if (!Array.isArray(expense.approvalHistory)) {
+      expense.approvalHistory = [];
+    }
+    expense.approvalHistory.push({
+      action,
+      byUserId: byUserId || undefined,
+      remark: remark || undefined,
+      stage,
+      createdAt: new Date(),
+    });
   }
 
   hasAttachmentUrl(payload) {
@@ -85,9 +118,14 @@ class ExpenseService {
     return Math.round(Number(n) * 100) / 100;
   }
 
-  /** Pending statuses (maps to tl-pending / hr-pending on leave & regularisation lists). */
+  /** In-flight statuses (not yet finally approved or rejected). */
   expensePendingStatuses() {
-    return ['submitted', 'tl-approved'];
+    return [
+      'submitted',
+      'tl-approved',
+      'admin-approved',
+      'expense-returned',
+    ];
   }
 
   /**
@@ -374,12 +412,12 @@ class ExpenseService {
     let tlId = hasTeamLead ? undefined : user.id;
     let tlRemark = hasTeamLead
       ? undefined
-      : 'Auto-routed to finance because team lead is not mapped.';
+      : 'Auto-routed to Expense Department because team lead is not mapped.';
 
     if (payload.type === 'Team Lunch') {
       status = 'tl-approved';
       tlId = undefined;
-      tlRemark = 'Team Lunch: routed directly to Finance (policy).';
+      tlRemark = 'Team Lunch: routed directly to Expense Department (policy).';
     }
 
     const attendeeIds =
@@ -428,7 +466,7 @@ class ExpenseService {
 
   async getExpenses(user, filters, page = 1, limit = 10) {
     const query = { isDeleted: { $ne: true } };
-    const role = user.role;
+    const role = (user.role || '').toLowerCase();
     const isAdminRole = this.adminRoles.includes(role);
     const isSuperAdminRole = this.superAdminRoles.includes(role);
     const isTlRole = this.tlRoles.includes(role);
@@ -469,22 +507,57 @@ class ExpenseService {
         query.userId = { $in: teamUsers.map((entry) => entry._id) };
       }
     } else if (activeQueue === 'finance') {
-      // Final queue: only Finance/Expense department users or Admin can action after TL approval.
-      const isFinalApproverDeptUser = await this.isFinalApproverDepartmentUser(
-        user.id
-      );
-      if (!(isFinalApproverAdminRole || isFinalApproverDeptUser)) {
+      // Expense Department queue: team-scoped, Expense department or Admin.
+      const isExpenseDeptUser = await this.isExpenseDepartmentUser(user.id);
+      if (!(isFinalApproverAdminRole || isExpenseDeptUser)) {
         query.userId = this.toObjectId(user.id);
       } else {
         query.team = user.team;
+      }
+    } else if (activeQueue === 'finance-review') {
+      // Finance Department queue: NOT scoped by team or userId — sees all employees.
+      const isFinanceDeptUser = await this.isFinanceDepartmentUser(user.id);
+      if (!(isFinalApproverAdminRole || isFinanceDeptUser)) {
+        throw new ApiError(
+          httpStatus.FORBIDDEN,
+          'Only Finance department or Admin can view the Finance review queue.'
+        );
       }
     } else {
       query.userId = this.toObjectId(user.id);
     }
 
     const statuses = this.splitCsvFilter(filters.status);
+    const expenseQueueStatuses = [
+      'tl-approved',
+      'admin-approved',
+      'expense-returned',
+      'expense-approved',
+      'expense-rejected',
+    ];
+    // Finance Review Fin. Status dropdown options only — "All" must match the dropdown.
+    const financeQueueStatuses = [
+      'admin-approved',
+      'expense-returned',
+      'expense-approved',
+    ];
+
     if (statuses.length) {
-      query.status = { $in: statuses };
+      if (activeQueue === 'finance') {
+        query.status = {
+          $in: statuses.filter((s) => expenseQueueStatuses.includes(s)),
+        };
+      } else if (activeQueue === 'finance-review') {
+        query.status = {
+          $in: statuses.filter((s) => financeQueueStatuses.includes(s)),
+        };
+      } else {
+        query.status = { $in: statuses };
+      }
+    } else if (activeQueue === 'finance') {
+      query.status = { $in: expenseQueueStatuses };
+    } else if (activeQueue === 'finance-review') {
+      query.status = { $in: financeQueueStatuses };
     }
 
     const types = this.splitCsvFilter(filters.type);
@@ -548,6 +621,10 @@ class ExpenseService {
         populate: [{ path: 'department', select: 'name' }],
       },
       { path: 'tlId', select: 'firstName lastName email employeeId role' },
+      {
+        path: 'approvalHistory.byUserId',
+        select: 'firstName lastName email employeeId role',
+      },
     ];
 
     const requesterObjectId = this.toObjectId(user.id);
@@ -599,18 +676,42 @@ class ExpenseService {
     };
   }
 
-  async updateExpenseStatus({ expenseId, action, remark, currentUser }) {
+  async updateExpenseStatus({
+    expenseId,
+    action,
+    remark,
+    currentUser,
+    expectedStatus,
+  }) {
     const expense = await Expense.findById(expenseId);
     if (!expense || expense.isDeleted) {
       throw new ApiError(httpStatus.NOT_FOUND, 'Expense not found.');
     }
 
-    const isAdmin = this.adminRoles.includes(currentUser.role);
-    const isSuperAdmin = this.superAdminRoles.includes(currentUser.role);
-    const isTeamLead = this.tlRoles.includes(currentUser.role);
+    const role = (currentUser.role || '').toLowerCase();
+    const actorId = String(currentUser.id || currentUser._id || '');
+    const isSuperAdmin = this.superAdminRoles.includes(role);
+    const isTeamLead = this.tlRoles.includes(role);
+    const isHr = role === 'hr';
+    const isFinalApproverAdminRole = this.finalApproverAdminRoles.includes(role);
+    const currentStatus = expense.status;
 
-    if (expense.status === 'submitted') {
-      if (!isAdmin && !isTeamLead) {
+    // Optimistic lock: reject stale UI actions against a status that already moved.
+    if (
+      expectedStatus &&
+      String(expectedStatus).toLowerCase() !== String(currentStatus).toLowerCase()
+    ) {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        `Expense status has changed to '${currentStatus}'. Refreshing latest status.`
+      );
+    }
+
+    if (currentStatus === 'submitted') {
+      // Team Approvals: TL/SubTL, mapped HR lead, or Super Admin.
+      // HR is included because the Team Approvals tab is shown to HR and HR
+      // users are often mapped as teamLeadId for employees.
+      if (!isSuperAdmin && !isTeamLead && !isHr) {
         throw new ApiError(
           httpStatus.FORBIDDEN,
           'Only Team Lead/Admin can action submitted expenses.'
@@ -622,11 +723,9 @@ class ExpenseService {
       );
       const isDirectLead =
         employee &&
-        (employee.teamLeadId?.toString() === currentUser.id.toString() ||
-          employee.subTeamLeadId?.toString() === currentUser.id.toString());
+        (employee.teamLeadId?.toString() === actorId ||
+          employee.subTeamLeadId?.toString() === actorId);
 
-      // For submitted expenses, approval is TL-mapping based.
-      // Super admins can still action any submitted expense.
       if (!isSuperAdmin && !isDirectLead) {
         throw new ApiError(
           httpStatus.FORBIDDEN,
@@ -636,7 +735,7 @@ class ExpenseService {
 
       if (action === 'approved') {
         expense.status = 'tl-approved';
-      } else {
+      } else if (action === 'rejected') {
         if (!remark) {
           throw new ApiError(
             httpStatus.BAD_REQUEST,
@@ -644,41 +743,101 @@ class ExpenseService {
           );
         }
         expense.status = 'tl-rejected';
+      } else {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid action.');
       }
 
-      expense.tlId = currentUser.id;
+      expense.tlId = actorId;
       expense.tlRemark = remark || undefined;
+      this.pushApprovalHistory(expense, {
+        action,
+        byUserId: actorId,
+        remark,
+        stage: 'team-lead',
+      });
       return expense.save();
     }
 
-    if (expense.status === 'tl-approved') {
-      const isFinalApproverAdminRole = this.finalApproverAdminRoles.includes(
-        currentUser.role
-      );
-      const isFinalApproverDeptUser = await this.isFinalApproverDepartmentUser(
-        currentUser.id
-      );
-
-      if (!(isFinalApproverAdminRole || isFinalApproverDeptUser)) {
+    if (currentStatus === 'tl-approved' || currentStatus === 'expense-returned') {
+      const isExpenseDeptUser = await this.isExpenseDepartmentUser(actorId);
+      if (!(isFinalApproverAdminRole || isExpenseDeptUser)) {
         throw new ApiError(
           httpStatus.FORBIDDEN,
-          'Only Finance/Expense department or Admin can action TL-approved expenses.'
+          'Only Expense department or Admin can action this expense.'
+        );
+      }
+
+      if (action === 'returned') {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+            'Expense Department cannot return an expense.'
         );
       }
 
       if (action === 'approved') {
-        expense.status = 'finance-approved';
-      } else {
+        expense.status = 'admin-approved';
+      } else if (action === 'rejected') {
         if (!remark) {
           throw new ApiError(
             httpStatus.BAD_REQUEST,
             'Remark is required for rejection.'
           );
         }
-        expense.status = 'rejected';
+        expense.status = 'expense-rejected';
+      } else {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid action.');
+      }
+
+      expense.expenseRemark = remark || undefined;
+      this.pushApprovalHistory(expense, {
+        action,
+        byUserId: actorId,
+        remark,
+        stage:
+          currentStatus === 'expense-returned'
+            ? 'expense-resubmit'
+            : 'expense-review',
+      });
+      return expense.save();
+    }
+
+    if (currentStatus === 'admin-approved') {
+      const isFinanceDeptUser = await this.isFinanceDepartmentUser(actorId);
+      if (!(isFinalApproverAdminRole || isFinanceDeptUser)) {
+        throw new ApiError(
+          httpStatus.FORBIDDEN,
+          'Only Finance department or Admin can action this expense.'
+        );
+      }
+
+      if (action === 'rejected') {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          'Finance Department cannot reject directly — use Return to Expense Department.'
+        );
+      }
+
+      if (action === 'approved') {
+        expense.status = 'expense-approved';
+      } else if (action === 'returned') {
+        if (!remark || remark.trim().length < 10) {
+          throw new ApiError(
+            httpStatus.BAD_REQUEST,
+            'A remark of at least 10 characters is required to return an expense.'
+          );
+        }
+        expense.status = 'expense-returned';
+      } else {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid action.');
       }
 
       expense.financeRemark = remark || undefined;
+      this.pushApprovalHistory(expense, {
+        action,
+        byUserId: actorId,
+        remark,
+        stage: 'finance-review',
+      });
       return expense.save();
     }
 
@@ -798,9 +957,11 @@ class ExpenseService {
     for (const entry of statuses) {
       const normalized = entry.toLowerCase();
       if (normalized === 'approved') {
-        mapped.push('finance-approved');
+        mapped.push('expense-approved');
       } else if (normalized === 'pending') {
         mapped.push(...this.expensePendingStatuses());
+      } else if (normalized === 'rejected') {
+        mapped.push('expense-rejected');
       } else {
         mapped.push(entry);
       }
@@ -913,7 +1074,7 @@ class ExpenseService {
     const perPage = Math.max(1, Number(limit) || 10);
     const skip = (currentPage - 1) * perPage;
     const pendingStatuses = this.expensePendingStatuses();
-    const approvedStatus = 'finance-approved';
+    const approvedStatus = 'expense-approved';
 
     const summaryFacet = [
       {

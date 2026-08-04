@@ -42,18 +42,31 @@ const expenseSchema = new Schema(
     status: {
       type: String,
       enum: [
-        'draft',
         'submitted',
         'tl-approved',
         'tl-rejected',
-        'finance-approved',
-        'rejected',
+        'admin-approved',
+        'expense-rejected',
+        'expense-returned',
+        'expense-approved',
       ],
       default: 'submitted',
     },
     tlId: { type: Schema.Types.ObjectId, ref: 'User' },
     tlRemark: { type: String, trim: true, maxlength: 500 },
+    expenseRemark: { type: String, trim: true, maxlength: 500 },
+    /** Finance Department's latest remark (approve or return). */
     financeRemark: { type: String, trim: true, maxlength: 500 },
+    /** Full audit trail of every approval-workflow action on this expense. */
+    approvalHistory: [
+      {
+        action: { type: String, required: true },
+        byUserId: { type: Schema.Types.ObjectId, ref: 'User' },
+        remark: { type: String, trim: true, maxlength: 500 },
+        stage: { type: String },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
     isDeleted: { type: Boolean, default: false },
   },
   { timestamps: true }

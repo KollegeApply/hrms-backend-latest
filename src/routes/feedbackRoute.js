@@ -15,6 +15,14 @@ router.get("/", authenticateUser, feedbackController.getAllFeedbacks);
 
 router.get("/departments", authenticateUser, feedbackController.getDepartments);
 
+// Must be registered before "/:id" so "employee" is not treated as a feedback id
+router.get(
+  "/employee/:userId/latest",
+  authenticateUser,
+  authorizeRole([USER_ROLES?.ADMIN, USER_ROLES?.HR]),
+  feedbackController.getLatestFeedbackForEmployee
+);
+
 router.get("/:id", authenticateUser, feedbackController.getFeedbackById);
 
 router.get("/:id/trends", authenticateUser, feedbackController.getFeedbackTrends);
