@@ -159,6 +159,14 @@ class CandidateService {
       const userDetails = await UserDetails.create(cleanedData);
       candidate.userDetails = userDetails._id;
     }
+
+    // Link UserDetails reference to the Candidate collection document as well
+    if (user) {
+      await Candidate.findOneAndUpdate(
+        { personalEmail: email, isDeleted: false },
+        { userDetails: candidate.userDetails }
+      );
+    }
     const isPendingOrDraft = (value) => value === 'pending' || value === 'draft';
 
     if (
@@ -194,46 +202,62 @@ async finalSubmit(email, data) {
     candidate = await Candidate.findOne({ personalEmail: email, isDeleted: false, status: { $ne: 'backout' } });
   }
 
-  if (!candidate) throw new Error('Candidate not found');
-  if (!candidate.userDetails) throw new Error('UserDetails not found');
+    if (!candidate) throw new Error('Candidate not found');
+    if (!candidate.userDetails) throw new Error('UserDetails not found');
 
-  if (candidate.status === "backout") {
-    throw new Error('Candidate has already backed out.');
-  }
+    // Form 11 conditional business rule validation during final submit
+    const candidateDoc = await Candidate.findOne({ personalEmail: email, isDeleted: false });
+    const employeeStatus = candidateDoc?.employeeStatus || candidate.employeeStatus;
+    const isIntern = employeeStatus && employeeStatus.toLowerCase() === 'intern';
+    if (!isIntern) {
+      const form11Val = data.documents?.form11;
+      if (!form11Val || (typeof form11Val === 'string' && form11Val.trim() === '')) {
+        throw new Error('Form 11 is mandatory for non-Intern employees.');
+      }
+    }
 
-  let newStatus;
-  if (
-    candidate.status === "pending" ||
-    candidate.status === "draft" ||
-    candidate.formStatus === "pending" ||
-    candidate.formStatus === "draft" ||
-    candidate.formStatus === "reminder_sent"
-  ) {
-    newStatus = "submitted";
-  } else {
-    newStatus = "resubmitted";
-  }
+    if (candidate.status === "backout") {
+      throw new Error('Candidate has already backed out.');
+    }
+
+    let newStatus;
+    if (
+      candidate.status === "pending" ||
+      candidate.status === "draft" ||
+      candidate.formStatus === "pending" ||
+      candidate.formStatus === "draft" ||
+      candidate.formStatus === "reminder_sent"
+    ) {
+      newStatus = "submitted";
+    } else {
+      newStatus = "resubmitted";
+    }
 
 
-  const cleanData = cleanDataForUpdate(data);
+    const cleanData = cleanDataForUpdate(data);
 
-  const updatedUserDetails = await UserDetails.findByIdAndUpdate(
-    candidate.userDetails,
-    cleanData,
-    { new: true }
-  );
+    const updatedUserDetails = await UserDetails.findByIdAndUpdate(
+      candidate.userDetails,
+      cleanData,
+      { new: true }
+    );
 
-  if (existingUser) {
-    await User.findByIdAndUpdate(candidate._id, {
-      formStatus: newStatus,
-      dateOfBirth: updatedUserDetails?.personalInfo?.dateOfBirth || null
-    });
-  } else {
-    await Candidate.findByIdAndUpdate(candidate._id, { status: newStatus });
-  }
+    if (existingUser) {
+      await User.findByIdAndUpdate(candidate._id, {
+        formStatus: newStatus,
+        dateOfBirth: updatedUserDetails?.personalInfo?.dateOfBirth || null
+      });
+      // Link UserDetails reference to the Candidate collection document as well
+      await Candidate.findOneAndUpdate(
+        { personalEmail: email, isDeleted: false },
+        { userDetails: updatedUserDetails._id }
+      );
+    } else {
+      await Candidate.findByIdAndUpdate(candidate._id, { status: newStatus });
+    }
 
-  return await Candidate.findById(candidate._id)
-    .populate('pointOfContact', 'firstName lastName email team');
+    return await Candidate.findById(candidate._id)
+      .populate('pointOfContact', 'firstName lastName email team');
 }
 
 
