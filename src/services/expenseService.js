@@ -356,11 +356,13 @@ class ExpenseService {
       );
     }
 
-    const diffInDays = Math.floor((today - expenseDate) / (1000 * 60 * 60 * 24));
-    if (diffInDays > 30) {
+    const minAllowedDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    minAllowedDate.setHours(0, 0, 0, 0);
+
+    if (expenseDate < minAllowedDate) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        'Expense date is outside the maximum allowed backdated window (30 days).'
+        'Expense date must be within the current month or the previous month.'
       );
     }
 
