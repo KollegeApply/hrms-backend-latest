@@ -10,6 +10,7 @@ router.use(authenticateUser);
 // Single file, any field name (receipt / attachment / file / etc.) — images + PDF, max 5MB
 router.post('/', safeExpenseAttachmentUpload, expenseController.createExpense);
 router.get('/dashboard', expenseController.getExpenseDashboard);
+router.get('/tl-bulk-summary', expenseController.getTlBulkSummary);
 router.get('/', expenseController.getExpenses);
 router.put('/bulk/approve', expenseController.bulkApproveExpenses);
 router.put('/bulk/reject', expenseController.bulkRejectExpenses);

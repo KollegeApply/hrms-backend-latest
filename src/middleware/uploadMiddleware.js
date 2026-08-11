@@ -1,3 +1,4 @@
+const path = require('path');
 const multer = require('multer');
 const ApiError  = require('../utility/ApiError');
 
@@ -22,6 +23,26 @@ const fileFilter = (req, file, cb) => {
       new ApiError(
         400,
         'Invalid file type. Only images (JPEG, PNG, GIF, WebP) and PDF files are allowed'
+      ),
+      false
+    );
+  }
+};
+
+const expenseFileFilter = (req, file, cb) => {
+  const allowedMimes = ['image/jpeg', 'image/png', 'application/pdf'];
+  const allowedExts = ['.jpg', '.jpeg', '.png', '.pdf'];
+
+  const ext = path.extname(file.originalname || '').toLowerCase();
+  const mime = (file.mimetype || '').toLowerCase();
+
+  if (allowedMimes.includes(mime) && allowedExts.includes(ext)) {
+    cb(null, true);
+  } else {
+    cb(
+      new ApiError(
+        400,
+        'Invalid file type. Only JPG, JPEG, PNG and PDF files are allowed'
       ),
       false
     );
@@ -73,7 +94,7 @@ const uploadExpenseAttachment = multer({
     files: 1,
     fieldSize: 8 * 1024 * 1024,
   },
-  fileFilter,
+  fileFilter: expenseFileFilter,
 });
 
 const respondMulterError = (res, err) => {

@@ -356,11 +356,13 @@ class ExpenseService {
       );
     }
 
-    const diffInDays = Math.floor((today - expenseDate) / (1000 * 60 * 60 * 24));
-    if (diffInDays > 30) {
+    const minAllowedDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    minAllowedDate.setHours(0, 0, 0, 0);
+
+    if (expenseDate < minAllowedDate) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        'Expense date is outside the maximum allowed backdated window (30 days).'
+        'Expense date must be within the current month or the previous month.'
       );
     }
 
@@ -504,7 +506,22 @@ class ExpenseService {
           );
         }
 
-        query.userId = { $in: teamUsers.map((entry) => entry._id) };
+        const teamUserIds = teamUsers.map((entry) => entry._id);
+        if (filters.userId) {
+          const requestedUserId = this.toObjectId(filters.userId);
+          const allowed = teamUserIds.some(
+            (id) => id.toString() === requestedUserId.toString()
+          );
+          if (!allowed) {
+            throw new ApiError(
+              httpStatus.FORBIDDEN,
+              'You can only view expenses for your reportees.'
+            );
+          }
+          query.userId = requestedUserId;
+        } else {
+          query.userId = { $in: teamUserIds };
+        }
       }
     } else if (activeQueue === 'finance') {
       // Expense Department queue: team-scoped, Expense department or Admin.
@@ -1532,6 +1549,104 @@ class ExpenseService {
       },
       access,
     };
+  }
+
+  /**
+   * Team Lead Bulk Approve summary: one row per reportee per calendar month
+   * for expenses still in `submitted` status. Team Lead role only.
+   */
+  async getTlBulkSummary(user, filters = {}) {
+    const role = (user.role || '').toLowerCase();
+    // Align with frontend Bulk Approve tab: Team Lead + HR (not Sub Team Lead).
+    if (role !== 'teamlead' && role !== 'hr') {
+      throw new ApiError(
+        httpStatus.FORBIDDEN,
+        'Only Team Lead or HR users can access Bulk Approve summary.'
+      );
+    }
+
+    const teamUsers = await User.find(
+      {
+        team: user.team,
+        $or: [{ teamLeadId: user.id }, { subTeamLeadId: user.id }],
+        isDeleted: { $ne: true },
+      },
+      '_id firstName lastName employeeId'
+    ).lean();
+
+    const teamUserIds = teamUsers.map((u) => u._id);
+    if (teamUserIds.length === 0) {
+      return { data: [] };
+    }
+
+    const match = {
+      isDeleted: { $ne: true },
+      status: 'submitted',
+      userId: { $in: teamUserIds },
+    };
+
+    const month = filters.month != null ? Number(filters.month) : null;
+    const year = filters.year != null ? Number(filters.year) : null;
+
+    if (month && year) {
+      const fromDate = new Date(year, month - 1, 1);
+      const toDate = new Date(year, month, 0, 23, 59, 59, 999);
+      match.date = { $gte: fromDate, $lte: toDate };
+    } else if (year && !month) {
+      const fromDate = new Date(year, 0, 1);
+      const toDate = new Date(year, 11, 31, 23, 59, 59, 999);
+      match.date = { $gte: fromDate, $lte: toDate };
+    }
+
+    const rows = await Expense.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: {
+            userId: '$userId',
+            year: { $year: { date: '$date', timezone: 'Asia/Kolkata' } },
+            month: { $month: { date: '$date', timezone: 'Asia/Kolkata' } },
+          },
+          totalAmount: { $sum: '$amount' },
+          count: { $sum: 1 },
+          expenses: {
+            $push: {
+              id: '$_id',
+              amount: '$amount',
+            },
+          },
+        },
+      },
+      { $sort: { '_id.year': -1, '_id.month': -1, totalAmount: -1 } },
+    ]);
+
+    const userMap = new Map(
+      teamUsers.map((u) => [u._id.toString(), u])
+    );
+
+    const data = rows.map((row) => {
+      const uid = row._id.userId.toString();
+      const emp = userMap.get(uid);
+      const expenses = (row.expenses || []).map((e) => ({
+        id: e.id.toString(),
+        amount: e.amount,
+      }));
+      return {
+        userId: uid,
+        employeeId: emp?.employeeId || '—',
+        employeeName: emp
+          ? `${emp.firstName || ''} ${emp.lastName || ''}`.trim()
+          : '—',
+        month: row._id.month,
+        year: row._id.year,
+        totalAmount: row.totalAmount,
+        count: row.count,
+        expenseIds: expenses.map((e) => e.id),
+        expenses,
+      };
+    });
+
+    return { data };
   }
 }
 

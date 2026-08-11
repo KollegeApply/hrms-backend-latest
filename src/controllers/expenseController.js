@@ -713,6 +713,20 @@ const getExpenseDashboard = catchAsync(async (req, res) => {
   });
 });
 
+const getTlBulkSummary = catchAsync(async (req, res) => {
+  const validatedQuery = await expenseValidator.tlBulkSummarySchema.validateAsync(
+    req.query
+  );
+
+  const result = await expenseService.getTlBulkSummary(req.user, validatedQuery);
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Bulk approve summary fetched successfully.',
+    data: result.data,
+  });
+});
+
 const updateExpenseStatus = catchAsync(async (req, res) => {
   const validated = await expenseValidator.updateExpenseStatusSchema.validateAsync({
     id: req.params.id,
@@ -905,6 +919,7 @@ module.exports = {
   createExpense,
   getExpenses,
   getExpenseDashboard,
+  getTlBulkSummary,
   updateExpenseStatus,
   bulkApproveExpenses,
   bulkRejectExpenses,
