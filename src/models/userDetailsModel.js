@@ -84,6 +84,13 @@ const BloodRelationSchema = new Schema({
   details: String
 }, { _id: false });
 
+const EsicDetailsSchema = new Schema({
+  nomineeName: String,
+  relation: String,
+  familyMemberAadhaarNumber: String,
+  nearestDispensaryAddress: String,
+}, { _id: false });
+
 const DocumentsSchema = new Schema({
   photograph: String,
   signature: String,
@@ -168,6 +175,7 @@ const UserDetailsSchema = new Schema({
   documentsApprovalDecidedAt: Date,
   documentsApprovalDecidedBy: { type: Schema.Types.ObjectId, ref: 'User' },
   documentsApprovalRejectionReason: String,
+  esicDetails: EsicDetailsSchema,
   isDeleted: { type: Boolean, default: false },
 }, { timestamps: true });
 

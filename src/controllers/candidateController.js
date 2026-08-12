@@ -114,8 +114,22 @@ const fetchCandidateDetails = catchAsync(async (req, res) => {
     candidate.userDetails.documents = transformDocumentPaths(docsPlain);
   }
 
+  // When the candidate resolved to a User object, the User schema does not carry
+  // esicRequired (it lives on the Candidate document). Fetch it and attach it
+  // so the frontend always receives esicRequired in the response.
+  let candidateResponse;
+  if (user) {
+    const candidateDoc = await candidateModel.findOne({ personalEmail: email, isDeleted: false });
+    const candidatePlain = candidate.toObject ? candidate.toObject() : { ...candidate };
+    candidateResponse = {
+      ...candidatePlain,
+      esicRequired: candidateDoc?.esicRequired ?? false,
+    };
+  } else {
+    candidateResponse = candidate;
+  }
 
-  return res.json({ candidate });
+  return res.json({ candidate: candidateResponse });
 });
 
 
@@ -262,22 +276,30 @@ const reviewUpdateCandidate = catchAsync(async (req, res) => {
 const getCandidateDetailsById = catchAsync(async (req, res) => {
   const { id } = req.params;
 
-  const candidate = await Candidate.findById(id)
+  let candidate = await Candidate.findById(id)
     .populate("pointOfContact department userDetails");
 
   if (!candidate) {
     return res.status(404).json({ message: "Candidate not found" });
   }
 
-  if (candidate.userDetails?.documents) {
-    const docsPlain = candidate.userDetails.documents.toObject
-      ? candidate.userDetails.documents.toObject()
-      : candidate.userDetails.documents;
+  const candidateObj = candidate.toObject ? candidate.toObject() : candidate;
 
-    candidate.userDetails.documents = transformDocumentPaths(docsPlain);
+  // Fallback to fetch UserDetails from the User document if the Candidate's link is empty
+  if (!candidateObj.userDetails) {
+    const user = await User.findOne({ email: candidate.personalEmail, isDeleted: false })
+      .populate("userDetails");
+    if (user && user.userDetails) {
+      candidateObj.userDetails = user.userDetails.toObject ? user.userDetails.toObject() : user.userDetails;
+    }
   }
 
-  res.json({ candidate });
+  if (candidateObj.userDetails?.documents) {
+    const docsPlain = candidateObj.userDetails.documents;
+    candidateObj.userDetails.documents = transformDocumentPaths(docsPlain);
+  }
+
+  res.json({ candidate: candidateObj });
 });
 
 const backoutCandidate = catchAsync(async (req, res) => {
@@ -310,6 +332,7 @@ const approveCandidate = catchAsync(async (req, res) => {
   
   // Send approval email to candidate
   if (process.env.HRMS_FRONTEND_URL && candidate.personalEmail) {
+    
     try {
       const emailSubject = 'Congratulations! Your Candidate Information Form (CIF) has been Approved';
       const emailMessage = Helper.getCandidateApprovalEmail(candidate, team);

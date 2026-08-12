@@ -148,18 +148,22 @@ class Helper {
       return;
     }
 
+    const isValidEmail = (emailStr) => typeof emailStr === 'string' && emailStr.includes('@');
+
     let user = config.MAIL_USER;
     let pass = config.MAIL_PASS;
-    let from = `"Support" <${config.MAIL_FROM_SUPPORT}>`;
+    let from = `"Support" <${isValidEmail(config.MAIL_FROM_SUPPORT) ? config.MAIL_FROM_SUPPORT : user}>`;
 
     if (fromHR) {
       user = config.HR_MAIL_USER;
       pass = config.HR_MAIL_PASS;
-      from = `"HR Department" <${config.MAIL_FROM_HR}>`;
+      const fromAddr = isValidEmail(config.MAIL_FROM_HR) ? config.MAIL_FROM_HR : user;
+      from = `"HR Department" <${fromAddr}>`;
     } else if (fromIT) {
       user = config.IT_MAIL_USER;
       pass = config.IT_MAIL_PASS;
-      from = `"IT Department" <${config.MAIL_FROM_IT}>`;
+      const fromAddr = isValidEmail(config.MAIL_FROM_IT) ? config.MAIL_FROM_IT : user;
+      from = `"IT Department" <${fromAddr}>`;
     }
 
     if (!user || !pass) {

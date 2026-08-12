@@ -180,6 +180,13 @@ const listExpenseSchema = Joi.object({
   toDate: Joi.date(),
   queue: Joi.string().trim().valid('team', 'finance', 'finance-review').optional(),
   search: Joi.string().trim().allow(''),
+  userId: objectIdSchema.optional(),
+}).options({ stripUnknown: true });
+
+/** Team Lead Bulk Approve summary — one row per employee per month. */
+const tlBulkSummarySchema = Joi.object({
+  month: Joi.number().integer().min(1).max(12).optional(),
+  year: Joi.number().integer().min(2000).max(2100).optional(),
 }).options({ stripUnknown: true });
 
 const expenseIdSchema = Joi.object({
@@ -327,6 +334,7 @@ module.exports = {
   createExpenseSchema,
   listExpenseSchema,
   expenseDashboardSchema,
+  tlBulkSummarySchema,
   expenseIdSchema,
   updateExpenseStatusSchema,
   bulkApproveExpenseSchema,

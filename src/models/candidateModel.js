@@ -24,6 +24,7 @@ const CandidateSchema = new Schema({
     byod: { type: Boolean, default: false },
     byov: { type: Boolean, default: false }
   },
+  esicRequired: { type: Boolean, default: false },
   isDeleted: { type: Boolean, default: false },
   userDetails: { type: Schema.Types.ObjectId, ref: 'UserDetails' }
 }, { timestamps: true });

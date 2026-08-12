@@ -14,6 +14,7 @@ const candidateCreateSchema = Joi.object({
     byod: Joi.boolean().optional(),
     byov: Joi.boolean().optional(),
   }).optional(),
+  esicRequired: Joi.boolean().optional(),
   userDetails: Joi.object().optional(),
 });
 
@@ -181,6 +182,12 @@ const candidateDraftSchema = Joi.object({
   bankDetails: Joi.object().optional(),
   documents: Joi.object().optional(),
   certification: Joi.any().optional(),
+  esicDetails: Joi.object({
+    nomineeName: Joi.string().allow('', null).optional(),
+    relation: Joi.string().allow('', null).optional(),
+    familyMemberAadhaarNumber: Joi.string().allow('', null).optional(),
+    nearestDispensaryAddress: Joi.string().allow('', null).optional(),
+  }).optional(),
 
 }).unknown(true);
 
@@ -476,6 +483,12 @@ const finalSubmitSchema = candidateDraftSchema.concat(
       salarySlipThree: Joi.string().optional().allow(null, ''),
     }).required(),
     certification: Joi.optional(),
+    esicDetails: Joi.object({
+      nomineeName: Joi.string().min(1).optional(),
+      relation: Joi.string().min(1).optional(),
+      familyMemberAadhaarNumber: Joi.string().min(1).optional(),
+      nearestDispensaryAddress: Joi.string().min(1).optional(),
+    }).optional(),
   })
 );
 
