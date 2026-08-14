@@ -584,7 +584,11 @@ class ExpenseService {
 
     if (filters.fromDate || filters.toDate) {
       query.date = {};
-      if (filters.fromDate) query.date.$gte = new Date(filters.fromDate);
+      if (filters.fromDate) {
+        const fromDate = new Date(filters.fromDate);
+        fromDate.setHours(0, 0, 0, 0);
+        query.date.$gte = fromDate;
+      }
       if (filters.toDate) {
         const toDate = new Date(filters.toDate);
         toDate.setHours(23, 59, 59, 999);
