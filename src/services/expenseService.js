@@ -10,7 +10,6 @@ const {
   FOOD_DAILY_CAP,
   HOTEL_PER_NIGHT_CAP,
   travelPerKmRate,
-  TECHNICAL_TOOLS_DEFAULTS,
   TL_ROLES_FOR_TEAM_LUNCH,
 } = require('../utility/expensePolicyConstants');
 
@@ -126,6 +125,11 @@ class ExpenseService {
       'admin-approved',
       'expense-returned',
     ];
+  }
+
+  /** Existing rejection statuses in the Expense workflow. */
+  expenseRejectedStatuses() {
+    return ['tl-rejected', 'expense-rejected'];
   }
 
   /**
@@ -296,44 +300,6 @@ class ExpenseService {
       }
     }
 
-    if (payload.type === 'Technical Tools') {
-      const start = new Date(expenseDate.getFullYear(), expenseDate.getMonth(), 1);
-      const end = new Date(
-        expenseDate.getFullYear(),
-        expenseDate.getMonth() + 1,
-        0,
-        23,
-        59,
-        59,
-        999
-      );
-      const monthSum = await Expense.aggregate([
-        {
-          $match: {
-            userId: this.toObjectId(user.id),
-            type: 'Technical Tools',
-            isDeleted: { $ne: true },
-            date: { $gte: start, $lte: end },
-          },
-        },
-        { $group: { _id: null, total: { $sum: '$amount' } } },
-      ]);
-      const prev = monthSum[0]?.total || 0;
-      const nextTotal = prev + Number(payload.amount);
-      if (Number(payload.amount) > TECHNICAL_TOOLS_DEFAULTS.maxPerTransaction) {
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          `Technical Tools amount exceeds per-transaction limit (Rs.${TECHNICAL_TOOLS_DEFAULTS.maxPerTransaction}).`
-        );
-      }
-      if (nextTotal > TECHNICAL_TOOLS_DEFAULTS.maxPerCalendarMonth) {
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          `Technical Tools monthly total would exceed Rs.${TECHNICAL_TOOLS_DEFAULTS.maxPerCalendarMonth}.`
-        );
-      }
-    }
-
     if (this.requiresAttachment(payload) && !this.hasAttachmentUrl(payload)) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
@@ -394,12 +360,13 @@ class ExpenseService {
         date: expenseDate,
         type: payload.type,
         amount: payload.amount,
+        name: payload.name,
         isDeleted: { $ne: true },
       });
       if (duplicateExpense) {
         throw new ApiError(
           httpStatus.CONFLICT,
-          'Duplicate expense detected for same date, type, and amount.'
+          'Duplicate expense detected for same date, type, amount, and name.'
         );
       }
     }
@@ -1552,6 +1519,154 @@ class ExpenseService {
         groupBy,
       },
       access,
+    };
+  }
+
+  /**
+   * Personal My Dashboard — authenticated employee only.
+   * Read-only aggregates; never accepts a client-supplied employee id.
+   */
+  async getMyExpenseDashboard(user) {
+    if (!user?.id) {
+      throw new ApiError(httpStatus.UNAUTHORIZED, 'Could not identify user.');
+    }
+
+    const userId = this.toObjectId(user.id);
+    const pendingStatuses = this.expensePendingStatuses();
+    const rejectedStatuses = this.expenseRejectedStatuses();
+    const approvedStatus = 'expense-approved';
+
+    const now = new Date();
+    const monthKeys = [];
+    for (let i = 5; i >= 0; i -= 1) {
+      const cursor = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      monthKeys.push({
+        year: cursor.getFullYear(),
+        month: cursor.getMonth() + 1,
+      });
+    }
+    const first = monthKeys[0];
+    const last = monthKeys[monthKeys.length - 1];
+    const rangeStart = new Date(first.year, first.month - 1, 1, 0, 0, 0, 0);
+    const rangeEnd = new Date(last.year, last.month, 0, 23, 59, 59, 999);
+
+    const match = {
+      userId,
+      isDeleted: { $ne: true },
+    };
+
+    const [facet] = await Expense.aggregate([
+      { $match: match },
+      {
+        $facet: {
+          totals: [
+            {
+              $group: {
+                _id: null,
+                appliedAmount: { $sum: '$amount' },
+                appliedCount: { $sum: 1 },
+                approvedAmount: {
+                  $sum: {
+                    $cond: [{ $eq: ['$status', approvedStatus] }, '$amount', 0],
+                  },
+                },
+                approvedCount: {
+                  $sum: {
+                    $cond: [{ $eq: ['$status', approvedStatus] }, 1, 0],
+                  },
+                },
+                pendingAmount: {
+                  $sum: {
+                    $cond: [
+                      { $in: ['$status', pendingStatuses] },
+                      '$amount',
+                      0,
+                    ],
+                  },
+                },
+                pendingCount: {
+                  $sum: {
+                    $cond: [{ $in: ['$status', pendingStatuses] }, 1, 0],
+                  },
+                },
+                rejectedAmount: {
+                  $sum: {
+                    $cond: [
+                      { $in: ['$status', rejectedStatuses] },
+                      '$amount',
+                      0,
+                    ],
+                  },
+                },
+                rejectedCount: {
+                  $sum: {
+                    $cond: [{ $in: ['$status', rejectedStatuses] }, 1, 0],
+                  },
+                },
+              },
+            },
+          ],
+          monthly: [
+            {
+              $match: {
+                date: { $gte: rangeStart, $lte: rangeEnd },
+              },
+            },
+            {
+              $group: {
+                _id: {
+                  year: { $year: { date: '$date', timezone: 'Asia/Kolkata' } },
+                  month: { $month: { date: '$date', timezone: 'Asia/Kolkata' } },
+                },
+                applied: { $sum: '$amount' },
+                approved: {
+                  $sum: {
+                    $cond: [{ $eq: ['$status', approvedStatus] }, '$amount', 0],
+                  },
+                },
+              },
+            },
+          ],
+        },
+      },
+    ]);
+
+    const totalsDoc = facet?.totals?.[0] || {};
+    const monthlyMap = new Map(
+      (facet?.monthly || []).map((row) => [
+        `${row._id.year}-${row._id.month}`,
+        row,
+      ])
+    );
+
+    const monthly = monthKeys.map((key) => {
+      const row = monthlyMap.get(`${key.year}-${key.month}`);
+      return {
+        year: key.year,
+        month: key.month,
+        applied: this.formatExpenseDashboardMoney(row?.applied),
+        approved: this.formatExpenseDashboardMoney(row?.approved),
+      };
+    });
+
+    return {
+      applied: {
+        amount: this.formatExpenseDashboardMoney(totalsDoc.appliedAmount),
+        count: totalsDoc.appliedCount || 0,
+      },
+      approved: {
+        amount: this.formatExpenseDashboardMoney(totalsDoc.approvedAmount),
+        count: totalsDoc.approvedCount || 0,
+      },
+      pending: {
+        amount: this.formatExpenseDashboardMoney(totalsDoc.pendingAmount),
+        count: totalsDoc.pendingCount || 0,
+      },
+      rejected: {
+        amount: this.formatExpenseDashboardMoney(totalsDoc.rejectedAmount),
+        count: totalsDoc.rejectedCount || 0,
+      },
+      monthly,
     };
   }
 

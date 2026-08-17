@@ -713,6 +713,16 @@ const getExpenseDashboard = catchAsync(async (req, res) => {
   });
 });
 
+const getMyExpenseDashboard = catchAsync(async (req, res) => {
+  const dashboard = await expenseService.getMyExpenseDashboard(req.user);
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Personal expense dashboard fetched successfully.',
+    data: dashboard,
+  });
+});
+
 const getTlBulkSummary = catchAsync(async (req, res) => {
   const validatedQuery = await expenseValidator.tlBulkSummarySchema.validateAsync(
     req.query
@@ -919,6 +929,7 @@ module.exports = {
   createExpense,
   getExpenses,
   getExpenseDashboard,
+  getMyExpenseDashboard,
   getTlBulkSummary,
   updateExpenseStatus,
   bulkApproveExpenses,
