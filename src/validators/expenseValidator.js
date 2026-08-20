@@ -178,7 +178,10 @@ const listExpenseSchema = Joi.object({
   type: Joi.string().trim().allow(''),
   fromDate: Joi.date(),
   toDate: Joi.date(),
-  queue: Joi.string().trim().valid('team', 'finance', 'finance-review').optional(),
+  queue: Joi.string()
+    .trim()
+    .valid('team', 'finance', 'finance-review', 'all')
+    .optional(),
   search: Joi.string().trim().allow(''),
   userId: objectIdSchema.optional(),
 }).options({ stripUnknown: true });
