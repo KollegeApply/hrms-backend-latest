@@ -13,6 +13,9 @@ const {
   TL_ROLES_FOR_TEAM_LUNCH,
 } = require('../utility/expensePolicyConstants');
 
+/** Special support account allowed to view All Expenses and TL-approve/reject submitted rows. */
+const ALL_EXPENSES_SUPPORT_EMAIL = 'support@kollegeapply.com';
+
 class ExpenseService {
   constructor() {
     this.adminRoles = ['admin', 'subadmin', 'hr'];
@@ -21,6 +24,14 @@ class ExpenseService {
     this.finalApproverAdminRoles = ['admin'];
     // Full team expense dashboard: admin, subadmin, hr, or Finance/Expense department.
     this.expenseDashboardTeamViewRoles = ['admin', 'subadmin', 'hr'];
+  }
+
+  /** Authenticated user email must match the dedicated All Expenses support account. */
+  isAllExpensesSupportUser(user) {
+    const email = String(user?.email || '')
+      .trim()
+      .toLowerCase();
+    return email === ALL_EXPENSES_SUPPORT_EMAIL;
   }
 
   splitCsvFilter(value) {
@@ -507,6 +518,15 @@ class ExpenseService {
           'Only Finance department or Admin can view the Finance review queue.'
         );
       }
+    } else if (activeQueue === 'all') {
+      // All Expenses: complete non-deleted dataset for the dedicated support account only.
+      if (!this.isAllExpensesSupportUser(user)) {
+        throw new ApiError(
+          httpStatus.FORBIDDEN,
+          'You are not authorized to view all expenses.'
+        );
+      }
+      // No userId/team/status scope — filters below still apply when provided.
     } else {
       query.userId = this.toObjectId(user.id);
     }
@@ -696,29 +716,34 @@ class ExpenseService {
     }
 
     if (currentStatus === 'submitted') {
+      // Dedicated support account may TL-approve or TL-reject submitted expenses.
+      const isSupportActor = this.isAllExpensesSupportUser(currentUser);
+
       // Team Approvals: TL/SubTL, mapped HR lead, or Super Admin.
       // HR is included because the Team Approvals tab is shown to HR and HR
       // users are often mapped as teamLeadId for employees.
-      if (!isSuperAdmin && !isTeamLead && !isHr) {
+      if (!isSupportActor && !isSuperAdmin && !isTeamLead && !isHr) {
         throw new ApiError(
           httpStatus.FORBIDDEN,
           'Only Team Lead/Admin can action submitted expenses.'
         );
       }
 
-      const employee = await User.findById(expense.userId).select(
-        'teamLeadId subTeamLeadId'
-      );
-      const isDirectLead =
-        employee &&
-        (employee.teamLeadId?.toString() === actorId ||
-          employee.subTeamLeadId?.toString() === actorId);
-
-      if (!isSuperAdmin && !isDirectLead) {
-        throw new ApiError(
-          httpStatus.FORBIDDEN,
-          'You can only action expenses of your reportees.'
+      if (!isSupportActor) {
+        const employee = await User.findById(expense.userId).select(
+          'teamLeadId subTeamLeadId'
         );
+        const isDirectLead =
+          employee &&
+          (employee.teamLeadId?.toString() === actorId ||
+            employee.subTeamLeadId?.toString() === actorId);
+
+        if (!isSuperAdmin && !isDirectLead) {
+          throw new ApiError(
+            httpStatus.FORBIDDEN,
+            'You can only action expenses of your reportees.'
+          );
+        }
       }
 
       if (action === 'approved') {
