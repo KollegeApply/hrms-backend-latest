@@ -337,7 +337,7 @@ async function sendExpenseSubmissionEmails(expenseDoc, team) {
             ? 'Your expense claim has been submitted and is pending review by your Team Lead.'
             : expenseDoc.type === 'Team Lunch'
               ? 'Your Team Lunch claim has been submitted and is pending Expense approval (TL review is skipped for this type).'
-              : 'Your expense claim has been submitted and is pending final approval.',
+              : 'Your expense claim has been submitted and is pending Expense Department approval.',
         team,
         detailRowsHtml:
           renderExpenseDetailRow('Expense Type', payload.expenseType) +
@@ -357,8 +357,8 @@ async function sendExpenseSubmissionEmails(expenseDoc, team) {
       );
     }
 
-    // Direct-to-Expense-Department: no TL mapped, or Team Lunch (Expense-Department-only per policy).
-    if (expenseDoc.status === 'tl-approved' && (!tlEmail || expenseDoc.type === 'Team Lunch')) {
+    // Direct-to-Expense-Department on create: no TL mapped, Team Lunch, or TL has admin role.
+    if (expenseDoc.status === 'tl-approved') {
       const finalApproverEmails = await getExpenseApproverEmails(team);
       if (finalApproverEmails.length > 0) {
         const finalQueueMsg = renderExpenseEmailTemplate({
