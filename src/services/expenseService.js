@@ -343,9 +343,9 @@ class ExpenseService {
       );
     }
 
-    const userWithLeads = await User.findById(user.id).select(
-      'teamLeadId subTeamLeadId team role'
-    );
+    const userWithLeads = await User.findById(user.id)
+      .select('teamLeadId subTeamLeadId team role')
+      .populate('teamLeadId', 'role');
     if (!userWithLeads) {
       throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
     }
@@ -387,12 +387,22 @@ class ExpenseService {
     const hasTeamLead = Boolean(
       userWithLeads.teamLeadId || userWithLeads.subTeamLeadId
     );
+    const tlHasAdminRole =
+      userWithLeads.teamLeadId &&
+      String(userWithLeads.teamLeadId.role || '').toLowerCase() === 'admin';
 
-    let status = hasTeamLead ? 'submitted' : 'tl-approved';
-    let tlId = hasTeamLead ? undefined : user.id;
-    let tlRemark = hasTeamLead
-      ? undefined
-      : 'Auto-routed to Expense Department because team lead is not mapped.';
+    let status = hasTeamLead && !tlHasAdminRole ? 'submitted' : 'tl-approved';
+    let tlId;
+    let tlRemark;
+    if (!hasTeamLead) {
+      tlId = user.id;
+      tlRemark =
+        'Auto-routed to Expense Department because team lead is not mapped.';
+    } else if (tlHasAdminRole) {
+      tlId = userWithLeads.teamLeadId._id;
+      tlRemark =
+        'Auto-approved at TL stage because team lead has admin role.';
+    }
 
     if (payload.type === 'Team Lunch') {
       status = 'tl-approved';
