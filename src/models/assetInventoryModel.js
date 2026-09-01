@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 const {
   VALID_LAPTOP_TYPES,
+  VALID_ASSET_CATEGORIES,
   VALID_ASSET_CONDITIONS,
   VALID_ASSET_INVENTORY_STATUS,
 } = require('../utility/constants');
@@ -35,6 +36,15 @@ const assetInventorySchema = new Schema(
         },
         message: 'Invalid laptop type: {VALUE}',
       },
+      trim: true,
+    },
+    assetCategory: {
+      type: String,
+      enum: {
+        values: VALID_ASSET_CATEGORIES,
+        message: 'Invalid asset category: {VALUE}',
+      },
+      required: false,
       trim: true,
     },
     assetName: {

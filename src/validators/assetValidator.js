@@ -3,6 +3,7 @@ const Joi = require('joi');
 const {
   VALID_ASSETS_STATUS,
   VALID_LAPTOP_TYPES,
+  VALID_ASSET_CATEGORIES,
   VALID_ASSET_REQUEST_STATUS,
   VALID_ASSET_ASSIGNMENT_TYPES,
   VALID_ASSET_CONDITIONS,
@@ -102,6 +103,14 @@ const createAssetInventorySchema = Joi.object({
   }).messages({
     'any.only': `Laptop Type must be one of: ${VALID_LAPTOP_TYPES.join(', ')}`,
   }),
+  assetCategory: Joi.string()
+    .required()
+    .valid(...VALID_ASSET_CATEGORIES)
+    .messages({
+      'string.empty': 'Primary Asset Type is required',
+      'any.required': 'Primary Asset Type is required',
+      'any.only': `Primary Asset Type must be one of: ${VALID_ASSET_CATEGORIES.join(', ')}`,
+    }),
   assetName: Joi.string().required(),
   brand: Joi.string().required(),
   model: Joi.string().optional().allow(''),
