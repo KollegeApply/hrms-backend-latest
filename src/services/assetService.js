@@ -8,7 +8,7 @@ const { paginate } = require('../utility/common');
 const INVENTORY_ASSET_POPULATE = {
   path: 'inventoryAsset',
   select:
-    'assetId assetType assetName serialNumber laptopType specifications brand model status assignedTo',
+    'assetId assetType assetCategory assetName serialNumber laptopType specifications brand model status assignedTo',
 };
 
 class AssetsService {
@@ -420,6 +420,7 @@ async fetchAssignedAssets(page, limit, search, team) {
       {
         $project: {
           assetType: { $ifNull: ['$assetType', '$_inv.assetType'] },
+          assetCategory: { $ifNull: ['$assetCategory', '$_inv.assetCategory'] },
           assetName: { $ifNull: ['$assetName', '$_inv.assetName'] },
           serialNumber: { $ifNull: ['$serialNumber', '$_inv.serialNumber'] },
           specifications: { $ifNull: ['$specifications', '$_inv.specifications'] },

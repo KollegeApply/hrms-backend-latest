@@ -44,7 +44,7 @@ const MISCELLANEOUS_SUBCATEGORIES = [
 ];
 
 const TEAM_LUNCH_PER_ATTENDEE = 1500;
-const MOBILE_BILL_FIXED_AMOUNT = 500;
+const MOBILE_BILL_FIXED_AMOUNT = 2000;
 const ATTACHMENT_THRESHOLD_AMOUNT = 150;
 
 /** Food — daily cap by band & metro flag (PRD §7 table). */
