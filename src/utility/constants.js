@@ -69,7 +69,18 @@ const CANDIDATE_STATUS = {
 const LAPTOP_TYPES = {
   MACOS: 'macos',
   WINDOWS: 'windows',
-}
+};
+
+const ASSET_CATEGORIES = {
+  MACBOOK_AIR: 'macbook_air',
+  WINDOWS_PURCHASED: 'windows_purchased',
+  MACBOOK_AIR_CD: 'macbook_air_cd',
+  WINDOWS_CD: 'windows_cd',
+  WINDOWS_RENTAL: 'windows_rental',
+  OTHERS: 'others',
+  MACBOOK_PRO: 'macbook_pro',
+  MONITOR: 'monitor',
+};
 
 const ASSET_ASSIGNMENT_TYPES = {
   TEMPORARY: 'temporary',
@@ -236,6 +247,8 @@ module.exports = {
 
   VALID_ASSET_REQUEST_STATUS: Object.values(ASSET_REQUEST_STATUS),
   VALID_LAPTOP_TYPES: Object.values(LAPTOP_TYPES),
+  VALID_ASSET_CATEGORIES: Object.values(ASSET_CATEGORIES),
+  ASSET_CATEGORIES,
   VALID_ASSET_ASSIGNMENT_TYPES: Object.values(ASSET_ASSIGNMENT_TYPES),
   VALID_ASSET_CONDITIONS: Object.values(ASSET_CONDITIONS),
   VALID_ASSET_INVENTORY_STATUS: Object.values(ASSET_INVENTORY_STATUS),

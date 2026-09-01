@@ -18,6 +18,9 @@ function mergeDisplayFieldsFromInventory(ret) {
   if (inv.laptopType != null && inv.laptopType !== '') {
     ret.laptopType = inv.laptopType;
   }
+  if (inv.assetCategory != null && inv.assetCategory !== '') {
+    ret.assetCategory = inv.assetCategory;
+  }
   if (inv.specifications !== undefined && inv.specifications !== null) {
     ret.specifications = inv.specifications;
   }
