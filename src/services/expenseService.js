@@ -11,6 +11,9 @@ const {
   HOTEL_PER_NIGHT_CAP,
   travelPerKmRate,
   TL_ROLES_FOR_TEAM_LUNCH,
+  TRIP_CONTEXTS,
+  BASE_LOCATION_TRAVEL_PER_MEETING_CAP,
+  BASE_LOCATION_TRAVEL_MONTHLY_CAP,
 } = require('../utility/expensePolicyConstants');
 
 /** Special support account allowed to view All Expenses and TL-approve/reject submitted rows. */
@@ -270,6 +273,49 @@ class ExpenseService {
           );
         }
       }
+
+      if (payload.tripContext === TRIP_CONTEXTS.BASE_LOCATION) {
+        const perMeetingCap = BASE_LOCATION_TRAVEL_PER_MEETING_CAP[band];
+        if (perMeetingCap != null && Number(payload.amount) > perMeetingCap) {
+          throw new ApiError(
+            httpStatus.BAD_REQUEST,
+            `Base location (Intracity) travel amount cannot exceed Rs.${perMeetingCap} per meeting for your band (${band}).`
+          );
+        }
+
+        const y = expenseDate.getFullYear();
+        const m = expenseDate.getMonth();
+        const monthStart = new Date(y, m, 1);
+        const monthEnd = new Date(y, m + 1, 0, 23, 59, 59, 999);
+        // "Approved/created" per PRD = anything not yet rejected (still in-flight or fully approved).
+        const relevantStatuses = [
+          ...this.expensePendingStatuses(),
+          'expense-approved',
+        ];
+
+        const monthToDate = await Expense.find({
+          userId: this.toObjectId(user.id),
+          type: 'Travel',
+          tripContext: TRIP_CONTEXTS.BASE_LOCATION,
+          date: { $gte: monthStart, $lte: monthEnd },
+          status: { $in: relevantStatuses },
+          isDeleted: { $ne: true },
+        })
+          .select('amount')
+          .lean();
+
+        const existingSum = monthToDate.reduce(
+          (sum, entry) => sum + Number(entry.amount || 0),
+          0
+        );
+        const projectedTotal = this.roundMoney(existingSum + Number(payload.amount));
+        if (projectedTotal > BASE_LOCATION_TRAVEL_MONTHLY_CAP) {
+          throw new ApiError(
+            httpStatus.BAD_REQUEST,
+            `This expense would take your Base location (Intracity) travel total for this month to Rs.${projectedTotal}, exceeding the monthly limit of Rs.${BASE_LOCATION_TRAVEL_MONTHLY_CAP}.`
+          );
+        }
+      }
     }
 
     if (payload.type === 'Food') {
@@ -382,6 +428,26 @@ class ExpenseService {
       }
     }
 
+    if (payload.type === 'Travel' && payload.tripContext === TRIP_CONTEXTS.BASE_LOCATION) {
+      // Global check — a KAPP ID + date represents one real-world meeting,
+      // so this is NOT scoped to the current user: no one may double-claim it.
+      // Base location (Intracity) only — Outstation (Intercity) is exempt.
+      const kappId = String(payload.kappId || '').trim();
+      const duplicateTravel = await Expense.findOne({
+        type: 'Travel',
+        tripContext: TRIP_CONTEXTS.BASE_LOCATION,
+        date: expenseDate,
+        kappId,
+        isDeleted: { $ne: true },
+      }).lean();
+      if (duplicateTravel) {
+        throw new ApiError(
+          httpStatus.CONFLICT,
+          'A travel expense already exists for this date and KAPP ID.'
+        );
+      }
+    }
+
     await this.assertPhase2Policy(user, payload, expenseDate);
 
     const hasTeamLead = Boolean(
@@ -415,33 +481,51 @@ class ExpenseService {
         ? [...new Set(payload.attendeeUserIds.map((id) => this.toObjectId(id)))]
         : undefined;
 
-    const expense = await Expense.create({
-      userId: user.id,
-      team: teamKey,
-      date: expenseDate,
-      name: payload.name,
-      type: payload.type,
-      subCategory: payload.subCategory || undefined,
-      miscellaneousType: payload.miscellaneousType || undefined,
-      distanceKm:
-        payload.type === 'Travel' &&
-        (payload.subCategory === '2 Wheeler' || payload.subCategory === '4 Wheeler')
-          ? Number(payload.distanceKm)
-          : undefined,
-      clientName: payload.clientName?.trim() || undefined,
-      clientPocName: payload.clientPocName?.trim() || undefined,
-      clientPocDesignation: payload.clientPocDesignation?.trim() || undefined,
-      attendeeUserIds: attendeeIds,
-      miscOthersDescription: payload.miscOthersDescription?.trim() || undefined,
-      travelMiscDescription: payload.travelMiscDescription?.trim() || undefined,
-      cityTier: payload.cityTier || undefined,
-      amount: Number(payload.amount),
-      purpose: payload.purpose,
-      attachmentUrl: payload.attachmentUrl || undefined,
-      status,
-      tlId,
-      tlRemark,
-    });
+    let expense;
+    try {
+      expense = await Expense.create({
+        userId: user.id,
+        team: teamKey,
+        date: expenseDate,
+        name: payload.name,
+        type: payload.type,
+        subCategory: payload.subCategory || undefined,
+        miscellaneousType: payload.miscellaneousType || undefined,
+        distanceKm:
+          payload.type === 'Travel' &&
+          (payload.subCategory === '2 Wheeler' || payload.subCategory === '4 Wheeler')
+            ? Number(payload.distanceKm)
+            : undefined,
+        clientName: payload.clientName?.trim() || undefined,
+        clientPocName: payload.clientPocName?.trim() || undefined,
+        clientPocDesignation: payload.clientPocDesignation?.trim() || undefined,
+        attendeeUserIds: attendeeIds,
+        miscOthersDescription: payload.miscOthersDescription?.trim() || undefined,
+        travelMiscDescription: payload.travelMiscDescription?.trim() || undefined,
+        cityTier: payload.cityTier || undefined,
+        kappId: payload.type === 'Travel' ? String(payload.kappId || '').trim() : undefined,
+        instituteName:
+          payload.type === 'Travel' ? String(payload.instituteName || '').trim() : undefined,
+        tripContext: payload.type === 'Travel' ? payload.tripContext : undefined,
+        amount: Number(payload.amount),
+        purpose: payload.purpose,
+        attachmentUrl: payload.attachmentUrl || undefined,
+        status,
+        tlId,
+        tlRemark,
+      });
+    } catch (err) {
+      // Race-condition backstop: the unique partial index on
+      // {userId, date, kappId} (Travel only) is the real atomicity guarantee;
+      // the findOne check above is only a fast pre-check for a friendly message.
+      if (err?.code === 11000) {
+        throw new ApiError(
+          httpStatus.CONFLICT,
+          'A travel expense already exists for this date and KAPP ID.'
+        );
+      }
+      throw err;
+    }
 
     return Expense.findById(expense._id).populate([
       {

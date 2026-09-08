@@ -47,6 +47,28 @@ const TEAM_LUNCH_PER_ATTENDEE = 1500;
 const MOBILE_BILL_FIXED_AMOUNT = 2000;
 const ATTACHMENT_THRESHOLD_AMOUNT = 150;
 
+/** Travel > Trip Context — exactly two allowed values. */
+const TRIP_CONTEXTS = {
+  BASE_LOCATION: 'Base location (Intracity)',
+  OUTSTATION: 'Outstation (Intercity)',
+};
+
+const TRIP_CONTEXT_VALUES = [
+  TRIP_CONTEXTS.BASE_LOCATION,
+  TRIP_CONTEXTS.OUTSTATION,
+];
+
+/** Base location (Intracity) Travel — per-meeting cap by band (PRD). */
+const BASE_LOCATION_TRAVEL_PER_MEETING_CAP = {
+  K1: 450,
+  K2: 350,
+  K3: 200,
+  K4: 200,
+};
+
+/** Base location (Intracity) Travel — monthly cap per user, all bands (PRD). */
+const BASE_LOCATION_TRAVEL_MONTHLY_CAP = 8000;
+
 /** Food — daily cap by band & metro flag (PRD §7 table). */
 const FOOD_DAILY_CAP = {
   K1: { metro: 1200, nonMetro: 1000 },
@@ -92,4 +114,8 @@ module.exports = {
   travelPerKmRate,
   TECHNICAL_TOOLS_DEFAULTS,
   TL_ROLES_FOR_TEAM_LUNCH,
+  TRIP_CONTEXTS,
+  TRIP_CONTEXT_VALUES,
+  BASE_LOCATION_TRAVEL_PER_MEETING_CAP,
+  BASE_LOCATION_TRAVEL_MONTHLY_CAP,
 };

@@ -4,6 +4,7 @@ const {
   TRAVEL_SUBCATEGORIES,
   FOOD_SUBCATEGORIES,
   MISCELLANEOUS_SUBCATEGORIES,
+  TRIP_CONTEXT_VALUES,
 } = require('../utility/expensePolicyConstants');
 
 const objectIdSchema = Joi.string()
@@ -50,6 +51,12 @@ const createExpenseSchema = Joi.object({
   travelMiscDescription: Joi.string().trim().max(200).allow('', null).optional(),
   cityTier: Joi.string().valid('Metro', 'Non-Metro').allow('', null).optional(),
   miscellaneousType: Joi.string().trim().max(200).allow('', null).optional(),
+  kappId: Joi.string().trim().max(50).allow('', null).optional(),
+  instituteName: Joi.string().trim().max(200).allow('', null).optional(),
+  tripContext: Joi.string()
+    .valid(...TRIP_CONTEXT_VALUES)
+    .allow('', null)
+    .optional(),
   amount: Joi.number().precision(2).greater(0).required().messages({
     'number.base': 'Amount must be a valid number.',
     'number.greater': 'Amount must be greater than 0.',
@@ -94,6 +101,26 @@ const createExpenseSchema = Joi.object({
           });
         }
       }
+
+      if (!(value.kappId || '').trim()) {
+        return helpers.message({
+          custom: 'KAPP ID is required for Travel expenses.',
+        });
+      }
+      if (!(value.instituteName || '').trim()) {
+        return helpers.message({
+          custom: 'Institute Name is required for Travel expenses.',
+        });
+      }
+      if (!value.tripContext || !TRIP_CONTEXT_VALUES.includes(value.tripContext)) {
+        return helpers.message({
+          custom: `Trip Context is required for Travel expenses and must be one of: ${TRIP_CONTEXT_VALUES.join(', ')}`,
+        });
+      }
+    } else if (value.kappId || value.instituteName || value.tripContext) {
+      return helpers.message({
+        custom: 'kappId, instituteName, and tripContext are only allowed for Travel expenses.',
+      });
     }
 
     if (type === 'Food') {
