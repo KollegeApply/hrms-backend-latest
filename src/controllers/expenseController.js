@@ -70,6 +70,9 @@ function parseCreateExpenseBody(req) {
     miscOthersDescription: req.body.miscOthersDescription,
     travelMiscDescription: req.body.travelMiscDescription,
     cityTier: req.body.cityTier,
+    kappId: req.body.kappId,
+    instituteName: req.body.instituteName,
+    tripContext: req.body.tripContext,
   });
 
   const merged = parsed ? { ...parsed, ...flat } : flat;
