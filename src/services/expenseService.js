@@ -333,16 +333,6 @@ class ExpenseService {
       );
     }
 
-    const minAllowedDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-    minAllowedDate.setHours(0, 0, 0, 0);
-
-    if (expenseDate < minAllowedDate) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'Expense date must be within the current month or the previous month.'
-      );
-    }
-
     const userWithLeads = await User.findById(user.id)
       .select('teamLeadId subTeamLeadId team role')
       .populate('teamLeadId', 'role');
