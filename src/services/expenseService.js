@@ -613,8 +613,10 @@ class ExpenseService {
         );
       }
     } else if (activeQueue === 'all') {
-      // All Expenses: complete non-deleted dataset for the dedicated support account only.
-      if (!this.isAllExpensesSupportUser(user)) {
+      // All Expenses: complete non-deleted dataset — the dedicated support
+      // account, or anyone in the Expense department.
+      const isExpenseDeptUser = await this.isExpenseDepartmentUser(user.id);
+      if (!this.isAllExpensesSupportUser(user) && !isExpenseDeptUser) {
         throw new ApiError(
           httpStatus.FORBIDDEN,
           'You are not authorized to view all expenses.'
@@ -1649,8 +1651,50 @@ class ExpenseService {
     if (!user?.id) {
       throw new ApiError(httpStatus.UNAUTHORIZED, 'Could not identify user.');
     }
+    return this.buildPersonalExpenseDashboard(user.id);
+  }
 
-    const userId = this.toObjectId(user.id);
+  /**
+   * Same aggregates as `getMyExpenseDashboard`, for a Team Lead / Sub Team
+   * Lead viewing one of their own reportees from View Team (or Admin/HR
+   * viewing anyone). Authorization happens here, not on the caller.
+   */
+  async getTeamMemberExpenseDashboard(currentUser, targetUserId) {
+    if (!mongoose.Types.ObjectId.isValid(targetUserId)) {
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid user id.');
+    }
+
+    const targetUser = await User.findOne({
+      _id: targetUserId,
+      isDeleted: { $ne: true },
+    })
+      .select('teamLeadId subTeamLeadId')
+      .lean();
+    if (!targetUser) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
+    }
+
+    const role = (currentUser.role || '').toLowerCase();
+    const actorId = String(currentUser.id || currentUser._id || '');
+    const isAdminRole = this.adminRoles.includes(role);
+    const isTlRole = this.tlRoles.includes(role);
+    const isDirectLead =
+      String(targetUser.teamLeadId || '') === actorId ||
+      String(targetUser.subTeamLeadId || '') === actorId;
+
+    if (!isAdminRole && !(isTlRole && isDirectLead)) {
+      throw new ApiError(
+        httpStatus.FORBIDDEN,
+        'You can only view the expense dashboard for your own team members.'
+      );
+    }
+
+    return this.buildPersonalExpenseDashboard(targetUserId);
+  }
+
+  /** Shared aggregation behind getMyExpenseDashboard / getTeamMemberExpenseDashboard. */
+  async buildPersonalExpenseDashboard(targetUserId) {
+    const userId = this.toObjectId(targetUserId);
     const pendingStatuses = this.expensePendingStatuses();
     const rejectedStatuses = this.expenseRejectedStatuses();
     const approvedStatus = 'expense-approved';

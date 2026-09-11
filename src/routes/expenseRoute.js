@@ -11,6 +11,7 @@ router.use(authenticateUser);
 router.post('/', safeExpenseAttachmentUpload, expenseController.createExpense);
 router.get('/dashboard', expenseController.getExpenseDashboard);
 router.get('/my-dashboard', expenseController.getMyExpenseDashboard);
+router.get('/team-dashboard/:userId', expenseController.getTeamMemberExpenseDashboard);
 router.get('/tl-bulk-summary', expenseController.getTlBulkSummary);
 router.get('/', expenseController.getExpenses);
 router.put('/bulk/approve', expenseController.bulkApproveExpenses);
