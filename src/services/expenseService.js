@@ -333,13 +333,13 @@ class ExpenseService {
       );
     }
 
-    const minAllowedDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const minAllowedDate = new Date(today.getFullYear(), today.getMonth() - 3, 1);
     minAllowedDate.setHours(0, 0, 0, 0);
 
     if (expenseDate < minAllowedDate) {
       throw new ApiError(
         httpStatus.BAD_REQUEST,
-        'Expense date must be within the current month or the previous month.'
+        'Expense date must be within the current month or the previous 3 months.'
       );
     }
 
