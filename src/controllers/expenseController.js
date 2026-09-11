@@ -726,6 +726,20 @@ const getMyExpenseDashboard = catchAsync(async (req, res) => {
   });
 });
 
+/** Team Lead/Sub Team Lead viewing one reportee's dashboard from View Team (Admin/HR: anyone). */
+const getTeamMemberExpenseDashboard = catchAsync(async (req, res) => {
+  const dashboard = await expenseService.getTeamMemberExpenseDashboard(
+    req.user,
+    req.params.userId
+  );
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Team member expense dashboard fetched successfully.',
+    data: dashboard,
+  });
+});
+
 const getTlBulkSummary = catchAsync(async (req, res) => {
   const validatedQuery = await expenseValidator.tlBulkSummarySchema.validateAsync(
     req.query
@@ -933,6 +947,7 @@ module.exports = {
   getExpenses,
   getExpenseDashboard,
   getMyExpenseDashboard,
+  getTeamMemberExpenseDashboard,
   getTlBulkSummary,
   updateExpenseStatus,
   bulkApproveExpenses,
