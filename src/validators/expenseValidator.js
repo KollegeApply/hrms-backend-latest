@@ -330,9 +330,30 @@ const expenseDashboardSchema = Joi.object({
       'alternatives.match': 'employeeId must be a valid user id or employee code.',
     }),
   status: Joi.string().trim().allow('').optional(),
+  departmentId: objectIdSchema.optional(),
   groupBy: Joi.string().valid('employee', 'department').default('employee'),
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(10000).default(10),
+}).options({ stripUnknown: true });
+
+/** Dashboard drill-down — one employee's records, same filter state as the grouped view. */
+const expenseDashboardRecordsSchema = Joi.object({
+  month: Joi.number().integer().min(1).max(12).required().messages({
+    'any.required': 'Month is required.',
+  }),
+  year: Joi.number().integer().min(2000).max(2100).required().messages({
+    'any.required': 'Year is required.',
+  }),
+  employeeId: Joi.alternatives()
+    .try(objectIdSchema, Joi.string().trim().min(1))
+    .required()
+    .messages({
+      'any.required': 'employeeId is required.',
+      'alternatives.match': 'employeeId must be a valid user id or employee code.',
+    }),
+  team: Joi.string().trim().allow('').optional(),
+  status: Joi.string().trim().allow('').optional(),
+  departmentId: objectIdSchema.optional(),
 }).options({ stripUnknown: true });
 
 const bulkRejectExpenseSchema = Joi.object({
@@ -360,13 +381,37 @@ const bulkRejectExpenseSchema = Joi.object({
   sendMail: Joi.boolean().optional(),
 }).options({ stripUnknown: true });
 
+/** FR-1.1/1.2 — Admin-only global/department expense filing cutoff toggle. */
+const updateExpenseFilingCutoffSchema = Joi.object({
+  cutoffActive: Joi.boolean().required().messages({
+    'any.required': 'cutoffActive is required.',
+  }),
+  scope: Joi.string().valid('all', 'departments').required().messages({
+    'any.only': 'scope must be either "all" or "departments".',
+    'any.required': 'scope is required.',
+  }),
+  departmentIds: Joi.when('scope', {
+    is: 'departments',
+    then: Joi.array().items(objectIdSchema).min(1).required().messages({
+      'array.min': 'Select at least one department, or choose All Employees.',
+      'any.required': 'departmentIds is required when scope is "departments".',
+    }),
+    otherwise: Joi.array().items(objectIdSchema).optional(),
+  }),
+  message: Joi.string().trim().max(300).allow('', null).optional().messages({
+    'string.max': 'Message cannot exceed 300 characters.',
+  }),
+}).options({ stripUnknown: true });
+
 module.exports = {
   createExpenseSchema,
   listExpenseSchema,
   expenseDashboardSchema,
+  expenseDashboardRecordsSchema,
   tlBulkSummarySchema,
   expenseIdSchema,
   updateExpenseStatusSchema,
   bulkApproveExpenseSchema,
   bulkRejectExpenseSchema,
+  updateExpenseFilingCutoffSchema,
 };

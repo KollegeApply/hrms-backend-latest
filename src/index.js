@@ -22,6 +22,17 @@ if (missingEnv.length > 0) {
 
 const mongoose = require('mongoose');
 
+// Dev-only workaround: some local machines (notably McAfee's DNS filtering)
+// redirect Node's resolver to 127.0.0.1, where nothing answers — causing
+// `querySrv ECONNREFUSED` against the mongodb+srv:// host. Pointing Node at
+// public DNS servers directly avoids that broken local redirect. Skipped in
+// production, where this was never an issue and the deploy box's own DNS
+// (e.g. VPC-internal resolvers) should be left alone.
+if (process.env.NODE_ENV !== 'production') {
+  const dns = require('dns');
+  dns.setServers(['8.8.8.8', '1.1.1.1']);
+}
+
 // Connect to MongoDB
 mongoose
   .connect(process.env.MONGO_URI, {
@@ -36,6 +47,7 @@ mongoose
     require('./expressServer');
   })
   .catch((err) => {
+    console.log(err, "error");
     logger.error('❌ MongoDB connection error:', err.message);
     // process.exit(1); // Exit the application if DB connection fails
   });

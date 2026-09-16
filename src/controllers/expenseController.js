@@ -178,26 +178,6 @@ async function getExpenseApproverEmails(team) {
   return [...new Set([...fromUsers, ...fallback])];
 }
 
-/** Finance Department approver emails: NOT team-scoped — Finance reviews expenses across all teams. */
-async function getFinanceApproverEmails() {
-  const approvers = await User.find({
-    isDeleted: { $ne: true },
-  })
-    .populate('department', 'name')
-    .select('email role department')
-    .lean();
-
-  const fromUsers = approvers
-    .filter((entry) => {
-      const departmentName = (entry.department?.name || '').toLowerCase().trim();
-      return departmentName === 'finance';
-    })
-    .map((entry) => entry.email)
-    .filter(Boolean);
-
-  return [...new Set(fromUsers)];
-}
-
 function getMailPayload(expenseDoc) {
   const employee = expenseDoc?.userId || {};
   const resolvedExpenseType = (() => {
@@ -474,49 +454,6 @@ async function sendExpenseStatusUpdateEmail({
 
     if (
       (previousStatus === 'tl-approved' || previousStatus === 'expense-returned') &&
-      newStatus === 'admin-approved'
-    ) {
-      const financeApproverEmails = await getFinanceApproverEmails();
-      if (financeApproverEmails.length > 0) {
-        const isResubmission = previousStatus === 'expense-returned';
-        const msg = renderExpenseEmailTemplate({
-          heading: isResubmission
-            ? 'Expense Resubmitted for Finance Review'
-            : 'Expense Awaiting Finance Review',
-          greeting: 'Finance Department',
-          intro: isResubmission
-            ? 'The Expense Department has resubmitted a previously returned expense for your review.'
-            : 'An expense claim has been reviewed by the Expense Department and now requires Finance review.',
-          team,
-          detailRowsHtml:
-            renderExpenseDetailRow(
-              'Employee',
-              `${payload.employeeName} (${payload.employeeId})`
-            ) +
-            renderExpenseDetailRow('Expense Type', payload.expenseType) +
-            renderExpenseDetailRow('Amount', payload.amount),
-          remarks: updatedExpense.expenseRemark || '',
-          remarksLabel: 'Expense Department Remark',
-          ctaLabel: 'Review Now',
-          ctaLink: payload.expenseLink,
-          footerLabel: `${getTeamFooterLabel(team)} - Expense Department`,
-        });
-        Helper.sendEmail({
-          receiverEmails: financeApproverEmails,
-          subject: isResubmission
-            ? 'Expense Resubmitted for Finance Review'
-            : 'Expense Awaiting Finance Review',
-          message: msg,
-          team,
-        }).catch((err) =>
-          logger.error('Failed to notify Finance Department of expense review:', err)
-        );
-      }
-      return;
-    }
-
-    if (
-      (previousStatus === 'tl-approved' || previousStatus === 'expense-returned') &&
       newStatus === 'expense-rejected' &&
       payload.employeeEmail
     ) {
@@ -546,11 +483,9 @@ async function sendExpenseStatusUpdateEmail({
       return;
     }
 
-    if (
-      previousStatus === 'admin-approved' &&
-      newStatus === 'expense-approved' &&
-      payload.employeeEmail
-    ) {
+    // Expense Department's approval is the final one, so this fires straight
+    // off `tl-approved` (or a legacy row still sitting in `admin-approved`).
+    if (newStatus === 'expense-approved' && payload.employeeEmail) {
       const msg = renderExpenseEmailTemplate({
         heading: 'Your Expense Claim Has Been Approved',
         greeting: payload.employeeName,
@@ -576,42 +511,6 @@ async function sendExpenseStatusUpdateEmail({
       return;
     }
 
-    if (
-      previousStatus === 'admin-approved' &&
-      newStatus === 'expense-returned'
-    ) {
-      const expenseApproverEmails = await getExpenseApproverEmails(team);
-      if (expenseApproverEmails.length > 0) {
-        const msg = renderExpenseEmailTemplate({
-          heading: 'Expense Returned by Finance',
-          greeting: 'Expense Department',
-          intro:
-            'Finance has returned an expense claim for further review or correction.',
-          team,
-          detailRowsHtml:
-            renderExpenseDetailRow(
-              'Employee',
-              `${payload.employeeName} (${payload.employeeId})`
-            ) +
-            renderExpenseDetailRow('Expense Type', payload.expenseType) +
-            renderExpenseDetailRow('Amount', payload.amount),
-          remarks: updatedExpense.financeRemark || '',
-          remarksLabel: 'Finance Remark',
-          ctaLabel: 'Review Now',
-          ctaLink: payload.expenseLink,
-          ctaColor: '#dc2626',
-          footerLabel: `${getTeamFooterLabel(team)} - Finance Department`,
-        });
-        Helper.sendEmail({
-          receiverEmails: expenseApproverEmails,
-          subject: 'Expense Returned by Finance — Action Required',
-          message: msg,
-          team,
-        }).catch((err) =>
-          logger.error('Failed to notify Expense Department of Finance return:', err)
-        );
-      }
-    }
   } catch (error) {
     logger.error('Failed while preparing expense status update emails:', error);
   }
@@ -668,6 +567,62 @@ const createExpense = catchAsync(async (req, res) => {
   });
 });
 
+/** FR-3.2 — claimant edits a rejected expense in place and resubmits it. */
+const updateExpense = catchAsync(async (req, res) => {
+  const raw = parseCreateExpenseBody(req);
+  if (raw == null) {
+    return res.status(httpStatus.BAD_REQUEST).json({
+      status: false,
+      message: 'Invalid payload for expenseData',
+    });
+  }
+
+  const { id } = await expenseValidator.expenseIdSchema.validateAsync({
+    id: req.params.id,
+  });
+
+  let uploadedPath = null;
+  const uploadedFile = getUploadedFile(req);
+  if (uploadedFile) {
+    try {
+      uploadedPath = await uploadToAWS(
+        uploadedFile.buffer,
+        uploadedFile.originalname,
+        'hrms-expenses/'
+      );
+      logger.info(`Expense receipt uploaded: ${uploadedPath}`);
+    } catch (error) {
+      logger.error('Failed to upload expense receipt:', error);
+      return res.status(httpStatus.INTERNAL_SERVER_ERROR).json({
+        status: false,
+        message: 'Failed to upload receipt. Please try again.',
+      });
+    }
+  }
+
+  const attachmentUrl = uploadedPath || raw.attachmentUrl || undefined;
+
+  const payload = await expenseValidator.createExpenseSchema.validateAsync({
+    ...raw,
+    miscellaneousType: raw.miscellaneousType ?? raw.otherType ?? raw.customType,
+    attachmentUrl,
+  });
+
+  const expense = await expenseService.updateExpense(req.user, id, payload);
+  const data = applyAttachmentUrlTransform(expense);
+
+  const sendMail = !(req?.body?.sendMail === false || req?.body?.sendMail === 'false');
+  if (sendMail) {
+    await sendExpenseSubmissionEmails(expense, req.user.team);
+  }
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Expense resubmitted successfully.',
+    data,
+  });
+});
+
 const getExpenses = catchAsync(async (req, res) => {
   const validatedQuery = await expenseValidator.listExpenseSchema.validateAsync(
     req.query
@@ -713,6 +668,23 @@ const getExpenseDashboard = catchAsync(async (req, res) => {
     pagination: dashboard.pagination,
     filters: dashboard.filters,
     access: dashboard.access,
+  });
+});
+
+/** Dashboard drill-down — one employee's expenses, ordered by expense date. */
+const getExpenseDashboardEmployeeRecords = catchAsync(async (req, res) => {
+  const validatedQuery =
+    await expenseValidator.expenseDashboardRecordsSchema.validateAsync(req.query);
+
+  const records = await expenseService.getExpenseDashboardEmployeeRecords(
+    req.user,
+    validatedQuery
+  );
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Employee expense records fetched successfully.',
+    data: records.map((doc) => applyAttachmentUrlTransform(doc)),
   });
 });
 
@@ -925,6 +897,43 @@ const bulkApproveExpenses = catchAsync(async (req, res) => {
   });
 });
 
+/** FR-1.1/1.2 — public read (any authenticated user) so Add Expense can reflect the current state. */
+const getExpenseFilingCutoff = catchAsync(async (req, res) => {
+  const data = await expenseService.getExpenseFilingCutoffStatus();
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Expense filing cutoff fetched successfully.',
+    data,
+  });
+});
+
+/** FR-1.1/1.2 — Expense department only. */
+const updateExpenseFilingCutoff = catchAsync(async (req, res) => {
+  const validated = await expenseValidator.updateExpenseFilingCutoffSchema.validateAsync(
+    req.body
+  );
+
+  const data = await expenseService.updateExpenseFilingCutoff(req.user, validated);
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Expense filing cutoff updated successfully.',
+    data,
+  });
+});
+
+/** FR-1.1/1.2 — Expense department only, audit trail. */
+const getExpenseFilingCutoffHistory = catchAsync(async (req, res) => {
+  const data = await expenseService.getExpenseFilingCutoffHistory(req.user);
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Expense filing cutoff history fetched successfully.',
+    data: data.history,
+  });
+});
+
 const deleteExpense = catchAsync(async (req, res) => {
   const validated = await expenseValidator.expenseIdSchema.validateAsync({
     id: req.params.id,
@@ -944,8 +953,10 @@ const deleteExpense = catchAsync(async (req, res) => {
 
 module.exports = {
   createExpense,
+  updateExpense,
   getExpenses,
   getExpenseDashboard,
+  getExpenseDashboardEmployeeRecords,
   getMyExpenseDashboard,
   getTeamMemberExpenseDashboard,
   getTlBulkSummary,
@@ -953,4 +964,7 @@ module.exports = {
   bulkApproveExpenses,
   bulkRejectExpenses,
   deleteExpense,
+  getExpenseFilingCutoff,
+  updateExpenseFilingCutoff,
+  getExpenseFilingCutoffHistory,
 };

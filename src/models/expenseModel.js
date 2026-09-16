@@ -101,17 +101,17 @@ expenseSchema.index(
   { partialFilterExpression: { isDeleted: { $ne: true } } }
 );
 /**
- * Travel duplicate guard — same date + same KAPP ID, across ALL users
- * (not just the submitter's own claims). Base location (Intracity) only —
- * Outstation (Intercity) trips are exempt (e.g. a multi-day outstation
- * visit can reuse the same KAPP ID). A DB-level unique index (rather than
- * only an app-level check) so concurrent requests from different users
- * can't race past the findOne-then-create check.
+ * Travel duplicate guard lookup index — same date + same KAPP ID.
+ * Base location (Intracity) only — Outstation (Intercity) trips are
+ * exempt (e.g. a multi-day outstation visit can reuse the same KAPP ID).
+ * Not unique: the first user to claim a KAPP ID + date "owns" it and may
+ * file further expenses against the same combination; only a *different*
+ * user is blocked (enforced in expenseService, since a plain unique index
+ * can't express "unique except for one specific user").
  */
 expenseSchema.index(
   { date: 1, kappId: 1 },
   {
-    unique: true,
     partialFilterExpression: {
       isDeleted: { $ne: true },
       type: 'Travel',
