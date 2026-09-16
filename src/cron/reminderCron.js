@@ -558,48 +558,9 @@ async function sendCheckOutReminders() {
 /**
  * Send travel & client-visit expense filing reminders to employees
  */
-// async function sendExpenseFilingReminders() {
-//   try {
-//     const users = await User.find({
-//       status: { $in: ['probation', 'onroll'] },
-//       isDeleted: false,
-//     });
-
-//     if (users.length === 0) {
-//       logger.info('No users found for expense filing reminders.');
-//       return;
-//     }
-
-//     const dashboardUrl = process.env.HRMS_FRONTEND_URL;
-
-//     // Prepare email queue
-//     const emailQueue = [];
-//     users.forEach(user => {
-//       if (!user.team) {
-//         logger.warn(`Skipping user ${user.email} - missing team information`);
-//         return;
-//       }
-
-//       const userName = `${user.firstName} ${user.lastName}`;
-//       emailQueue.push({
-//         receiverEmails: [user.email],
-//         subject: 'Reminder: File your travel expense claims by the 3rd of the following month for expenses incurred in the previous month',
-//         message: Helper.getExpenseFilingReminder(userName, dashboardUrl, user.team),
-//         team: user.team
-//       });
-//     });
-
-//     // Send emails in bulk (5 at a time with retry)
-//     await processBulkEmails(emailQueue, 'Expense Filing Reminders');
-//   } catch (error) {
-//     logger.error('Error in sendExpenseFilingReminders:', error);
-//   }
-// }
-
 async function sendExpenseFilingReminders() {
   try {
     const users = await User.find({
-      email: 'rishabh.kumar@sportsdunia.com', // 👈 only this user
       status: { $in: ['probation', 'onroll'] },
       isDeleted: false,
     });
@@ -611,8 +572,8 @@ async function sendExpenseFilingReminders() {
 
     const dashboardUrl = process.env.HRMS_FRONTEND_URL;
 
+    // Prepare email queue
     const emailQueue = [];
-
     users.forEach(user => {
       if (!user.team) {
         logger.warn(`Skipping user ${user.email} - missing team information`);
@@ -620,22 +581,16 @@ async function sendExpenseFilingReminders() {
       }
 
       const userName = `${user.firstName} ${user.lastName}`;
-
       emailQueue.push({
         receiverEmails: [user.email],
-        subject:
-          'Reminder: File your travel expense claims by the 3rd of the following month for expenses incurred in the previous month',
-        message: Helper.getExpenseFilingReminder(
-          userName,
-          dashboardUrl,
-          user.team
-        ),
+        subject: 'Reminder: File your travel expense claims by the 3rd of the following month for expenses incurred in the previous month',
+        message: Helper.getExpenseFilingReminder(userName, dashboardUrl, user.team),
         team: user.team
       });
     });
 
+    // Send emails in bulk (5 at a time with retry)
     await processBulkEmails(emailQueue, 'Expense Filing Reminders');
-
   } catch (error) {
     logger.error('Error in sendExpenseFilingReminders:', error);
   }
