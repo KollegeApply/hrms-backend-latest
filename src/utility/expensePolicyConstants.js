@@ -71,10 +71,10 @@ const BASE_LOCATION_TRAVEL_MONTHLY_CAP = 8000;
 
 /** Food — daily cap by band & metro flag (PRD §7 table). */
 const FOOD_DAILY_CAP = {
-  K1: { metro: 1200, nonMetro: 1000 },
-  K2: { metro: 1000, nonMetro: 900 },
-  K3: { metro: 900, nonMetro: 800 },
-  K4: { metro: 800, nonMetro: 700 },
+  K1: { metro: 800, nonMetro: 600 },
+  K2: { metro: 600, nonMetro: 400 },
+  K3: { metro: 400, nonMetro: 300 },
+  K4: { metro: 400, nonMetro: 300 },
 };
 
 /** Hotel Accommodation — per night excl. GST (PRD). */
@@ -100,6 +100,10 @@ const TECHNICAL_TOOLS_DEFAULTS = {
 
 const TL_ROLES_FOR_TEAM_LUNCH = ['teamlead', 'subteamlead'];
 
+/** FR-1.1/1.2 — shown to a blocked employee when Admin hasn't set a custom message. */
+const DEFAULT_EXPENSE_FILING_CUTOFF_MESSAGE =
+  'Expense filing is currently closed. Please contact Admin for more information.';
+
 module.exports = {
   EXPENSE_TYPES,
   EXPENSE_TYPES_CREATE,
@@ -118,4 +122,5 @@ module.exports = {
   TRIP_CONTEXT_VALUES,
   BASE_LOCATION_TRAVEL_PER_MEETING_CAP,
   BASE_LOCATION_TRAVEL_MONTHLY_CAP,
+  DEFAULT_EXPENSE_FILING_CUTOFF_MESSAGE,
 };

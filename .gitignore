@@ -139,3 +139,6 @@ dist
 .pnp.*
 
 package-lock.json
+
+# Local-only dev DNS workaround — never commit/deploy this
+local-dns-fix.js
