@@ -20,6 +20,16 @@ const expenseSchema = new Schema(
         'Team Lunch',
       ],
     },
+    /**
+     * Sales Expense carries the KAPP ID / Institute Name reporting fields;
+     * Normal Expense never does. Sales Expense is the default — most claims
+     * filed through this module are meeting-linked.
+     */
+    expenseCategory: {
+      type: String,
+      enum: ['sales', 'normal'],
+      default: 'sales',
+    },
     /** Phase 2 — sub-type under Travel / Food / Miscellaneous. */
     subCategory: { type: String, trim: true, maxlength: 120 },
     /** Legacy Phase 1 — free-text miscellaneous; kept for older rows. */
@@ -54,6 +64,13 @@ const expenseSchema = new Schema(
         'submitted',
         'tl-approved',
         'tl-rejected',
+        /**
+         * Zonal Head stage — only inserted between Team Lead and the Expense
+         * department for filers who have a `zonalHeadId` mapped on their
+         * User profile. Everyone else's flow is untouched.
+         */
+        'zonal-pending',
+        'zonal-rejected',
         'admin-approved',
         'expense-rejected',
         'expense-returned',
@@ -66,6 +83,26 @@ const expenseSchema = new Schema(
     expenseRemark: { type: String, trim: true, maxlength: 500 },
     /** Finance Department's latest remark (approve or return). */
     financeRemark: { type: String, trim: true, maxlength: 500 },
+    /**
+     * Policy caps inform, they never block. Every claim is stamped at
+     * create/resubmit time so approvers can filter in-policy vs out-of-policy.
+     */
+    policyTag: {
+      type: String,
+      enum: ['in-policy', 'out-of-policy'],
+      default: 'in-policy',
+    },
+    /** Every cap this claim broke — drives the "why" shown to approvers. */
+    policyBreaches: [
+      {
+        rule: { type: String, required: true },
+        label: { type: String, trim: true, maxlength: 120 },
+        capAmount: { type: Number },
+        enteredAmount: { type: Number },
+        message: { type: String, trim: true, maxlength: 300 },
+        _id: false,
+      },
+    ],
     /** Full audit trail of every approval-workflow action on this expense. */
     approvalHistory: [
       {
@@ -77,6 +114,14 @@ const expenseSchema = new Schema(
       },
     ],
     isDeleted: { type: Boolean, default: false },
+    /**
+     * Multi-expense-for-one-meeting flow: a line saved via "Save" stays a
+     * draft (own private record, excluded from every approval/dashboard
+     * queue) until the claimant hits "Submit" for the whole date+KAPP ID
+     * group. Draft lines persist server-side so they survive a closed tab
+     * and follow the user across devices.
+     */
+    isDraft: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
@@ -86,6 +131,16 @@ expenseSchema.index(
   { partialFilterExpression: { isDeleted: { $ne: true } } }
 );
 expenseSchema.index({ team: 1, status: 1, createdAt: -1 });
+/** Drafts tab: a user's own unsubmitted lines, grouped by date + KAPP ID. */
+expenseSchema.index(
+  { userId: 1, isDraft: 1, date: 1, kappId: 1 },
+  { partialFilterExpression: { isDeleted: { $ne: true }, isDraft: true } }
+);
+/** Approver queues filtered by the in-policy / out-of-policy tag. */
+expenseSchema.index(
+  { policyTag: 1, createdAt: -1 },
+  { partialFilterExpression: { isDeleted: { $ne: true } } }
+);
 expenseSchema.index(
   { team: 1, date: 1, type: 1 },
   { partialFilterExpression: { isDeleted: { $ne: true }, type: 'Team Lunch' } }

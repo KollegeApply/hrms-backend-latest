@@ -73,6 +73,8 @@ function parseCreateExpenseBody(req) {
     kappId: req.body.kappId,
     instituteName: req.body.instituteName,
     tripContext: req.body.tripContext,
+    expenseCategory: req.body.expenseCategory,
+    isDraft: req.body.isDraft,
   });
 
   const merged = parsed ? { ...parsed, ...flat } : flat;
@@ -85,6 +87,9 @@ function parseCreateExpenseBody(req) {
   }
   if (merged.amount != null && typeof merged.amount === 'string') {
     merged.amount = Number(merged.amount);
+  }
+  if (merged.isDraft != null && typeof merged.isDraft === 'string') {
+    merged.isDraft = merged.isDraft === 'true';
   }
 
   if (parsed) return merged;
@@ -555,14 +560,16 @@ const createExpense = catchAsync(async (req, res) => {
   const expense = await expenseService.createExpense(req.user, payload);
   const data = applyAttachmentUrlTransform(expense);
 
+  // Draft lines never notify — the TL/approver/employee emails only fire
+  // once the whole date + KAPP ID group is submitted (submitExpenseDrafts).
   const sendMail = !(req?.body?.sendMail === false || req?.body?.sendMail === 'false');
-  if (sendMail) {
+  if (sendMail && !expense.isDraft) {
     await sendExpenseSubmissionEmails(expense, req.user.team);
   }
 
   res.status(httpStatus.CREATED).json({
     status: true,
-    message: 'Expense submitted successfully.',
+    message: expense.isDraft ? 'Expense saved as draft.' : 'Expense submitted successfully.',
     data,
   });
 });
@@ -612,13 +619,13 @@ const updateExpense = catchAsync(async (req, res) => {
   const data = applyAttachmentUrlTransform(expense);
 
   const sendMail = !(req?.body?.sendMail === false || req?.body?.sendMail === 'false');
-  if (sendMail) {
+  if (sendMail && !expense.isDraft) {
     await sendExpenseSubmissionEmails(expense, req.user.team);
   }
 
   res.status(httpStatus.OK).json({
     status: true,
-    message: 'Expense resubmitted successfully.',
+    message: expense.isDraft ? 'Draft updated.' : 'Expense resubmitted successfully.',
     data,
   });
 });
@@ -645,6 +652,42 @@ const getExpenses = catchAsync(async (req, res) => {
   });
 });
 
+/** Multi-expense-for-one-meeting flow — the current user's own draft lines. */
+const getExpenseDrafts = catchAsync(async (req, res) => {
+  const rows = await expenseService.listExpenseDrafts(req.user);
+  const data = rows.map((doc) => applyAttachmentUrlTransform(doc));
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Draft expenses fetched successfully.',
+    data,
+  });
+});
+
+/** Multi-expense-for-one-meeting flow — submit every draft in a date + KAPP ID group. */
+const submitExpenseDrafts = catchAsync(async (req, res) => {
+  const payload = await expenseValidator.submitExpenseDraftsSchema.validateAsync(
+    req.body
+  );
+
+  const submitted = await expenseService.submitExpenseDrafts(req.user, payload);
+
+  const sendMail = !(req?.body?.sendMail === false || req?.body?.sendMail === 'false');
+  if (sendMail) {
+    for (const expense of submitted) {
+      await sendExpenseSubmissionEmails(expense, req.user.team);
+    }
+  }
+
+  const data = submitted.map((doc) => applyAttachmentUrlTransform(doc));
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: `${data.length} expense(s) submitted successfully.`,
+    data,
+  });
+});
+
 const getExpenseDashboard = catchAsync(async (req, res) => {
   const validatedQuery = await expenseValidator.expenseDashboardSchema.validateAsync(
     req.query
@@ -662,7 +705,9 @@ const getExpenseDashboard = catchAsync(async (req, res) => {
     message:
       validatedQuery.groupBy === 'department'
         ? 'Department expense dashboard fetched successfully.'
-        : 'Expense dashboard fetched successfully.',
+        : validatedQuery.groupBy === 'custom'
+          ? 'Custom-grouped expense dashboard fetched successfully.'
+          : 'Expense dashboard fetched successfully.',
     summary: dashboard.summary,
     data: dashboard.data,
     pagination: dashboard.pagination,
@@ -695,6 +740,23 @@ const getMyExpenseDashboard = catchAsync(async (req, res) => {
     status: true,
     message: 'Personal expense dashboard fetched successfully.',
     data: dashboard,
+  });
+});
+
+/** Running month-to-date total shown on the Add Expense form. */
+const getMyMonthlyExpenseTotal = catchAsync(async (req, res) => {
+  const validatedQuery =
+    await expenseValidator.myMonthlyTotalSchema.validateAsync(req.query);
+
+  const data = await expenseService.getMyMonthlyExpenseTotal(
+    req.user,
+    validatedQuery
+  );
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Monthly expense total fetched successfully.',
+    data,
   });
 });
 
@@ -958,6 +1020,7 @@ module.exports = {
   getExpenseDashboard,
   getExpenseDashboardEmployeeRecords,
   getMyExpenseDashboard,
+  getMyMonthlyExpenseTotal,
   getTeamMemberExpenseDashboard,
   getTlBulkSummary,
   updateExpenseStatus,
@@ -967,4 +1030,6 @@ module.exports = {
   getExpenseFilingCutoff,
   updateExpenseFilingCutoff,
   getExpenseFilingCutoffHistory,
+  getExpenseDrafts,
+  submitExpenseDrafts,
 };

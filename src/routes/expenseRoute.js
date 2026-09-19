@@ -12,6 +12,11 @@ router.post('/', safeExpenseAttachmentUpload, expenseController.createExpense);
 router.get('/dashboard', expenseController.getExpenseDashboard);
 router.get('/dashboard/records', expenseController.getExpenseDashboardEmployeeRecords);
 router.get('/my-dashboard', expenseController.getMyExpenseDashboard);
+// Multi-expense-for-one-meeting flow — save-as-draft lines and their group submit.
+router.get('/drafts', expenseController.getExpenseDrafts);
+router.post('/drafts/submit', expenseController.submitExpenseDrafts);
+// Running month-to-date total metered on the Add Expense form (own rows only).
+router.get('/my-monthly-total', expenseController.getMyMonthlyExpenseTotal);
 router.get('/team-dashboard/:userId', expenseController.getTeamMemberExpenseDashboard);
 router.get('/tl-bulk-summary', expenseController.getTlBulkSummary);
 // FR-1.1/1.2 — filing cutoff toggle. GET is open to any authenticated user

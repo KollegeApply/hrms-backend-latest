@@ -100,6 +100,28 @@ const TECHNICAL_TOOLS_DEFAULTS = {
 
 const TL_ROLES_FOR_TEAM_LUNCH = ['teamlead', 'subteamlead'];
 
+/**
+ * Per-user monthly spend budget across every expense type. Purely
+ * informational: the Add Expense form meters the month's running total
+ * against it, and going over is allowed (the meter just turns red).
+ */
+const MONTHLY_EXPENSE_BUDGET = 8000;
+
+/**
+ * Policy caps inform the claimant, they never block submission. Every expense
+ * is stamped with one of these two tags at create/resubmit time so approvers
+ * can see — and filter by — which claims broke a cap.
+ */
+const EXPENSE_POLICY_TAGS = {
+  IN_POLICY: 'in-policy',
+  OUT_OF_POLICY: 'out-of-policy',
+};
+
+const EXPENSE_POLICY_TAG_VALUES = [
+  EXPENSE_POLICY_TAGS.IN_POLICY,
+  EXPENSE_POLICY_TAGS.OUT_OF_POLICY,
+];
+
 /** FR-1.1/1.2 — shown to a blocked employee when Admin hasn't set a custom message. */
 const DEFAULT_EXPENSE_FILING_CUTOFF_MESSAGE =
   'Expense filing is currently closed. Please contact Admin for more information.';
@@ -123,4 +145,7 @@ module.exports = {
   BASE_LOCATION_TRAVEL_PER_MEETING_CAP,
   BASE_LOCATION_TRAVEL_MONTHLY_CAP,
   DEFAULT_EXPENSE_FILING_CUTOFF_MESSAGE,
+  EXPENSE_POLICY_TAGS,
+  EXPENSE_POLICY_TAG_VALUES,
+  MONTHLY_EXPENSE_BUDGET,
 };
