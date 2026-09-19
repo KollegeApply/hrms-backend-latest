@@ -288,6 +288,7 @@ class UserService {
       { path: 'teamLeadId', select: 'id firstName lastName email' },
       { path: 'subTeamLeadId', select: '_id firstName lastName email' },
       { path: 'department', select: '_id name' },
+      { path: 'zonalHeadId', select: 'id firstName lastName email' },
     ];
 
     if (isPaginated) {
@@ -370,7 +371,15 @@ class UserService {
   async getUserByIdForApi(id) {
     const userDoc = await this.getUserById(id);
     if (!userDoc) return null;
-    return this.formatUserApiResponse(userDoc);
+    const formatted = this.formatUserApiResponse(userDoc);
+    if (formatted) {
+      // Drives the Expense module's "Zonal Head" approval tab — true only
+      // for the handful of employees currently mapped as someone's zonalHeadId.
+      formatted.isZonalHead = Boolean(
+        await User.exists({ zonalHeadId: userDoc._id, isDeleted: { $ne: true } })
+      );
+    }
+    return formatted;
   }
 
   async getUserById(id) {
@@ -381,6 +390,7 @@ class UserService {
       .populate('teamLeadId', 'firstName lastName')
       .populate('subTeamLeadId', 'firstName lastName')
       .populate('hrPocId', 'firstName lastName email')
+      .populate('zonalHeadId', 'firstName lastName')
       .populate('userDetails');
 
     if (!userDoc) {
@@ -453,17 +463,18 @@ class UserService {
     }
 
     // Empty strings cannot be cast to ObjectId — treat as unset
-    ['teamLeadId', 'subTeamLeadId', 'hrPocId'].forEach((field) => {
+    ['teamLeadId', 'subTeamLeadId', 'hrPocId', 'zonalHeadId'].forEach((field) => {
       if (userData[field] === '') {
         userData[field] = null;
       }
     });
 
-    // Validate IDs (Team Lead, Sub Team Lead, HR POC)
+    // Validate IDs (Team Lead, Sub Team Lead, HR POC, Zonal Head)
     const idsToValidate = [
       { id: userData?.teamLeadId, label: 'Team Lead' },
       { id: userData?.subTeamLeadId, label: 'Sub Team Lead' },
       { id: userData?.hrPocId, label: 'HR' },
+      { id: userData?.zonalHeadId, label: 'Zonal Head' },
     ];
 
     for (const { id, label } of idsToValidate) {
@@ -778,7 +789,7 @@ class UserService {
     }
 
     // Empty strings cannot be cast to ObjectId — treat as unset
-    ['teamLeadId', 'subTeamLeadId', 'hrPocId'].forEach((field) => {
+    ['teamLeadId', 'subTeamLeadId', 'hrPocId', 'zonalHeadId'].forEach((field) => {
       if (updateData?.[field] === '') {
         updateData[field] = null;
       }
