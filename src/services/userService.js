@@ -325,6 +325,118 @@ class UserService {
   }
 
   /**
+   * Server-to-server lookup for the Kapp Sales CRM backend: search HRMS
+   * employees by name/email/employeeId, scoped to the "Sales" department
+   * only. This is what powers "search by name, autofill the rest" when
+   * creating a Sales CRM user -- the CRM never needs its own copy of HRMS
+   * employee data, it just looks it up here on demand.
+   *
+   * "Sales team" here means the functional Department named "Sales" (the
+   * Department collection), not the top-level `team` field on User, which
+   * only holds company-level codes (e.g. "KollegeApply"/"Sportsdunia").
+   *
+   * @param {object} queryOptions
+   * @param {string} [queryOptions.search] - matched against firstName,
+   *   lastName, email, employeeId (and "First Last" / "Last First" combos).
+   * @param {number} [queryOptions.page]
+   * @param {number} [queryOptions.limit]
+   */
+  async searchUsersForSalesCrm(queryOptions) {
+    const { search, page = 1, limit = 20 } = queryOptions;
+
+    const salesDept = await Department.findOne({
+      name: { $regex: '^sales$', $options: 'i' },
+      isDeleted: false,
+    })
+      .select('_id name')
+      .lean();
+
+    if (!salesDept) {
+      logger.warn(
+        'searchUsersForSalesCrm: no "Sales" department exists yet -- returning empty list'
+      );
+      return {
+        data: [],
+        pagination: {
+          totalDocs: 0,
+          limit,
+          totalPages: 0,
+          currentPage: page,
+          hasPrevPage: false,
+          hasNextPage: false,
+          pagingCounter: 1,
+          prevPage: null,
+          nextPage: null,
+        },
+      };
+    }
+
+    const query = {
+      department: salesDept._id,
+      isDeleted: false,
+      // Only currently active-ish employees -- same default as the normal
+      // employee listing (getAllUsers) uses when no status is requested.
+      status: { $in: ['probation', 'onroll'] },
+    };
+
+    if (typeof search === 'string' && search.trim().length > 0) {
+      const searchTerm = search.trim();
+      const regex = new RegExp(searchTerm, 'i');
+      const searchFilters = [
+        { firstName: regex },
+        { lastName: regex },
+        { email: regex },
+        { employeeId: regex },
+      ];
+
+      const searchWords = searchTerm.split(/\s+/).filter((w) => w.length > 0);
+      if (searchWords.length >= 2) {
+        searchFilters.push(
+          {
+            $and: [
+              { firstName: new RegExp(searchWords[0], 'i') },
+              { lastName: new RegExp(searchWords[1], 'i') },
+            ],
+          },
+          {
+            $and: [
+              { firstName: new RegExp(searchWords[1], 'i') },
+              { lastName: new RegExp(searchWords[0], 'i') },
+            ],
+          }
+        );
+      }
+
+      query.$or = searchFilters;
+    }
+
+    const { data, pagination } = await paginate(
+      User,
+      query,
+      page,
+      limit,
+      { firstName: 1, lastName: 1 },
+      'firstName lastName email employeeId phoneNumber jobTitle status department',
+      { path: 'department', select: 'name' }
+    );
+
+    const results = data.map((user) => ({
+      // Maps 1:1 onto CreateUserDto in kapp-sales-crm-backend: name, email,
+      // kapp_id (required) + phone_number (optional). The rest are extra
+      // display-only context for whoever is picking a person off the list.
+      kapp_id: user.employeeId || null,
+      name: [user.firstName, user.lastName].filter(Boolean).join(' ').trim(),
+      email: user.email || null,
+      phone_number: user.phoneNumber || null,
+      job_title: user.jobTitle || null,
+      department: user.department?.name || salesDept.name,
+      status: user.status,
+    }));
+
+    return { data: results, pagination };
+  }
+
+  /**
    * Get a single user by their ID.
    * @param {string} id - The user's MongoDB ObjectId.
    * @returns {Promise<User|null>} - The user document or null if not found.

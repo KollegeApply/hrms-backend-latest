@@ -21,6 +21,7 @@ const kpiRoutes = require('./routes/kpiRoute');
 const expenseRoutes = require('./routes/expenseRoute');
 const biometricWebhookRoutes = require('./routes/biometricWebhookRoute');
 const companypolicyRoute = require('./routes/companypolicyRoute')
+const externalRoutes = require('./routes/externalRoute');
 // const otherRoutes = require('./routes/otherRoutes'); // Example for future routes
 
 const router = express.Router();
@@ -112,8 +113,12 @@ const defaultRoutes = [
   {
     path: `/api/${apiVersion}/company-policy`,
     route: companypolicyRoute,
+  },
+  {
+    path: `/api/${apiVersion}/external`,
+    route: externalRoutes,
   }
-  
+
   // Add other route configurations here
   // {
   //   path: `/api/${apiVersion}/departments`,
