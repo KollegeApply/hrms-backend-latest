@@ -13,7 +13,7 @@ const router = express.Router();
 // used to autofill a new Sales CRM user from their existing HRMS record.
 router.get(
   '/sales-crm/users',
-  verifyServiceSecret('SALES_CRM_API_KEY'),
+  verifyServiceSecret('HRMS_API_KEY'),
   userController.searchUsersForSalesCrm
 );
 

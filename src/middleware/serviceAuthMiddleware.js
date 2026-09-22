@@ -10,7 +10,7 @@ const logger = require('../config/logger');
  * HRMS user on these requests, just another backend presenting a key it
  * was given out of band.
  *
- * Usage: verifyServiceSecret('SALES_CRM_API_KEY') as route middleware.
+ * Usage: verifyServiceSecret('HRMS_API_KEY') as route middleware.
  * The env var named here must hold the same value the calling service
  * sends in the "x-api-secret" header.
  */
