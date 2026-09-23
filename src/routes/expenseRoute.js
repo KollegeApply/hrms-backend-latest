@@ -32,6 +32,8 @@ router.put('/bulk/reject', expenseController.bulkRejectExpenses);
 // FR-3.2 — claimant edits a rejected expense in place and resubmits it.
 router.put('/:id', safeExpenseAttachmentUpload, expenseController.updateExpense);
 router.put('/:id/status', expenseController.updateExpenseStatus);
+// Finance "Raise an Issue" — records a note on the claim; never changes its status.
+router.post('/:id/issues', expenseController.raiseFinanceIssue);
 router.delete('/:id', expenseController.deleteExpense);
 
 module.exports = router;

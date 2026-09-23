@@ -71,6 +71,7 @@ const expenseSchema = new Schema(
          */
         'zonal-pending',
         'zonal-rejected',
+        'zonal-approved',
         'admin-approved',
         'expense-rejected',
         'expense-returned',
@@ -113,6 +114,20 @@ const expenseSchema = new Schema(
         createdAt: { type: Date, default: Date.now },
       },
     ],
+    /**
+     * Finance "Raise an Issue". Finance cannot approve/reject/return, so an
+     * issue is only a written note on the claim — it never changes `status`.
+     * Each one is also recorded in `approvalHistory`.
+     */
+    financeIssues: [
+      {
+        raisedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+        message: { type: String, required: true, trim: true, maxlength: 500 },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
+    /** Denormalised from `financeIssues` so the "Raised Issues" view filters cheaply. */
+    hasFinanceIssue: { type: Boolean, default: false },
     isDeleted: { type: Boolean, default: false },
     /**
      * Multi-expense-for-one-meeting flow: a line saved via "Save" stays a
@@ -140,6 +155,11 @@ expenseSchema.index(
 expenseSchema.index(
   { policyTag: 1, createdAt: -1 },
   { partialFilterExpression: { isDeleted: { $ne: true } } }
+);
+/** Finance "Raised Issues" view. */
+expenseSchema.index(
+  { hasFinanceIssue: 1, createdAt: -1 },
+  { partialFilterExpression: { isDeleted: { $ne: true }, hasFinanceIssue: true } }
 );
 expenseSchema.index(
   { team: 1, date: 1, type: 1 },
