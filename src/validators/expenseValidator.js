@@ -237,7 +237,7 @@ const listExpenseSchema = Joi.object({
   toDate: Joi.date(),
   queue: Joi.string()
     .trim()
-    .valid('team', 'zonal', 'finance', 'finance-review', 'all')
+    .valid('team', 'zonal', 'finance', 'finance-review', 'finance-issues', 'all')
     .optional(),
   search: Joi.string().trim().allow(''),
   userId: objectIdSchema.optional(),
@@ -283,10 +283,29 @@ const expenseIdSchema = Joi.object({
   }),
 });
 
+/** Finance "Raise an Issue" — the issue text is all Finance submits. */
+const raiseFinanceIssueSchema = Joi.object({
+  id: objectIdSchema.required(),
+  message: Joi.string()
+    .trim()
+    .min(10)
+    .max(500)
+    .required()
+    .messages({
+      'string.min': 'Issue must be at least 10 characters.',
+      'string.max': 'Issue must be at most 500 characters.',
+      'any.required': 'Issue is required.',
+      'string.empty': 'Issue is required.',
+    }),
+});
+
 const allowedStatuses = [
   'submitted',
   'tl-approved',
   'tl-rejected',
+  'zonal-pending',
+  'zonal-rejected',
+  'zonal-approved',
   'admin-approved',
   'expense-rejected',
   'expense-returned',
@@ -390,6 +409,8 @@ const expenseDashboardSchema = Joi.object({
     }),
   status: Joi.string().trim().allow('').optional(),
   departmentId: objectIdSchema.optional(),
+  /** Free-text search — expense KAPP ID, expense name, institute, or employee name/code. */
+  search: Joi.string().trim().max(100).allow('').optional(),
   groupBy: Joi.string().valid('employee', 'department', 'custom').default('employee'),
   // Two-level dropdown grouping for the "custom" view — grouping itself
   // happens client-side over the flat rows this mode returns.
@@ -432,6 +453,8 @@ const expenseDashboardRecordsSchema = Joi.object({
   team: Joi.string().trim().allow('').optional(),
   status: Joi.string().trim().allow('').optional(),
   departmentId: objectIdSchema.optional(),
+  /** Free-text search — expense KAPP ID, expense name, institute, or employee name/code. */
+  search: Joi.string().trim().max(100).allow('').optional(),
 }).options({ stripUnknown: true });
 
 const bulkRejectExpenseSchema = Joi.object({
@@ -503,6 +526,7 @@ module.exports = {
   myMonthlyTotalSchema,
   expenseIdSchema,
   updateExpenseStatusSchema,
+  raiseFinanceIssueSchema,
   bulkApproveExpenseSchema,
   bulkRejectExpenseSchema,
   updateExpenseFilingCutoffSchema,

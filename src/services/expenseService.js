@@ -32,6 +32,10 @@ class ExpenseService {
     this.superAdminRoles = ['admin', 'subadmin'];
     this.tlRoles = ['teamlead', 'subteamlead'];
     this.finalApproverAdminRoles = ['admin'];
+    /** Populate paths for Finance "Raise an Issue" authors. */
+    this.financeIssuePopulatePaths = [
+      { path: 'financeIssues.raisedBy', select: 'firstName lastName email employeeId role' },
+    ];
     // Full team expense dashboard: admin, subadmin, hr, or Finance/Expense department.
     this.expenseDashboardTeamViewRoles = ['admin', 'subadmin', 'hr'];
   }
@@ -159,6 +163,7 @@ class ExpenseService {
       'submitted',
       'tl-approved',
       'zonal-pending',
+      'zonal-approved',
       'admin-approved',
       'expense-returned',
     ];
@@ -203,11 +208,13 @@ class ExpenseService {
                 then: 1,
               },
               { case: { $eq: ['$status', 'tl-approved'] }, then: 2 },
+              { case: { $eq: ['$status', 'zonal-approved'] }, then: 2 },
               { case: { $eq: ['$status', 'submitted'] }, then: 3 },
             ]
             : [
               { case: { $eq: ['$status', 'submitted'] }, then: 1 },
               { case: { $eq: ['$status', 'tl-approved'] }, then: 2 },
+              { case: { $eq: ['$status', 'zonal-approved'] }, then: 2 },
             ]),
         ],
         default: requesterRole === 'hr' ? 4 : 3,
@@ -1058,6 +1065,17 @@ class ExpenseService {
           'Only Finance department or Admin can view the Finance review queue.'
         );
       }
+    } else if (activeQueue === 'finance-issues') {
+      // Finance "Raised Issues" view: every claim Finance has raised an issue
+      // on, across all employees and statuses — same audience as Finance Review.
+      const isFinanceDeptUser = await this.isFinanceDepartmentUser(user.id);
+      if (!(isSuperAdminRole || isFinanceDeptUser)) {
+        throw new ApiError(
+          httpStatus.FORBIDDEN,
+          'Only Finance department or Admin can view raised issues.'
+        );
+      }
+      query.hasFinanceIssue = true;
     } else if (activeQueue === 'all') {
       // All Expenses: complete non-deleted dataset — the dedicated support
       // account, or anyone in the Expense department.
@@ -1076,6 +1094,7 @@ class ExpenseService {
     const statuses = this.splitCsvFilter(filters.status);
     const expenseQueueStatuses = [
       'tl-approved',
+      'zonal-approved',
       'admin-approved',
       'expense-returned',
       'expense-approved',
@@ -1184,6 +1203,7 @@ class ExpenseService {
         path: 'approvalHistory.byUserId',
         select: 'firstName lastName email employeeId role',
       },
+      ...this.financeIssuePopulatePaths,
     ];
 
     const requesterObjectId = this.toObjectId(user.id);
@@ -1366,7 +1386,7 @@ class ExpenseService {
       }
 
       if (action === 'approved') {
-        expense.status = 'tl-approved';
+        expense.status = 'zonal-approved';
       } else if (action === 'rejected') {
         if (!remark) {
           throw new ApiError(
@@ -1394,6 +1414,7 @@ class ExpenseService {
     // finalised by the Expense Department.
     if (
       currentStatus === 'tl-approved' ||
+      currentStatus === 'zonal-approved' ||
       currentStatus === 'expense-returned' ||
       currentStatus === 'admin-approved'
     ) {
@@ -1454,6 +1475,49 @@ class ExpenseService {
       httpStatus.CONFLICT,
       `Expense in '${expense.status}' state cannot be modified.`
     );
+  }
+
+  /** Finance department, or Admin/Sub Admin oversight. */
+  async canRaiseFinanceIssue(currentUser) {
+    const role = (currentUser.role || '').toLowerCase();
+    if (this.superAdminRoles.includes(role)) return true;
+    return this.isFinanceDepartmentUser(currentUser.id);
+  }
+
+  /**
+   * Finance "Raise an Issue". Finance cannot approve/reject/return (the
+   * Expense department is the final approver), so raising an issue only
+   * records the note on the claim and in its approval history — `status`
+   * is never touched.
+   */
+  async raiseFinanceIssue({ expenseId, message, currentUser }) {
+    if (!(await this.canRaiseFinanceIssue(currentUser))) {
+      throw new ApiError(
+        httpStatus.FORBIDDEN,
+        'Only the Finance department or Admin can raise an issue on an expense.'
+      );
+    }
+    const expense = await Expense.findById(expenseId);
+    if (!expense || expense.isDeleted) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'Expense not found.');
+    }
+    if (expense.isDraft) {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        'This expense is still a draft. Issues can only be raised on submitted claims.'
+      );
+    }
+
+    const actorId = String(currentUser.id || currentUser._id || '');
+    expense.financeIssues.push({ raisedBy: actorId, message });
+    expense.hasFinanceIssue = true;
+    this.pushApprovalHistory(expense, {
+      action: 'issue-raised',
+      byUserId: actorId,
+      remark: message,
+      stage: 'finance-issue',
+    });
+    return expense.save();
   }
 
   async bulkUpdateExpenseStatus({ expenseIds, remark, action, currentUser }) {
@@ -1651,9 +1715,7 @@ class ExpenseService {
       (filters.team || user.team || '').trim() || user.team
     );
 
-    if (filters.employeeId) {
-      match.userId = await this.resolveDashboardEmployeeUserId(filters.employeeId);
-    } else if (access.scope === 'team') {
+    if (access.scope === 'team') {
       match.team = teamKey;
     } else if (access.scope === 'reportees') {
       const reporteeQuery = {
@@ -1678,6 +1740,20 @@ class ExpenseService {
       }
     } else {
       match.userId = this.toObjectId(user.id);
+    }
+
+    // Single-employee filter (dashboard drill-down) narrows the viewer's role
+    // scope above — it never widens it. An employee outside that scope
+    // simply yields no rows, exactly as the grouped view would show.
+    if (filters.employeeId) {
+      const targetUserId = await this.resolveDashboardEmployeeUserId(filters.employeeId);
+      const scoped = match.userId;
+      const isInScope = scoped?.$in
+        ? scoped.$in.some((id) => String(id) === String(targetUserId))
+        : scoped
+          ? String(scoped) === String(targetUserId)
+          : true; // 'team' scope — `match.team` still restricts the rows.
+      match.userId = isInScope ? targetUserId : { $in: [] };
     }
 
     // Department filter — Expense rows carry no department, so it resolves to
@@ -1708,6 +1784,46 @@ class ExpenseService {
     const statuses = this.resolveDashboardStatusFilter(filters.status);
     if (statuses?.length) {
       match.status = { $in: statuses };
+    }
+
+    // Free-text search narrows the rows the viewer is already allowed to see:
+    // the KAPP ID / name typed on the expense form, the institute, or the
+    // employee's name / employee code.
+    const search = (filters.search || '').trim();
+    if (search) {
+      const searchRegex = this.buildRegex(search);
+      const matchingUsers = await User.find({
+        isDeleted: { $ne: true },
+        $or: [
+          { firstName: searchRegex },
+          { lastName: searchRegex },
+          { employeeId: searchRegex },
+          {
+            $expr: {
+              $regexMatch: {
+                input: {
+                  $concat: [
+                    { $ifNull: ['$firstName', ''] },
+                    ' ',
+                    { $ifNull: ['$lastName', ''] },
+                  ],
+                },
+                regex: searchRegex.source,
+                options: 'i',
+              },
+            },
+          },
+        ],
+      })
+        .select('_id')
+        .lean();
+
+      match.$or = [
+        { kappId: searchRegex },
+        { name: searchRegex },
+        { instituteName: searchRegex },
+        { userId: { $in: matchingUsers.map((entry) => this.toObjectId(entry._id)) } },
+      ];
     }
 
     return match;

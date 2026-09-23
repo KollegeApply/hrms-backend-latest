@@ -152,6 +152,7 @@ const expensePopulatePaths = [
     path: 'approvalHistory.byUserId',
     select: 'firstName lastName email employeeId',
   },
+  ...expenseService.financeIssuePopulatePaths,
 ];
 
 /** Expense Department approver emails: team-scoped, plus admins and the team's fallback inbox. */
@@ -458,7 +459,9 @@ async function sendExpenseStatusUpdateEmail({
     }
 
     if (
-      (previousStatus === 'tl-approved' || previousStatus === 'expense-returned') &&
+      (previousStatus === 'tl-approved' ||
+        previousStatus === 'zonal-approved' ||
+        previousStatus === 'expense-returned') &&
       newStatus === 'expense-rejected' &&
       payload.employeeEmail
     ) {
@@ -996,6 +999,80 @@ const getExpenseFilingCutoffHistory = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * Finance "Raise an Issue" notifications. Fire-and-forget — a mail failure
+ * must never fail the issue action itself.
+ */
+function sendFinanceIssueEmail({ receiverEmails, subject, heading, greeting, intro, expenseDoc, message, messageLabel, team }) {
+  const recipients = [...new Set((receiverEmails || []).filter(Boolean))];
+  if (!recipients.length) return;
+  const payload = getMailPayload(expenseDoc);
+  const msg = renderExpenseEmailTemplate({
+    heading,
+    greeting,
+    intro,
+    team,
+    detailRowsHtml:
+      renderExpenseDetailRow('Employee', `${payload.employeeName} (${payload.employeeId})`) +
+      renderExpenseDetailRow('Expense Type', payload.expenseType) +
+      renderExpenseDetailRow('Amount', payload.amount) +
+      renderExpenseDetailRow('Expense Date', payload.expenseDate),
+    remarks: message || '-',
+    remarksLabel: messageLabel,
+    ctaLabel: 'View Expense',
+    ctaLink: payload.expenseLink,
+    ctaColor: '#ea580c',
+    footerLabel: `${getTeamFooterLabel(team)} - Finance Department`,
+  });
+  Helper.sendEmail({ receiverEmails: recipients, subject, message: msg, team }).catch((err) =>
+    logger.error(`Failed to send finance issue mail (${subject}):`, err)
+  );
+}
+
+const raiseFinanceIssue = catchAsync(async (req, res) => {
+  const validated = await expenseValidator.raiseFinanceIssueSchema.validateAsync({
+    id: req.params.id,
+    message: req.body.message,
+  });
+
+  const expense = await expenseService.raiseFinanceIssue({
+    expenseId: validated.id,
+    message: validated.message,
+    currentUser: req.user,
+  });
+  const expenseDoc = await Expense.findById(expense._id)
+    .populate(expensePopulatePaths)
+    .lean();
+
+  const sendMail = !(req?.body?.sendMail === false || req?.body?.sendMail === 'false');
+  if (sendMail) {
+    try {
+      const team = expenseDoc.team || req.user.team;
+      const expenseDeptEmails = await getExpenseApproverEmails(team);
+      sendFinanceIssueEmail({
+        receiverEmails: [expenseDoc.userId?.email, ...expenseDeptEmails],
+        subject: 'Finance Raised an Issue on an Expense Claim',
+        heading: 'Issue Raised on Expense Claim',
+        greeting: 'Team',
+        intro:
+          'The Finance department has raised an issue on this expense claim that needs clarification or correction. The claim status is unchanged.',
+        expenseDoc,
+        message: validated.message,
+        messageLabel: 'Issue',
+        team,
+      });
+    } catch (err) {
+      logger.error('Failed to prepare finance issue raised mail:', err);
+    }
+  }
+
+  res.status(httpStatus.CREATED).json({
+    status: true,
+    message: 'Issue raised successfully.',
+    data: applyAttachmentUrlTransform(expenseDoc),
+  });
+});
+
 const deleteExpense = catchAsync(async (req, res) => {
   const validated = await expenseValidator.expenseIdSchema.validateAsync({
     id: req.params.id,
@@ -1024,6 +1101,7 @@ module.exports = {
   getTeamMemberExpenseDashboard,
   getTlBulkSummary,
   updateExpenseStatus,
+  raiseFinanceIssue,
   bulkApproveExpenses,
   bulkRejectExpenses,
   deleteExpense,
