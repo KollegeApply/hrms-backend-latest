@@ -2662,14 +2662,15 @@ class ExpenseService {
     const match = {
       userId,
       isDeleted: { $ne: true },
-      isDraft: { $ne: true },
     };
+    const notDraft = { isDraft: { $ne: true } };
 
     const [facet] = await Expense.aggregate([
       { $match: match },
       {
         $facet: {
           totals: [
+            { $match: notDraft },
             {
               $group: {
                 _id: null,
@@ -2716,7 +2717,30 @@ class ExpenseService {
               },
             },
           ],
+          draft: [
+            { $match: { isDraft: true } },
+            {
+              $group: {
+                _id: null,
+                draftAmount: { $sum: '$amount' },
+                draftCount: { $sum: 1 },
+              },
+            },
+          ],
+          /** Per `type` breakdown (Travel/Food/Stay/...) — drives the category donut. */
+          byCategory: [
+            { $match: notDraft },
+            {
+              $group: {
+                _id: '$type',
+                amount: { $sum: '$amount' },
+                count: { $sum: 1 },
+              },
+            },
+            { $sort: { amount: -1 } },
+          ],
           monthly: [
+            { $match: notDraft },
             {
               $match: {
                 date: { $gte: rangeStart, $lte: rangeEnd },
@@ -2742,6 +2766,7 @@ class ExpenseService {
     ]);
 
     const totalsDoc = facet?.totals?.[0] || {};
+    const draftDoc = facet?.draft?.[0] || {};
     const monthlyMap = new Map(
       (facet?.monthly || []).map((row) => [
         `${row._id.year}-${row._id.month}`,
@@ -2776,6 +2801,15 @@ class ExpenseService {
         amount: this.formatExpenseDashboardMoney(totalsDoc.rejectedAmount),
         count: totalsDoc.rejectedCount || 0,
       },
+      draft: {
+        amount: this.formatExpenseDashboardMoney(draftDoc.draftAmount),
+        count: draftDoc.draftCount || 0,
+      },
+      byCategory: (facet?.byCategory || []).map((entry) => ({
+        type: entry._id,
+        amount: this.formatExpenseDashboardMoney(entry.amount),
+        count: entry.count,
+      })),
       monthly,
     };
   }
