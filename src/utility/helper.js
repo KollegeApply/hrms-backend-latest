@@ -3317,52 +3317,6 @@ class Helper {
     </div>
     `;
   }
-
-  static getExpenseFilingReminder(userName, dashboardUrl, team) {
-    const displayTeam = getTeamEmailConfig(team);
-    return `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
-      <div style="text-align: center; margin-bottom: 20px;">
-        <h1 style="color: #333;">Travel & Client-Visit Expense Filing Reminder</h1>
-      </div>
-      <div style="background-color: #ffffff; padding: 30px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
-        <p style="color: #555; font-size: 16px; line-height: 1.6;">
-          Hi <strong>${userName}</strong>,
-        </p>
-        <p style="color: #555; font-size: 16px; line-height: 1.6;">
-          This is a reminder to file all your pending travel and client-visit expenses in the HRMS before the 3rd of the following month for expenses incurred in the previous month.
-        </p>
-        <div style="background-color: #fafafa; padding: 15px; border-radius: 5px; margin-top: 20px;">
-          <p style="color: #666; font-size: 14px; margin: 0 0 10px 0;">
-            <strong>Please ensure the following before submitting:</strong>
-          </p>
-          <ul style="margin: 0; padding-left: 20px; color: #666; font-size: 14px; line-height: 1.6;">
-            <li>All claims are tagged with the correct KAAP ID for each meeting</li>
-            <li>Expenses are within the applicable caps (intracity / out-of-station / food) as per the Travel & Expense Policy</li>
-            <li>Any "Accompanied by" details are filled in correctly, if applicable</li>
-            <li>Supporting bills/receipts are attached</li>
-          </ul>
-        </div>
-        <p style="color: #555; font-size: 16px; line-height: 1.6; margin-top: 20px;">
-          Claims filed after the cutoff may not be processed for that cycle, so please complete your filing well in advance to avoid last-minute issues.
-        </p>
-        <div style="text-align: center; margin-top: 30px;">
-          <a href="${dashboardUrl}/expense"
-             style="background-color: #ff9800; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold;">
-            File Your Expenses
-          </a>
-        </div>
-        <p style="color: #555; font-size: 14px; line-height: 1.6; margin-top: 25px;">
-          If you have any questions or face issues while filing, please reach out to the central team.
-        </p>
-        <p style="color: #777; font-size: 14px; line-height: 1.5; margin-top: 30px;">
-          Thanks,<br>
-          <strong>Team ${displayTeam?.TEAM_NAME}</strong>
-        </p>
-      </div>
-    </div>
-    `;
-  }
 }
 
 module.exports = Helper;
