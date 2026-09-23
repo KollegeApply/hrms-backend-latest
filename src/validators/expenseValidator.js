@@ -4,8 +4,6 @@ const {
   TRAVEL_SUBCATEGORIES,
   FOOD_SUBCATEGORIES,
   MISCELLANEOUS_SUBCATEGORIES,
-  TRIP_CONTEXT_VALUES,
-  EXPENSE_POLICY_TAG_VALUES,
 } = require('../utility/expensePolicyConstants');
 
 const objectIdSchema = Joi.string()
@@ -42,11 +40,6 @@ const createExpenseSchema = Joi.object({
       'any.only': `Expense type must be one of: ${EXPENSE_TYPES_CREATE.join(', ')}`,
       'any.required': 'Expense type is required.',
     }),
-  /**
-   * Sales Expense carries the KAPP ID / Institute Name reporting fields;
-   * Normal Expense never does. Defaults to Sales Expense.
-   */
-  expenseCategory: Joi.string().valid('sales', 'normal').default('sales'),
   subCategory: Joi.string().trim().max(120).allow('', null).optional(),
   distanceKm: Joi.number().min(0).allow(null).optional(),
   clientName: Joi.string().trim().max(100).allow('', null).optional(),
@@ -57,12 +50,6 @@ const createExpenseSchema = Joi.object({
   travelMiscDescription: Joi.string().trim().max(200).allow('', null).optional(),
   cityTier: Joi.string().valid('Metro', 'Non-Metro').allow('', null).optional(),
   miscellaneousType: Joi.string().trim().max(200).allow('', null).optional(),
-  kappId: Joi.string().trim().max(50).allow('', null).optional(),
-  instituteName: Joi.string().trim().max(200).allow('', null).optional(),
-  tripContext: Joi.string()
-    .valid(...TRIP_CONTEXT_VALUES)
-    .allow('', null)
-    .optional(),
   amount: Joi.number().precision(2).greater(0).required().messages({
     'number.base': 'Amount must be a valid number.',
     'number.greater': 'Amount must be greater than 0.',
@@ -81,26 +68,9 @@ const createExpenseSchema = Joi.object({
     .messages({
       'string.max': 'Attachment URL cannot exceed 500 characters.',
     }),
-  /**
-   * Multi-expense-for-one-meeting flow — "Save" keeps this line as a draft
-   * instead of routing it into the approval workflow. Draft lines of any
-   * type carry the shared date + KAPP ID + Institute Name group key so they
-   * group together on the Drafts tab and submit together later.
-   */
-  isDraft: Joi.boolean().optional(),
 })
   .custom((value, helpers) => {
     const { type, subCategory, distanceKm, attendeeUserIds } = value;
-    const isSales = value.expenseCategory !== 'normal';
-    // KAPP ID / Institute Name apply only under Sales Expense — Normal
-    // Expense never asks for either field. Under Sales Expense they're
-    // mandatory for Travel, Food, Client Gifting and Client Lunch, and
-    // optional (but still allowed, for grouping) for every other type.
-    const kappIdMandatory =
-      isSales &&
-      (type === 'Travel' ||
-        type === 'Food' ||
-        (type === 'Miscellaneous' && (subCategory === 'Client Gifting' || subCategory === 'Client Lunch')));
 
     if (type === 'Travel') {
       if (!subCategory || !TRAVEL_SUBCATEGORIES.includes(subCategory)) {
@@ -124,33 +94,6 @@ const createExpenseSchema = Joi.object({
           });
         }
       }
-
-      if (!value.tripContext || !TRIP_CONTEXT_VALUES.includes(value.tripContext)) {
-        return helpers.message({
-          custom: `Trip Context is required for Travel expenses and must be one of: ${TRIP_CONTEXT_VALUES.join(', ')}`,
-        });
-      }
-    } else if (value.tripContext) {
-      return helpers.message({
-        custom: 'tripContext is only allowed for Travel expenses.',
-      });
-    }
-
-    if (kappIdMandatory) {
-      if (!(value.kappId || '').trim()) {
-        return helpers.message({
-          custom: `KAPP ID is required for ${type} expenses.`,
-        });
-      }
-      if (!(value.instituteName || '').trim()) {
-        return helpers.message({
-          custom: `Institute Name is required for ${type} expenses.`,
-        });
-      }
-    } else if (!isSales && (value.kappId || value.instituteName)) {
-      return helpers.message({
-        custom: 'kappId and instituteName are only allowed for Sales Expense.',
-      });
     }
 
     if (type === 'Food') {
@@ -237,38 +180,10 @@ const listExpenseSchema = Joi.object({
   toDate: Joi.date(),
   queue: Joi.string()
     .trim()
-    .valid('team', 'zonal', 'finance', 'finance-review', 'finance-issues', 'all')
+    .valid('team', 'finance', 'finance-review', 'all')
     .optional(),
   search: Joi.string().trim().allow(''),
   userId: objectIdSchema.optional(),
-  /** CSV of in-policy / out-of-policy; empty means no policy filter. */
-  policyTag: Joi.string()
-    .trim()
-    .allow('')
-    .custom((value, helpers) => {
-      const tags = value
-        .split(',')
-        .map((tag) => tag.trim())
-        .filter(Boolean);
-      if (tags.some((tag) => !EXPENSE_POLICY_TAG_VALUES.includes(tag))) {
-        return helpers.error('any.invalid');
-      }
-      return value;
-    }, 'Policy tag validation')
-    .messages({
-      'any.invalid': `policyTag must be one of: ${EXPENSE_POLICY_TAG_VALUES.join(', ')}`,
-    }),
-}).options({ stripUnknown: true });
-
-/** Add Expense running total — the claimant's own spend for one month. */
-const myMonthlyTotalSchema = Joi.object({
-  month: Joi.number().integer().min(1).max(12).optional(),
-  year: Joi.number().integer().min(2000).max(2100).optional(),
-  /** An explicit range wins over month/year (the list's date-range filter). */
-  fromDate: Joi.date().optional(),
-  toDate: Joi.date().optional(),
-  type: Joi.string().trim().allow('').optional(),
-  status: Joi.string().trim().allow('').optional(),
 }).options({ stripUnknown: true });
 
 /** Team Lead Bulk Approve summary — one row per employee per month. */
@@ -283,29 +198,10 @@ const expenseIdSchema = Joi.object({
   }),
 });
 
-/** Finance "Raise an Issue" — the issue text is all Finance submits. */
-const raiseFinanceIssueSchema = Joi.object({
-  id: objectIdSchema.required(),
-  message: Joi.string()
-    .trim()
-    .min(10)
-    .max(500)
-    .required()
-    .messages({
-      'string.min': 'Issue must be at least 10 characters.',
-      'string.max': 'Issue must be at most 500 characters.',
-      'any.required': 'Issue is required.',
-      'string.empty': 'Issue is required.',
-    }),
-});
-
 const allowedStatuses = [
   'submitted',
   'tl-approved',
   'tl-rejected',
-  'zonal-pending',
-  'zonal-rejected',
-  'zonal-approved',
   'admin-approved',
   'expense-rejected',
   'expense-returned',
@@ -391,14 +287,13 @@ const bulkApproveExpenseSchema = Joi.object({
 }).options({ stripUnknown: true });
 
 const expenseDashboardSchema = Joi.object({
-  month: Joi.number().integer().min(1).max(12).optional().messages({
+  month: Joi.number().integer().min(1).max(12).required().messages({
+    'any.required': 'Month is required.',
     'number.min': 'Month must be between 1 and 12.',
     'number.max': 'Month must be between 1 and 12.',
   }),
-  year: Joi.number().integer().min(2000).max(2100).optional(),
-  fromDate: Joi.date().iso().optional(),
-  toDate: Joi.date().iso().min(Joi.ref('fromDate')).optional().messages({
-    'date.min': 'toDate must be on or after fromDate.',
+  year: Joi.number().integer().min(2000).max(2100).required().messages({
+    'any.required': 'Year is required.',
   }),
   team: Joi.string().trim().allow('').optional(),
   employeeId: Joi.alternatives()
@@ -408,53 +303,9 @@ const expenseDashboardSchema = Joi.object({
       'alternatives.match': 'employeeId must be a valid user id or employee code.',
     }),
   status: Joi.string().trim().allow('').optional(),
-  departmentId: objectIdSchema.optional(),
-  /** Free-text search — expense KAPP ID, expense name, institute, or employee name/code. */
-  search: Joi.string().trim().max(100).allow('').optional(),
-  groupBy: Joi.string().valid('employee', 'department', 'custom').default('employee'),
-  // Two-level dropdown grouping for the "custom" view — grouping itself
-  // happens client-side over the flat rows this mode returns.
-  groupField1: Joi.string()
-    .valid('date', 'account', 'employee', 'category', 'status')
-    .optional(),
-  groupField2: Joi.string()
-    .valid('date', 'account', 'employee', 'category', 'status')
-    .optional(),
+  groupBy: Joi.string().valid('employee', 'department').default('employee'),
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(10000).default(10),
-})
-  .options({ stripUnknown: true })
-  .custom((value, helpers) => {
-    const hasRange = Boolean(value.fromDate && value.toDate);
-    const hasMonthYear = Boolean(value.month && value.year);
-    if (!hasRange && !hasMonthYear) {
-      return helpers.message(
-        'Provide either month & year, or a fromDate/toDate range.'
-      );
-    }
-    return value;
-  });
-
-/** Dashboard drill-down — one employee's records, same filter state as the grouped view. */
-const expenseDashboardRecordsSchema = Joi.object({
-  month: Joi.number().integer().min(1).max(12).required().messages({
-    'any.required': 'Month is required.',
-  }),
-  year: Joi.number().integer().min(2000).max(2100).required().messages({
-    'any.required': 'Year is required.',
-  }),
-  employeeId: Joi.alternatives()
-    .try(objectIdSchema, Joi.string().trim().min(1))
-    .required()
-    .messages({
-      'any.required': 'employeeId is required.',
-      'alternatives.match': 'employeeId must be a valid user id or employee code.',
-    }),
-  team: Joi.string().trim().allow('').optional(),
-  status: Joi.string().trim().allow('').optional(),
-  departmentId: objectIdSchema.optional(),
-  /** Free-text search — expense KAPP ID, expense name, institute, or employee name/code. */
-  search: Joi.string().trim().max(100).allow('').optional(),
 }).options({ stripUnknown: true });
 
 const bulkRejectExpenseSchema = Joi.object({
@@ -482,53 +333,13 @@ const bulkRejectExpenseSchema = Joi.object({
   sendMail: Joi.boolean().optional(),
 }).options({ stripUnknown: true });
 
-/** Multi-expense-for-one-meeting flow — submit every draft in a date+KAPP ID group. */
-const submitExpenseDraftsSchema = Joi.object({
-  date: Joi.date().required().messages({
-    'date.base': 'Date is required.',
-    'any.required': 'Date is required.',
-  }),
-  kappId: Joi.string().trim().max(50).required().messages({
-    'string.empty': 'KAPP ID is required.',
-    'any.required': 'KAPP ID is required.',
-  }),
-  instituteName: Joi.string().trim().max(200).allow('', null).optional(),
-}).options({ stripUnknown: true });
-
-/** FR-1.1/1.2 — Admin-only global/department expense filing cutoff toggle. */
-const updateExpenseFilingCutoffSchema = Joi.object({
-  cutoffActive: Joi.boolean().required().messages({
-    'any.required': 'cutoffActive is required.',
-  }),
-  scope: Joi.string().valid('all', 'departments').required().messages({
-    'any.only': 'scope must be either "all" or "departments".',
-    'any.required': 'scope is required.',
-  }),
-  departmentIds: Joi.when('scope', {
-    is: 'departments',
-    then: Joi.array().items(objectIdSchema).min(1).required().messages({
-      'array.min': 'Select at least one department, or choose All Employees.',
-      'any.required': 'departmentIds is required when scope is "departments".',
-    }),
-    otherwise: Joi.array().items(objectIdSchema).optional(),
-  }),
-  message: Joi.string().trim().max(300).allow('', null).optional().messages({
-    'string.max': 'Message cannot exceed 300 characters.',
-  }),
-}).options({ stripUnknown: true });
-
 module.exports = {
   createExpenseSchema,
   listExpenseSchema,
   expenseDashboardSchema,
-  expenseDashboardRecordsSchema,
   tlBulkSummarySchema,
-  myMonthlyTotalSchema,
   expenseIdSchema,
   updateExpenseStatusSchema,
-  raiseFinanceIssueSchema,
   bulkApproveExpenseSchema,
   bulkRejectExpenseSchema,
-  updateExpenseFilingCutoffSchema,
-  submitExpenseDraftsSchema,
 };

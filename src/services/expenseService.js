@@ -1,11 +1,8 @@
 const { default: httpStatus } = require('http-status');
 const mongoose = require('mongoose');
 const ApiError = require('../utility/ApiError');
-const logger = require('../config/logger');
 const Expense = require('../models/expenseModel');
 const User = require('../models/userModel');
-const Department = require('../models/departmentModel');
-const ExpenseFilingCutoff = require('../models/expenseFilingCutoffModel');
 const {
   TEAM_LUNCH_PER_ATTENDEE,
   MOBILE_BILL_FIXED_AMOUNT,
@@ -14,13 +11,6 @@ const {
   HOTEL_PER_NIGHT_CAP,
   travelPerKmRate,
   TL_ROLES_FOR_TEAM_LUNCH,
-  TRIP_CONTEXTS,
-  BASE_LOCATION_TRAVEL_PER_MEETING_CAP,
-  BASE_LOCATION_TRAVEL_MONTHLY_CAP,
-  DEFAULT_EXPENSE_FILING_CUTOFF_MESSAGE,
-  EXPENSE_POLICY_TAGS,
-  EXPENSE_POLICY_TAG_VALUES,
-  MONTHLY_EXPENSE_BUDGET,
 } = require('../utility/expensePolicyConstants');
 
 /** Special support account allowed to view All Expenses and TL-approve/reject submitted rows. */
@@ -32,10 +22,6 @@ class ExpenseService {
     this.superAdminRoles = ['admin', 'subadmin'];
     this.tlRoles = ['teamlead', 'subteamlead'];
     this.finalApproverAdminRoles = ['admin'];
-    /** Populate paths for Finance "Raise an Issue" authors. */
-    this.financeIssuePopulatePaths = [
-      { path: 'financeIssues.raisedBy', select: 'firstName lastName email employeeId role' },
-    ];
     // Full team expense dashboard: admin, subadmin, hr, or Finance/Expense department.
     this.expenseDashboardTeamViewRoles = ['admin', 'subadmin', 'hr'];
   }
@@ -142,28 +128,11 @@ class ExpenseService {
     return Math.round(Number(n) * 100) / 100;
   }
 
-  /** Sales Expense carries KAPP ID / Institute Name; Normal Expense never does. */
-  isSalesExpense(payload) {
-    return payload.expenseCategory !== 'normal';
-  }
-
-  /** Travel, Food, Team Lunch, and Miscellaneous > Hotel Accommodation — the attendee-eligible types. */
-  isAttendeeEligibleType(payload) {
-    return (
-      payload.type === 'Travel' ||
-      payload.type === 'Food' ||
-      payload.type === 'Team Lunch' ||
-      (payload.type === 'Miscellaneous' && payload.subCategory === 'Hotel Accommodation')
-    );
-  }
-
   /** In-flight statuses (not yet finally approved or rejected). */
   expensePendingStatuses() {
     return [
       'submitted',
       'tl-approved',
-      'zonal-pending',
-      'zonal-approved',
       'admin-approved',
       'expense-returned',
     ];
@@ -171,7 +140,7 @@ class ExpenseService {
 
   /** Existing rejection statuses in the Expense workflow. */
   expenseRejectedStatuses() {
-    return ['tl-rejected', 'zonal-rejected', 'expense-rejected'];
+    return ['tl-rejected', 'expense-rejected'];
   }
 
   /**
@@ -208,13 +177,11 @@ class ExpenseService {
                 then: 1,
               },
               { case: { $eq: ['$status', 'tl-approved'] }, then: 2 },
-              { case: { $eq: ['$status', 'zonal-approved'] }, then: 2 },
               { case: { $eq: ['$status', 'submitted'] }, then: 3 },
             ]
             : [
               { case: { $eq: ['$status', 'submitted'] }, then: 1 },
               { case: { $eq: ['$status', 'tl-approved'] }, then: 2 },
-              { case: { $eq: ['$status', 'zonal-approved'] }, then: 2 },
             ]),
         ],
         default: requesterRole === 'hr' ? 4 : 3,
@@ -222,20 +189,7 @@ class ExpenseService {
     };
   }
 
-  /**
-   * Validates a claim against Phase 2 policy and classifies it.
-   *
-   * Structural rules (who may claim what, derived amounts, duplicates,
-   * attachments) still throw — they make a claim invalid. Spend *caps* no
-   * longer throw: the claimant was warned before submitting and chose to
-   * continue, so each broken cap is collected and the claim is returned
-   * tagged out-of-policy for the approver to judge.
-   *
-   * @param {string} [expenseId] the row being resubmitted, excluded from
-   *   running totals so an edit never counts its own old amount twice.
-   * @returns {Promise<{ policyTag: string, policyBreaches: object[] }>}
-   */
-  async assertPhase2Policy(user, payload, expenseDate, expenseId) {
+  async assertPhase2Policy(user, payload, expenseDate) {
     const submitter = await User.findById(user.id)
       .select('team teamLeadId subTeamLeadId role expenseBand')
       .lean();
@@ -245,19 +199,6 @@ class ExpenseService {
 
     const band = this.resolveExpenseBand(submitter.expenseBand);
     const teamName = submitter.team || user.team;
-    const breaches = [];
-    const addBreach = (rule, label, capAmount, enteredAmount, message) => {
-      breaches.push({
-        rule,
-        label,
-        capAmount: this.roundMoney(capAmount),
-        enteredAmount: this.roundMoney(enteredAmount),
-        message,
-      });
-    };
-    const excludeSelf = expenseId
-      ? { _id: { $ne: this.toObjectId(expenseId) } }
-      : {};
 
     if (payload.type === 'Team Lunch') {
       if (!TL_ROLES_FOR_TEAM_LUNCH.includes((submitter.role || '').toLowerCase())) {
@@ -290,23 +231,6 @@ class ExpenseService {
           `Team Lunch amount must be Rs.${expected} (${ids.length} attendee(s) × Rs.${TEAM_LUNCH_PER_ATTENDEE}).`
         );
       }
-    } else if (
-      this.isAttendeeEligibleType(payload) &&
-      Array.isArray(payload.attendeeUserIds) &&
-      payload.attendeeUserIds.length
-    ) {
-      // Travel / Food / Hotel Accommodation — attendees may be from any
-      // team (not just the filer's own), so only existence is checked here.
-      const ids = [...new Set(payload.attendeeUserIds.map(String))];
-      const attendees = await User.find({
-        _id: { $in: ids },
-        isDeleted: { $ne: true },
-      })
-        .select('_id')
-        .lean();
-      if (attendees.length !== ids.length) {
-        throw new ApiError(httpStatus.BAD_REQUEST, 'One or more attendee users are invalid.');
-      }
     }
 
     if (payload.type === 'Mobile Bill') {
@@ -326,14 +250,10 @@ class ExpenseService {
           'Mobile Bill already claimed for this month.'
         );
       }
-      const mobileAmount = this.roundMoney(payload.amount);
-      if (mobileAmount > MOBILE_BILL_FIXED_AMOUNT) {
-        addBreach(
-          'mobile-bill-monthly',
-          'Mobile Bill monthly limit',
-          MOBILE_BILL_FIXED_AMOUNT,
-          mobileAmount,
-          `Claimed Rs.${mobileAmount} against a monthly Mobile Bill limit of Rs.${MOBILE_BILL_FIXED_AMOUNT}.`
+      if (this.roundMoney(payload.amount) > MOBILE_BILL_FIXED_AMOUNT) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Mobile Bill amount cannot exceed Rs.${MOBILE_BILL_FIXED_AMOUNT}.`
         );
       }
     }
@@ -350,56 +270,6 @@ class ExpenseService {
           );
         }
       }
-
-      if (payload.tripContext === TRIP_CONTEXTS.BASE_LOCATION) {
-        const perMeetingCap = BASE_LOCATION_TRAVEL_PER_MEETING_CAP[band];
-        if (perMeetingCap != null && Number(payload.amount) > perMeetingCap) {
-          addBreach(
-            'base-location-travel-per-meeting',
-            'Base location (Intracity) travel per-meeting cap',
-            perMeetingCap,
-            payload.amount,
-            `Claimed Rs.${this.roundMoney(payload.amount)} against a per-meeting cap of Rs.${perMeetingCap} for band ${band}.`
-          );
-        }
-
-        const y = expenseDate.getFullYear();
-        const m = expenseDate.getMonth();
-        const monthStart = new Date(y, m, 1);
-        const monthEnd = new Date(y, m + 1, 0, 23, 59, 59, 999);
-        // "Approved/created" per PRD = anything not yet rejected (still in-flight or fully approved).
-        const relevantStatuses = [
-          ...this.expensePendingStatuses(),
-          'expense-approved',
-        ];
-
-        const monthToDate = await Expense.find({
-          ...excludeSelf,
-          userId: this.toObjectId(user.id),
-          type: 'Travel',
-          tripContext: TRIP_CONTEXTS.BASE_LOCATION,
-          date: { $gte: monthStart, $lte: monthEnd },
-          status: { $in: relevantStatuses },
-          isDeleted: { $ne: true },
-        })
-          .select('amount')
-          .lean();
-
-        const existingSum = monthToDate.reduce(
-          (sum, entry) => sum + Number(entry.amount || 0),
-          0
-        );
-        const projectedTotal = this.roundMoney(existingSum + Number(payload.amount));
-        if (projectedTotal > BASE_LOCATION_TRAVEL_MONTHLY_CAP) {
-          addBreach(
-            'base-location-travel-monthly',
-            'Base location (Intracity) travel monthly cap',
-            BASE_LOCATION_TRAVEL_MONTHLY_CAP,
-            projectedTotal,
-            `Takes this month's Base location (Intracity) travel total to Rs.${projectedTotal}, against a monthly cap of Rs.${BASE_LOCATION_TRAVEL_MONTHLY_CAP}.`
-          );
-        }
-      }
     }
 
     if (payload.type === 'Food') {
@@ -409,7 +279,6 @@ class ExpenseService {
         throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid Food sub-category for policy.');
       }
       const sameDay = await Expense.find({
-        ...excludeSelf,
         userId: this.toObjectId(user.id),
         type: 'Food',
         subCategory: payload.subCategory,
@@ -419,16 +288,11 @@ class ExpenseService {
         .select('amount')
         .lean();
       const existingSum = sameDay.reduce((s, e) => s + Number(e.amount || 0), 0);
-      const total = this.roundMoney(existingSum + Number(payload.amount));
-      if (total > daily) {
-        addBreach(
-          'food-daily',
-          `Food (${payload.subCategory}) daily cap`,
-          daily,
-          total,
-          existingSum > 0
-            ? `Takes this date's Food (${payload.subCategory}) total to Rs.${total}, against a daily cap of Rs.${daily}.`
-            : `Claimed Rs.${total} against a daily Food (${payload.subCategory}) cap of Rs.${daily}.`
+      const total = existingSum + Number(payload.amount);
+      if (total > daily * 2) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Food total for this date exceeds twice your daily ${payload.subCategory} cap (Rs.${daily}).`
         );
       }
     }
@@ -439,13 +303,10 @@ class ExpenseService {
       if (cap == null) {
         throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid hotel city tier.');
       }
-      if (Number(payload.amount) > cap) {
-        addBreach(
-          'hotel-per-night',
-          `Hotel Accommodation (${payload.cityTier}) per-night cap`,
-          cap,
-          payload.amount,
-          `Claimed Rs.${this.roundMoney(payload.amount)} against a per-night cap of Rs.${cap} for band ${band} (${payload.cityTier}).`
+      if (Number(payload.amount) > cap * 2) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          `Hotel claim exceeds twice the per-night cap (Rs.${cap}) for your band and city tier.`
         );
       }
     }
@@ -456,140 +317,9 @@ class ExpenseService {
         'Attachment is required for this expense (policy: amount ≥ Rs.150 and/or this expense type).'
       );
     }
-
-    return {
-      policyTag: breaches.length
-        ? EXPENSE_POLICY_TAGS.OUT_OF_POLICY
-        : EXPENSE_POLICY_TAGS.IN_POLICY,
-      policyBreaches: breaches,
-    };
-  }
-
-  /** Singleton settings doc — created lazily with safe (filing-open) defaults. */
-  async getOrCreateExpenseFilingCutoff() {
-    let doc = await ExpenseFilingCutoff.findOne({ key: 'global' });
-    if (!doc) {
-      doc = await ExpenseFilingCutoff.create({
-        key: 'global',
-        cutoffActive: false,
-        scope: 'all',
-        departmentIds: [],
-      });
-    }
-    return doc;
-  }
-
-  /** Public read (any authenticated user) — drives whether Add Expense is disabled client-side. */
-  async getExpenseFilingCutoffStatus() {
-    const doc = await this.getOrCreateExpenseFilingCutoff();
-    await doc.populate('updatedBy', 'firstName lastName email');
-    return {
-      cutoffActive: doc.cutoffActive,
-      scope: doc.scope,
-      departmentIds: (doc.departmentIds || []).map((id) => id.toString()),
-      message: doc.message || DEFAULT_EXPENSE_FILING_CUTOFF_MESSAGE,
-      updatedBy: doc.updatedBy || null,
-      updatedAt: doc.updatedAt,
-    };
-  }
-
-  /** FR-1.1/1.2 — Expense department only. Validates scope/departments and appends an audit history entry. */
-  async updateExpenseFilingCutoff(currentUser, payload) {
-    const isExpenseDeptUser = await this.isExpenseDepartmentUser(currentUser.id);
-    if (!isExpenseDeptUser) {
-      throw new ApiError(
-        httpStatus.FORBIDDEN,
-        'Only the Expense department can change the expense filing cutoff.'
-      );
-    }
-
-    const scope = payload.scope === 'departments' ? 'departments' : 'all';
-    let departmentIds = [];
-    if (scope === 'departments') {
-      const ids = [...new Set((payload.departmentIds || []).map(String))];
-      if (ids.length === 0) {
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          'Select at least one department, or choose All Employees.'
-        );
-      }
-      const found = await Department.find({
-        _id: { $in: ids },
-        isDeleted: { $ne: true },
-      })
-        .select('_id')
-        .lean();
-      if (found.length !== ids.length) {
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          'One or more selected departments are invalid.'
-        );
-      }
-      departmentIds = ids.map((id) => this.toObjectId(id));
-    }
-
-    const doc = await this.getOrCreateExpenseFilingCutoff();
-    doc.cutoffActive = Boolean(payload.cutoffActive);
-    doc.scope = scope;
-    doc.departmentIds = departmentIds;
-    doc.message = payload.message?.trim() || undefined;
-    doc.updatedBy = currentUser.id;
-    doc.history.push({
-      cutoffActive: doc.cutoffActive,
-      scope: doc.scope,
-      departmentIds: doc.departmentIds,
-      message: doc.message,
-      changedBy: currentUser.id,
-      changedAt: new Date(),
-    });
-    await doc.save();
-
-    return this.getExpenseFilingCutoffStatus();
-  }
-
-  /** Expense department only — audit trail for the filing cutoff, newest first. */
-  async getExpenseFilingCutoffHistory(currentUser) {
-    const isExpenseDeptUser = await this.isExpenseDepartmentUser(currentUser.id);
-    if (!isExpenseDeptUser) {
-      throw new ApiError(
-        httpStatus.FORBIDDEN,
-        'Only the Expense department can view the expense filing cutoff history.'
-      );
-    }
-
-    const doc = await ExpenseFilingCutoff.findOne({ key: 'global' })
-      .populate('history.changedBy', 'firstName lastName email')
-      .populate('history.departmentIds', 'name')
-      .lean();
-
-    const history = [...(doc?.history || [])].sort(
-      (a, b) => new Date(b.changedAt) - new Date(a.changedAt)
-    );
-    return { history };
-  }
-
-  /** Enforcement — throws if the submitter is currently blocked from filing new expenses. */
-  async assertExpenseFilingAllowed(user) {
-    const doc = await this.getOrCreateExpenseFilingCutoff();
-    if (!doc.cutoffActive) return;
-
-    const blockMessage = doc.message || DEFAULT_EXPENSE_FILING_CUTOFF_MESSAGE;
-
-    if (doc.scope === 'all') {
-      throw new ApiError(httpStatus.FORBIDDEN, blockMessage);
-    }
-
-    const submitter = await User.findById(user.id).select('department').lean();
-    const submitterDeptId = submitter?.department ? String(submitter.department) : null;
-    const blockedDeptIds = (doc.departmentIds || []).map((id) => String(id));
-    if (submitterDeptId && blockedDeptIds.includes(submitterDeptId)) {
-      throw new ApiError(httpStatus.FORBIDDEN, blockMessage);
-    }
   }
 
   async createExpense(user, payload) {
-    await this.assertExpenseFilingAllowed(user);
-
     const expenseDate = new Date(payload.date);
     expenseDate.setHours(0, 0, 0, 0);
 
@@ -642,37 +372,7 @@ class ExpenseService {
       }
     }
 
-    if (
-      payload.type === 'Travel' &&
-      payload.tripContext === TRIP_CONTEXTS.BASE_LOCATION &&
-      String(payload.kappId || '').trim()
-    ) {
-      // A KAPP ID + date represents one real-world meeting. The first user
-      // to claim it "owns" it and may file further expenses against the
-      // same KAPP ID + date; anyone else is blocked from claiming it too.
-      // Base location (Intracity) only — Outstation (Intercity) is exempt.
-      // Normal Expense Travel never carries a KAPP ID, so it's exempt too.
-      const kappId = String(payload.kappId || '').trim();
-      const existingTravel = await Expense.findOne({
-        type: 'Travel',
-        tripContext: TRIP_CONTEXTS.BASE_LOCATION,
-        date: expenseDate,
-        kappId,
-        isDeleted: { $ne: true },
-      }).lean();
-      if (existingTravel && String(existingTravel.userId) !== String(user.id)) {
-        throw new ApiError(
-          httpStatus.CONFLICT,
-          'A travel expense already exists for this date and KAPP ID.'
-        );
-      }
-    }
-
-    const { policyTag, policyBreaches } = await this.assertPhase2Policy(
-      user,
-      payload,
-      expenseDate
-    );
+    await this.assertPhase2Policy(user, payload, expenseDate);
 
     const hasTeamLead = Boolean(
       userWithLeads.teamLeadId || userWithLeads.subTeamLeadId
@@ -701,7 +401,7 @@ class ExpenseService {
     }
 
     const attendeeIds =
-      this.isAttendeeEligibleType(payload) && Array.isArray(payload.attendeeUserIds)
+      payload.type === 'Team Lunch' && Array.isArray(payload.attendeeUserIds)
         ? [...new Set(payload.attendeeUserIds.map((id) => this.toObjectId(id)))]
         : undefined;
 
@@ -711,7 +411,6 @@ class ExpenseService {
       date: expenseDate,
       name: payload.name,
       type: payload.type,
-      expenseCategory: this.isSalesExpense(payload) ? 'sales' : 'normal',
       subCategory: payload.subCategory || undefined,
       miscellaneousType: payload.miscellaneousType || undefined,
       distanceKm:
@@ -726,23 +425,12 @@ class ExpenseService {
       miscOthersDescription: payload.miscOthersDescription?.trim() || undefined,
       travelMiscDescription: payload.travelMiscDescription?.trim() || undefined,
       cityTier: payload.cityTier || undefined,
-      // KAPP ID / Institute Name apply only under Sales Expense — Normal
-      // Expense never carries either field. Under Sales Expense they're kept
-      // regardless of type so any line can join a draft group.
-      kappId: this.isSalesExpense(payload) ? String(payload.kappId || '').trim() : undefined,
-      instituteName: this.isSalesExpense(payload)
-        ? String(payload.instituteName || '').trim()
-        : undefined,
-      tripContext: payload.type === 'Travel' ? payload.tripContext : undefined,
       amount: Number(payload.amount),
       purpose: payload.purpose,
       attachmentUrl: payload.attachmentUrl || undefined,
-      policyTag,
-      policyBreaches,
       status,
       tlId,
       tlRemark,
-      isDraft: Boolean(payload.isDraft),
     });
 
     return Expense.findById(expense._id).populate([
@@ -756,232 +444,8 @@ class ExpenseService {
     ]);
   }
 
-  /**
-   * FR-3.2 — claimant edits a rejected expense in place and resubmits it.
-   * Keeps the same record id; status returns to the pending stage the
-   * (edited) content routes to, and the prior rejection stays visible via
-   * `approvalHistory` (never cleared, only appended to).
-   */
-  async updateExpense(user, expenseId, payload) {
-    const expense = await Expense.findById(expenseId);
-    if (!expense || expense.isDeleted) {
-      throw new ApiError(httpStatus.NOT_FOUND, 'Expense not found.');
-    }
-
-    if (expense.userId.toString() !== user.id.toString()) {
-      throw new ApiError(
-        httpStatus.FORBIDDEN,
-        'You can only edit your own expenses.'
-      );
-    }
-
-    if (!expense.isDraft && !this.expenseRejectedStatuses().includes(expense.status)) {
-      throw new ApiError(
-        httpStatus.CONFLICT,
-        `Expense in '${expense.status}' state cannot be edited. Only rejected expenses can be edited.`
-      );
-    }
-
-    await this.assertExpenseFilingAllowed(user);
-
-    const expenseDate = new Date(payload.date);
-    expenseDate.setHours(0, 0, 0, 0);
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    if (expenseDate > today) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        'Future dates are not allowed for expense submission.'
-      );
-    }
-
-    const userWithLeads = await User.findById(user.id)
-      .select('teamLeadId subTeamLeadId team role')
-      .populate('teamLeadId', 'role');
-    if (!userWithLeads) {
-      throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
-    }
-
-    const teamKey = userWithLeads.team || user.team;
-
-    if (payload.type === 'Team Lunch') {
-      const dupTeam = await Expense.findOne({
-        _id: { $ne: expense._id },
-        team: teamKey,
-        date: expenseDate,
-        type: 'Team Lunch',
-        isDeleted: { $ne: true },
-      }).lean();
-      if (dupTeam) {
-        throw new ApiError(
-          httpStatus.CONFLICT,
-          'A Team Lunch claim already exists for this team on this date.'
-        );
-      }
-    } else if (payload.type !== 'Mobile Bill') {
-      const duplicateExpense = await Expense.findOne({
-        _id: { $ne: expense._id },
-        userId: user.id,
-        date: expenseDate,
-        type: payload.type,
-        amount: payload.amount,
-        name: payload.name,
-        isDeleted: { $ne: true },
-      });
-      if (duplicateExpense) {
-        throw new ApiError(
-          httpStatus.CONFLICT,
-          'Duplicate expense detected for same date, type, amount, and name.'
-        );
-      }
-    }
-
-    if (
-      payload.type === 'Travel' &&
-      payload.tripContext === TRIP_CONTEXTS.BASE_LOCATION &&
-      String(payload.kappId || '').trim()
-    ) {
-      // Same ownership rule as createExpense: whoever first claimed this
-      // KAPP ID + date may keep filing against it; anyone else is blocked.
-      // Normal Expense Travel never carries a KAPP ID, so it's exempt too.
-      const kappId = String(payload.kappId || '').trim();
-      const existingTravel = await Expense.findOne({
-        _id: { $ne: expense._id },
-        type: 'Travel',
-        tripContext: TRIP_CONTEXTS.BASE_LOCATION,
-        date: expenseDate,
-        kappId,
-        isDeleted: { $ne: true },
-      }).lean();
-      if (existingTravel && String(existingTravel.userId) !== String(user.id)) {
-        throw new ApiError(
-          httpStatus.CONFLICT,
-          'A travel expense already exists for this date and KAPP ID.'
-        );
-      }
-    }
-
-    const { policyTag, policyBreaches } = await this.assertPhase2Policy(
-      user,
-      payload,
-      expenseDate,
-      expense._id
-    );
-
-    // Zonal Head already reviewed and rejected this one — Team Lead already
-    // approved it earlier and is not shown it again on resubmission. Only
-    // the Zonal Head who rejected it reviews the correction.
-    const wasZonalRejected = expense.status === 'zonal-rejected';
-
-    const hasTeamLead = Boolean(
-      userWithLeads.teamLeadId || userWithLeads.subTeamLeadId
-    );
-    const tlHasAdminRole =
-      userWithLeads.teamLeadId &&
-      String(userWithLeads.teamLeadId.role || '').toLowerCase() === 'admin';
-
-    let status;
-    let tlId;
-    let tlRemark;
-
-    if (wasZonalRejected) {
-      status = 'zonal-pending';
-      tlId = expense.tlId;
-      tlRemark = expense.tlRemark;
-    } else {
-      status = hasTeamLead && !tlHasAdminRole ? 'submitted' : 'tl-approved';
-      if (!hasTeamLead) {
-        tlId = user.id;
-        tlRemark =
-          'Auto-routed to Expense Department because team lead is not mapped.';
-      } else if (tlHasAdminRole) {
-        tlId = userWithLeads.teamLeadId._id;
-        tlRemark =
-          'Auto-approved at TL stage because team lead has admin role.';
-      }
-
-      if (payload.type === 'Team Lunch') {
-        status = 'tl-approved';
-        tlId = undefined;
-        tlRemark = 'Team Lunch: routed directly to Expense Department (policy).';
-      }
-    }
-
-    const attendeeIds =
-      this.isAttendeeEligibleType(payload) && Array.isArray(payload.attendeeUserIds)
-        ? [...new Set(payload.attendeeUserIds.map((id) => this.toObjectId(id)))]
-        : undefined;
-
-    try {
-      expense.team = teamKey;
-      expense.date = expenseDate;
-      expense.name = payload.name;
-      expense.type = payload.type;
-      expense.expenseCategory = this.isSalesExpense(payload) ? 'sales' : 'normal';
-      expense.subCategory = payload.subCategory || undefined;
-      expense.miscellaneousType = payload.miscellaneousType || undefined;
-      expense.distanceKm =
-        payload.type === 'Travel' &&
-        (payload.subCategory === '2 Wheeler' || payload.subCategory === '4 Wheeler')
-          ? Number(payload.distanceKm)
-          : undefined;
-      expense.clientName = payload.clientName?.trim() || undefined;
-      expense.clientPocName = payload.clientPocName?.trim() || undefined;
-      expense.clientPocDesignation = payload.clientPocDesignation?.trim() || undefined;
-      expense.attendeeUserIds = attendeeIds;
-      expense.miscOthersDescription = payload.miscOthersDescription?.trim() || undefined;
-      expense.travelMiscDescription = payload.travelMiscDescription?.trim() || undefined;
-      expense.cityTier = payload.cityTier || undefined;
-      expense.kappId = this.isSalesExpense(payload)
-        ? String(payload.kappId || '').trim()
-        : undefined;
-      expense.instituteName = this.isSalesExpense(payload)
-        ? String(payload.instituteName || '').trim()
-        : undefined;
-      expense.tripContext = payload.type === 'Travel' ? payload.tripContext : undefined;
-      expense.amount = Number(payload.amount);
-      expense.purpose = payload.purpose;
-      expense.attachmentUrl = payload.attachmentUrl || undefined;
-      expense.policyTag = policyTag;
-      expense.policyBreaches = policyBreaches;
-      expense.status = status;
-      expense.tlId = tlId;
-      expense.tlRemark = tlRemark;
-      expense.expenseRemark = undefined;
-
-      // Editing a draft line just updates its content — it stays a draft
-      // until the whole group is submitted via submitExpenseDrafts().
-      if (!expense.isDraft) {
-        this.pushApprovalHistory(expense, {
-          action: 'resubmitted',
-          byUserId: user.id,
-          stage: 'employee',
-        });
-      }
-
-      await expense.save();
-    } catch (err) {
-      throw err;
-    }
-
-    return Expense.findById(expense._id).populate([
-      {
-        path: 'userId',
-        select:
-          'firstName lastName employeeId email role teamLeadId subTeamLeadId expenseBand',
-      },
-      { path: 'tlId', select: 'firstName lastName employeeId email role' },
-      { path: 'attendeeUserIds', select: 'firstName lastName employeeId email' },
-      { path: 'approvalHistory.byUserId', select: 'firstName lastName email employeeId role' },
-    ]);
-  }
-
   async getExpenses(user, filters, page = 1, limit = 10) {
-    // Drafts have their own tab (getExpenseDrafts) — never mixed into any
-    // approval/dashboard/"my expenses" queue.
-    const query = { isDeleted: { $ne: true }, isDraft: { $ne: true } };
+    const query = { isDeleted: { $ne: true } };
     const role = (user.role || '').toLowerCase();
     const isAdminRole = this.adminRoles.includes(role);
     const isSuperAdminRole = this.superAdminRoles.includes(role);
@@ -1037,17 +501,6 @@ class ExpenseService {
           query.userId = { $in: teamUserIds };
         }
       }
-    } else if (activeQueue === 'zonal') {
-      // Zonal Head queue: only expenses filed by employees mapped to this
-      // Zonal Head (User.zonalHeadId). Super Admin sees every zonal queue.
-      if (!isSuperAdminRole) {
-        const mappedUsers = await User.find(
-          { zonalHeadId: user.id, isDeleted: { $ne: true } },
-          '_id'
-        );
-        const mappedUserIds = mappedUsers.map((entry) => entry._id);
-        query.userId = mappedUserIds.length ? { $in: mappedUserIds } : { $in: [] };
-      }
     } else if (activeQueue === 'finance') {
       // Expense Department queue: team-scoped, Expense department or Admin.
       const isExpenseDeptUser = await this.isExpenseDepartmentUser(user.id);
@@ -1065,22 +518,9 @@ class ExpenseService {
           'Only Finance department or Admin can view the Finance review queue.'
         );
       }
-    } else if (activeQueue === 'finance-issues') {
-      // Finance "Raised Issues" view: every claim Finance has raised an issue
-      // on, across all employees and statuses — same audience as Finance Review.
-      const isFinanceDeptUser = await this.isFinanceDepartmentUser(user.id);
-      if (!(isSuperAdminRole || isFinanceDeptUser)) {
-        throw new ApiError(
-          httpStatus.FORBIDDEN,
-          'Only Finance department or Admin can view raised issues.'
-        );
-      }
-      query.hasFinanceIssue = true;
     } else if (activeQueue === 'all') {
-      // All Expenses: complete non-deleted dataset — the dedicated support
-      // account, or anyone in the Expense department.
-      const isExpenseDeptUser = await this.isExpenseDepartmentUser(user.id);
-      if (!this.isAllExpensesSupportUser(user) && !isExpenseDeptUser) {
+      // All Expenses: complete non-deleted dataset for the dedicated support account only.
+      if (!this.isAllExpensesSupportUser(user)) {
         throw new ApiError(
           httpStatus.FORBIDDEN,
           'You are not authorized to view all expenses.'
@@ -1094,7 +534,6 @@ class ExpenseService {
     const statuses = this.splitCsvFilter(filters.status);
     const expenseQueueStatuses = [
       'tl-approved',
-      'zonal-approved',
       'admin-approved',
       'expense-returned',
       'expense-approved',
@@ -1128,15 +567,6 @@ class ExpenseService {
     const types = this.splitCsvFilter(filters.type);
     if (types.length) {
       query.type = { $in: types };
-    }
-
-    // In-policy / out-of-policy tag filter. Rows predating the policy tag
-    // carry no field at all, so "in policy" has to include the missing case.
-    const policyTags = this.splitCsvFilter(filters.policyTag);
-    if (policyTags.length && policyTags.length < EXPENSE_POLICY_TAG_VALUES.length) {
-      query.policyTag = policyTags.includes(EXPENSE_POLICY_TAGS.IN_POLICY)
-        ? { $ne: EXPENSE_POLICY_TAGS.OUT_OF_POLICY }
-        : { $in: policyTags };
     }
 
     if (filters.fromDate || filters.toDate) {
@@ -1203,7 +633,6 @@ class ExpenseService {
         path: 'approvalHistory.byUserId',
         select: 'firstName lastName email employeeId role',
       },
-      ...this.financeIssuePopulatePaths,
     ];
 
     const requesterObjectId = this.toObjectId(user.id);
@@ -1267,13 +696,6 @@ class ExpenseService {
       throw new ApiError(httpStatus.NOT_FOUND, 'Expense not found.');
     }
 
-    if (expense.isDraft) {
-      throw new ApiError(
-        httpStatus.CONFLICT,
-        'This expense is still a draft. Submit it before it can be actioned.'
-      );
-    }
-
     const role = (currentUser.role || '').toLowerCase();
     const actorId = String(currentUser.id || currentUser._id || '');
     const isSuperAdmin = this.superAdminRoles.includes(role);
@@ -1307,10 +729,9 @@ class ExpenseService {
         );
       }
 
-      let employeeZonalHeadId = null;
       if (!isSupportActor) {
         const employee = await User.findById(expense.userId).select(
-          'teamLeadId subTeamLeadId zonalHeadId'
+          'teamLeadId subTeamLeadId'
         );
         const isDirectLead =
           employee &&
@@ -1323,26 +744,10 @@ class ExpenseService {
             'You can only action expenses of your reportees.'
           );
         }
-        employeeZonalHeadId = employee?.zonalHeadId
-          ? String(employee.zonalHeadId)
-          : null;
-      } else {
-        const employee = await User.findById(expense.userId).select('zonalHeadId');
-        employeeZonalHeadId = employee?.zonalHeadId
-          ? String(employee.zonalHeadId)
-          : null;
       }
 
       if (action === 'approved') {
-        // A mapped Zonal Head must review next — unless the same person
-        // acting here IS that Zonal Head, in which case this one approval
-        // covers both stages.
-        const approverIsZonalHead =
-          employeeZonalHeadId && employeeZonalHeadId === actorId;
-        expense.status =
-          employeeZonalHeadId && !approverIsZonalHead
-            ? 'zonal-pending'
-            : 'tl-approved';
+        expense.status = 'tl-approved';
       } else if (action === 'rejected') {
         if (!remark) {
           throw new ApiError(
@@ -1366,72 +771,9 @@ class ExpenseService {
       return expense.save();
     }
 
-    // Zonal Head stage — only reached for filers with a mapped zonalHeadId
-    // (see the 'submitted' block above). Mandatory: the expense cannot move
-    // to the Expense department until the Zonal Head approves it here.
-    if (currentStatus === 'zonal-pending') {
-      const isSupportActor = this.isAllExpensesSupportUser(currentUser);
-
-      if (!isSupportActor && !isSuperAdmin) {
-        const employee = await User.findById(expense.userId).select('zonalHeadId');
-        const isMappedZonalHead =
-          employee?.zonalHeadId && employee.zonalHeadId.toString() === actorId;
-
-        if (!isMappedZonalHead) {
-          throw new ApiError(
-            httpStatus.FORBIDDEN,
-            'Only the mapped Zonal Head can action this expense.'
-          );
-        }
-      }
-
-      if (action === 'approved') {
-        expense.status = 'zonal-approved';
-      } else if (action === 'rejected') {
-        if (!remark) {
-          throw new ApiError(
-            httpStatus.BAD_REQUEST,
-            'Remark is required for rejection.'
-          );
-        }
-        expense.status = 'zonal-rejected';
-      } else {
-        throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid action.');
-      }
-
-      this.pushApprovalHistory(expense, {
-        action,
-        byUserId: actorId,
-        remark,
-        stage: 'zonal-head',
-      });
-      return expense.save();
-    }
-
-    // Expense Department is the final approver. Finance keeps read/export
-    // access but can no longer approve, reject or return — `admin-approved`
-    // is accepted here only so rows left in Finance's old queue can still be
-    // finalised by the Expense Department.
-    if (
-      currentStatus === 'tl-approved' ||
-      currentStatus === 'zonal-approved' ||
-      currentStatus === 'expense-returned' ||
-      currentStatus === 'admin-approved'
-    ) {
+    if (currentStatus === 'tl-approved' || currentStatus === 'expense-returned') {
       const isExpenseDeptUser = await this.isExpenseDepartmentUser(actorId);
-      const isFinanceDeptUser = await this.isFinanceDepartmentUser(actorId);
-
-      if (!isFinalApproverAdminRole && !isExpenseDeptUser) {
-        if (isFinanceDeptUser) {
-          // Recorded for compliance: Finance lost approve/reject/return rights.
-          logger.warn(
-            `Blocked expense action '${action}' on ${expense._id} by Finance user ${actorId}: Finance can no longer approve, reject or return expenses.`
-          );
-          throw new ApiError(
-            httpStatus.FORBIDDEN,
-            'Finance can no longer approve, reject or return expenses — the Expense department is the final approver.'
-          );
-        }
+      if (!(isFinalApproverAdminRole || isExpenseDeptUser)) {
         throw new ApiError(
           httpStatus.FORBIDDEN,
           'Only Expense department or Admin can action this expense.'
@@ -1441,12 +783,12 @@ class ExpenseService {
       if (action === 'returned') {
         throw new ApiError(
           httpStatus.BAD_REQUEST,
-          'Returning an expense is no longer supported — the Expense department is the final approver.'
+            'Expense Department cannot return an expense.'
         );
       }
 
       if (action === 'approved') {
-        expense.status = 'expense-approved';
+        expense.status = 'admin-approved';
       } else if (action === 'rejected') {
         if (!remark) {
           throw new ApiError(
@@ -1464,9 +806,50 @@ class ExpenseService {
         action,
         byUserId: actorId,
         remark,
-        // One stage for every action here now — Finance no longer returns
-        // expenses, so the old `expense-resubmit` stage is history-only.
-        stage: 'expense-final-approval',
+        stage:
+          currentStatus === 'expense-returned'
+            ? 'expense-resubmit'
+            : 'expense-review',
+      });
+      return expense.save();
+    }
+
+    if (currentStatus === 'admin-approved') {
+      const isFinanceDeptUser = await this.isFinanceDepartmentUser(actorId);
+      if (!(isFinalApproverAdminRole || isFinanceDeptUser)) {
+        throw new ApiError(
+          httpStatus.FORBIDDEN,
+          'Only Finance department or Admin can action this expense.'
+        );
+      }
+
+      if (action === 'rejected') {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          'Finance Department cannot reject directly — use Return to Expense Department.'
+        );
+      }
+
+      if (action === 'approved') {
+        expense.status = 'expense-approved';
+      } else if (action === 'returned') {
+        if (!remark || remark.trim().length < 10) {
+          throw new ApiError(
+            httpStatus.BAD_REQUEST,
+            'A remark of at least 10 characters is required to return an expense.'
+          );
+        }
+        expense.status = 'expense-returned';
+      } else {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid action.');
+      }
+
+      expense.financeRemark = remark || undefined;
+      this.pushApprovalHistory(expense, {
+        action,
+        byUserId: actorId,
+        remark,
+        stage: 'finance-review',
       });
       return expense.save();
     }
@@ -1475,49 +858,6 @@ class ExpenseService {
       httpStatus.CONFLICT,
       `Expense in '${expense.status}' state cannot be modified.`
     );
-  }
-
-  /** Finance department, or Admin/Sub Admin oversight. */
-  async canRaiseFinanceIssue(currentUser) {
-    const role = (currentUser.role || '').toLowerCase();
-    if (this.superAdminRoles.includes(role)) return true;
-    return this.isFinanceDepartmentUser(currentUser.id);
-  }
-
-  /**
-   * Finance "Raise an Issue". Finance cannot approve/reject/return (the
-   * Expense department is the final approver), so raising an issue only
-   * records the note on the claim and in its approval history — `status`
-   * is never touched.
-   */
-  async raiseFinanceIssue({ expenseId, message, currentUser }) {
-    if (!(await this.canRaiseFinanceIssue(currentUser))) {
-      throw new ApiError(
-        httpStatus.FORBIDDEN,
-        'Only the Finance department or Admin can raise an issue on an expense.'
-      );
-    }
-    const expense = await Expense.findById(expenseId);
-    if (!expense || expense.isDeleted) {
-      throw new ApiError(httpStatus.NOT_FOUND, 'Expense not found.');
-    }
-    if (expense.isDraft) {
-      throw new ApiError(
-        httpStatus.CONFLICT,
-        'This expense is still a draft. Issues can only be raised on submitted claims.'
-      );
-    }
-
-    const actorId = String(currentUser.id || currentUser._id || '');
-    expense.financeIssues.push({ raisedBy: actorId, message });
-    expense.hasFinanceIssue = true;
-    this.pushApprovalHistory(expense, {
-      action: 'issue-raised',
-      byUserId: actorId,
-      remark: message,
-      stage: 'finance-issue',
-    });
-    return expense.save();
   }
 
   async bulkUpdateExpenseStatus({ expenseIds, remark, action, currentUser }) {
@@ -1596,14 +936,7 @@ class ExpenseService {
     return expense;
   }
 
-  buildExpenseDashboardDateRange(month, year, fromDate, toDate) {
-    if (fromDate && toDate) {
-      const startDate = new Date(fromDate);
-      startDate.setHours(0, 0, 0, 0);
-      const endDate = new Date(toDate);
-      endDate.setHours(23, 59, 59, 999);
-      return { startDate, endDate };
-    }
+  buildExpenseDashboardDateRange(month, year) {
     const m = Number(month);
     const y = Number(year);
     const startDate = new Date(y, m - 1, 1, 0, 0, 0, 0);
@@ -1641,8 +974,7 @@ class ExpenseService {
       } else if (normalized === 'pending') {
         mapped.push(...this.expensePendingStatuses());
       } else if (normalized === 'rejected') {
-        // Rejected at any stage — TL or Expense department.
-        mapped.push(...this.expenseRejectedStatuses());
+        mapped.push('expense-rejected');
       } else {
         mapped.push(entry);
       }
@@ -1696,14 +1028,11 @@ class ExpenseService {
   async buildExpenseDashboardMatch(user, filters) {
     const { startDate, endDate } = this.buildExpenseDashboardDateRange(
       filters.month,
-      filters.year,
-      filters.fromDate,
-      filters.toDate
+      filters.year
     );
 
     const match = {
       isDeleted: { $ne: true },
-      isDraft: { $ne: true },
       date: { $gte: startDate, $lte: endDate },
     };
 
@@ -1715,7 +1044,9 @@ class ExpenseService {
       (filters.team || user.team || '').trim() || user.team
     );
 
-    if (access.scope === 'team') {
+    if (filters.employeeId) {
+      match.userId = await this.resolveDashboardEmployeeUserId(filters.employeeId);
+    } else if (access.scope === 'team') {
       match.team = teamKey;
     } else if (access.scope === 'reportees') {
       const reporteeQuery = {
@@ -1742,114 +1073,12 @@ class ExpenseService {
       match.userId = this.toObjectId(user.id);
     }
 
-    // Single-employee filter (dashboard drill-down) narrows the viewer's role
-    // scope above — it never widens it. An employee outside that scope
-    // simply yields no rows, exactly as the grouped view would show.
-    if (filters.employeeId) {
-      const targetUserId = await this.resolveDashboardEmployeeUserId(filters.employeeId);
-      const scoped = match.userId;
-      const isInScope = scoped?.$in
-        ? scoped.$in.some((id) => String(id) === String(targetUserId))
-        : scoped
-          ? String(scoped) === String(targetUserId)
-          : true; // 'team' scope — `match.team` still restricts the rows.
-      match.userId = isInScope ? targetUserId : { $in: [] };
-    }
-
-    // Department filter — Expense rows carry no department, so it resolves to
-    // that department's users and intersects with whatever user scope the
-    // viewer's role (and any employee filter) already allows.
-    if (filters.departmentId) {
-      const deptUsers = await User.find({
-        department: filters.departmentId,
-        isDeleted: { $ne: true },
-      })
-        .select('_id')
-        .lean();
-      const deptUserIds = deptUsers.map((entry) => String(entry._id));
-
-      const scoped = match.userId;
-      let allowedIds = deptUserIds;
-
-      if (scoped?.$in) {
-        const scopedIds = scoped.$in.map(String);
-        allowedIds = deptUserIds.filter((id) => scopedIds.includes(id));
-      } else if (scoped) {
-        allowedIds = deptUserIds.includes(String(scoped)) ? [String(scoped)] : [];
-      }
-
-      match.userId = { $in: allowedIds.map((id) => this.toObjectId(id)) };
-    }
-
     const statuses = this.resolveDashboardStatusFilter(filters.status);
     if (statuses?.length) {
       match.status = { $in: statuses };
     }
 
-    // Free-text search narrows the rows the viewer is already allowed to see:
-    // the KAPP ID / name typed on the expense form, the institute, or the
-    // employee's name / employee code.
-    const search = (filters.search || '').trim();
-    if (search) {
-      const searchRegex = this.buildRegex(search);
-      const matchingUsers = await User.find({
-        isDeleted: { $ne: true },
-        $or: [
-          { firstName: searchRegex },
-          { lastName: searchRegex },
-          { employeeId: searchRegex },
-          {
-            $expr: {
-              $regexMatch: {
-                input: {
-                  $concat: [
-                    { $ifNull: ['$firstName', ''] },
-                    ' ',
-                    { $ifNull: ['$lastName', ''] },
-                  ],
-                },
-                regex: searchRegex.source,
-                options: 'i',
-              },
-            },
-          },
-        ],
-      })
-        .select('_id')
-        .lean();
-
-      match.$or = [
-        { kappId: searchRegex },
-        { name: searchRegex },
-        { instituteName: searchRegex },
-        { userId: { $in: matchingUsers.map((entry) => this.toObjectId(entry._id)) } },
-      ];
-    }
-
     return match;
-  }
-
-  /**
-   * One employee's individual expense rows for the dashboard drill-down,
-   * ordered by expense date. Reuses `buildExpenseDashboardMatch` so the same
-   * month/year/status/department/permission scoping applies as the grouped view.
-   */
-  async getExpenseDashboardEmployeeRecords(user, filters) {
-    if (!filters.employeeId) {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'employeeId is required.');
-    }
-
-    const match = await this.buildExpenseDashboardMatch(user, filters);
-
-    const rows = await Expense.find(match)
-      .select(
-        'date name type subCategory miscellaneousType amount status purpose attachmentUrl'
-      )
-      .sort({ date: 1, createdAt: 1 })
-      .limit(500)
-      .lean();
-
-    return rows;
   }
 
   buildExpenseDashboardPipeline(match, page, limit, groupBy = 'employee') {
@@ -2247,179 +1476,11 @@ class ExpenseService {
     };
   }
 
-  /**
-   * Flat, unaggregated expense lines for the "custom grouping" dashboard view
-   * — each filed expense line (one category, one date, one account) is its
-   * own row. Grouping into the two dropdown-selected levels happens on the
-   * frontend so any combination of fields can be nested either way.
-   */
-  buildExpenseLineItemsPipeline(match, limit = 2000) {
-    const cappedLimit = Math.min(Math.max(1, Number(limit) || 2000), 5000);
-
-    return [
-      { $match: match },
-      { $sort: { date: 1, createdAt: 1 } },
-      { $limit: cappedLimit },
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'userId',
-          foreignField: '_id',
-          as: 'employee',
-        },
-      },
-      { $unwind: { path: '$employee', preserveNullAndEmptyArrays: true } },
-      {
-        $project: {
-          _id: 1,
-          date: 1,
-          employeeId: '$userId',
-          employeeName: {
-            $trim: {
-              input: {
-                $concat: [
-                  { $ifNull: ['$employee.firstName', ''] },
-                  ' ',
-                  { $ifNull: ['$employee.lastName', ''] },
-                ],
-              },
-            },
-          },
-          expenseBand: '$employee.expenseBand',
-          kappId: { $ifNull: ['$kappId', ''] },
-          instituteName: { $ifNull: ['$instituteName', ''] },
-          type: 1,
-          subCategory: 1,
-          miscellaneousType: 1,
-          cityTier: 1,
-          tripContext: 1,
-          attendeeUserIds: 1,
-          amount: 1,
-          status: 1,
-          policyTag: 1,
-          policyBreaches: 1,
-        },
-      },
-    ];
-  }
-
-  /**
-   * The policy cap that applies to a filed line, for display. Uses the
-   * breach's recorded cap when the line was flagged out-of-policy; otherwise
-   * recomputes the applicable cap from the same constants `assertPhase2Policy`
-   * checks against, so in-policy lines still show a cap to compare against.
-   */
-  resolveExpenseLineDisplayCap(expense, band) {
-    if (Array.isArray(expense.policyBreaches) && expense.policyBreaches.length) {
-      return expense.policyBreaches[0].capAmount ?? null;
-    }
-
-    const type = expense.type;
-    const sub = String(expense.subCategory || '').trim();
-
-    if (type === 'Food' && (sub === 'Metro' || sub === 'Non-Metro')) {
-      const tier = sub === 'Metro' ? 'metro' : 'nonMetro';
-      return FOOD_DAILY_CAP[band]?.[tier] ?? null;
-    }
-
-    if (type === 'Miscellaneous' && sub === 'Hotel Accommodation') {
-      const tierKey = expense.cityTier === 'Metro' ? 'metro' : 'nonMetro';
-      return HOTEL_PER_NIGHT_CAP[band]?.[tierKey] ?? null;
-    }
-
-    if (type === 'Mobile Bill') {
-      return MOBILE_BILL_FIXED_AMOUNT;
-    }
-
-    if (type === 'Travel' && expense.tripContext === TRIP_CONTEXTS.BASE_LOCATION) {
-      return BASE_LOCATION_TRAVEL_PER_MEETING_CAP[band] ?? null;
-    }
-
-    if (type === 'Team Lunch') {
-      const count = Array.isArray(expense.attendeeUserIds)
-        ? expense.attendeeUserIds.length
-        : 0;
-      return count ? this.roundMoney(count * TEAM_LUNCH_PER_ATTENDEE) : null;
-    }
-
-    return null;
-  }
-
-  formatExpenseLineItemRow(row) {
-    const band = this.resolveExpenseBand(row.expenseBand);
-    const subCategory = String(row.subCategory || row.miscellaneousType || '').trim();
-
-    return {
-      id: row._id,
-      date: row.date,
-      employeeId: row.employeeId,
-      employeeName: row.employeeName || '',
-      kappId: row.kappId || '',
-      instituteName: row.instituteName || '',
-      account: row.instituteName
-        ? `${row.instituteName}${row.kappId ? ` (${row.kappId})` : ''}`
-        : row.kappId || '',
-      category: row.type || '',
-      subCategory,
-      amount: this.formatExpenseDashboardMoney(row.amount),
-      cap: this.resolveExpenseLineDisplayCap(row, band),
-      status: row.status,
-      policyTag:
-        row.policyTag === EXPENSE_POLICY_TAGS.OUT_OF_POLICY
-          ? EXPENSE_POLICY_TAGS.OUT_OF_POLICY
-          : EXPENSE_POLICY_TAGS.IN_POLICY,
-    };
-  }
-
   async getExpenseDashboard(user, filters, page = 1, limit = 10) {
     const groupBy = filters.groupBy || 'employee';
     const isDepartmentView = groupBy === 'department';
-    const isCustomView = groupBy === 'custom';
     const access = await this.resolveExpenseDashboardAccess(user);
     const match = await this.buildExpenseDashboardMatch(user, filters);
-
-    if (isCustomView) {
-      const pipeline = this.buildExpenseLineItemsPipeline(match, filters.limit || limit);
-      const rows = await Expense.aggregate(pipeline);
-      const data = rows.map((row) => this.formatExpenseLineItemRow(row));
-      const totalAppliedExpense = data.reduce(
-        (sum, entry) => sum + Number(entry.amount || 0),
-        0
-      );
-
-      return {
-        summary: {
-          totalRecords: data.length,
-          totalAppliedExpense: this.formatExpenseDashboardMoney(totalAppliedExpense),
-        },
-        data,
-        pagination: {
-          totalDocs: data.length,
-          limit: data.length,
-          totalPages: data.length ? 1 : 0,
-          currentPage: 1,
-          pagingCounter: data.length ? 1 : 0,
-          hasPrevPage: false,
-          hasNextPage: false,
-          prevPage: null,
-          nextPage: null,
-        },
-        filters: {
-          fromDate: filters.fromDate || null,
-          toDate: filters.toDate || null,
-          month: filters.month ? Number(filters.month) : null,
-          year: filters.year ? Number(filters.year) : null,
-          team: filters.team || null,
-          employeeId: filters.employeeId || null,
-          status: filters.status || null,
-          groupBy,
-          groupField1: filters.groupField1 || 'date',
-          groupField2: filters.groupField2 || 'account',
-        },
-        access,
-      };
-    }
-
     const { pipeline, currentPage, perPage } = this.buildExpenseDashboardPipeline(
       match,
       page,
@@ -2494,153 +1555,8 @@ class ExpenseService {
     if (!user?.id) {
       throw new ApiError(httpStatus.UNAUTHORIZED, 'Could not identify user.');
     }
-    return this.buildPersonalExpenseDashboard(user.id);
-  }
 
-  /**
-   * Same aggregates as `getMyExpenseDashboard`, for a Team Lead / Sub Team
-   * Lead viewing one of their own reportees from View Team (or Admin/HR
-   * viewing anyone). Authorization happens here, not on the caller.
-   */
-  async getTeamMemberExpenseDashboard(currentUser, targetUserId) {
-    if (!mongoose.Types.ObjectId.isValid(targetUserId)) {
-      throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid user id.');
-    }
-
-    const targetUser = await User.findOne({
-      _id: targetUserId,
-      isDeleted: { $ne: true },
-    })
-      .select('teamLeadId subTeamLeadId')
-      .lean();
-    if (!targetUser) {
-      throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
-    }
-
-    const role = (currentUser.role || '').toLowerCase();
-    const actorId = String(currentUser.id || currentUser._id || '');
-    const isAdminRole = this.adminRoles.includes(role);
-    const isTlRole = this.tlRoles.includes(role);
-    const isDirectLead =
-      String(targetUser.teamLeadId || '') === actorId ||
-      String(targetUser.subTeamLeadId || '') === actorId;
-
-    if (!isAdminRole && !(isTlRole && isDirectLead)) {
-      throw new ApiError(
-        httpStatus.FORBIDDEN,
-        'You can only view the expense dashboard for your own team members.'
-      );
-    }
-
-    return this.buildPersonalExpenseDashboard(targetUserId);
-  }
-
-  /**
-   * The authenticated user's own spend for one calendar month, metered
-   * against the monthly budget. Drives the running total on the Add Expense
-   * form, so it is deliberately cheap: one aggregate, own rows only.
-   *
-   * Statuses default to "not rejected" (still in flight, or fully approved) —
-   * a rejected claim is not spend. `type` and `status` narrow the slice so
-   * the claimant can see how the total breaks down.
-   */
-  async getMyMonthlyExpenseTotal(user, filters = {}) {
-    if (!user?.id) {
-      throw new ApiError(httpStatus.UNAUTHORIZED, 'Could not identify user.');
-    }
-
-    const now = new Date();
-    const year = Number(filters.year) || now.getFullYear();
-    const month = Number(filters.month) || now.getMonth() + 1;
-
-    // An explicit range (the list's date-range filter) wins over month/year.
-    const hasRange = Boolean(filters.fromDate || filters.toDate);
-    let rangeStart;
-    let rangeEnd;
-    if (hasRange) {
-      rangeStart = filters.fromDate
-        ? new Date(filters.fromDate)
-        : new Date(year, month - 1, 1);
-      rangeEnd = filters.toDate ? new Date(filters.toDate) : new Date(rangeStart);
-      rangeStart.setHours(0, 0, 0, 0);
-      rangeEnd.setHours(23, 59, 59, 999);
-    } else {
-      rangeStart = new Date(year, month - 1, 1, 0, 0, 0, 0);
-      rangeEnd = new Date(year, month, 0, 23, 59, 59, 999);
-    }
-
-    const match = {
-      userId: this.toObjectId(user.id),
-      isDeleted: { $ne: true },
-      isDraft: { $ne: true },
-      date: { $gte: rangeStart, $lte: rangeEnd },
-    };
-
-    const types = this.splitCsvFilter(filters.type);
-    if (types.length) {
-      match.type = { $in: types };
-    }
-
-    const statuses = this.splitCsvFilter(filters.status);
-    match.status = {
-      $in: statuses.length
-        ? statuses
-        : [...this.expensePendingStatuses(), 'expense-approved'],
-    };
-
-    const [result] = await Expense.aggregate([
-      { $match: match },
-      {
-        $facet: {
-          totals: [
-            {
-              $group: {
-                _id: null,
-                totalAmount: { $sum: '$amount' },
-                expenseCount: { $sum: 1 },
-              },
-            },
-          ],
-          byType: [
-            {
-              $group: {
-                _id: '$type',
-                amount: { $sum: '$amount' },
-                count: { $sum: 1 },
-              },
-            },
-            { $sort: { amount: -1 } },
-          ],
-        },
-      },
-    ]);
-
-    const totalAmount = this.roundMoney(result?.totals?.[0]?.totalAmount || 0);
-
-    return {
-      month,
-      year,
-      fromDate: rangeStart,
-      toDate: rangeEnd,
-      isCustomRange: hasRange,
-      totalAmount,
-      budgetAmount: MONTHLY_EXPENSE_BUDGET,
-      remainingAmount: this.roundMoney(
-        Math.max(0, MONTHLY_EXPENSE_BUDGET - totalAmount)
-      ),
-      isOverBudget: totalAmount > MONTHLY_EXPENSE_BUDGET,
-      expenseCount: result?.totals?.[0]?.expenseCount || 0,
-      byType: (result?.byType || []).map((entry) => ({
-        type: entry._id,
-        amount: this.roundMoney(entry.amount),
-        count: entry.count,
-      })),
-    };
-  }
-
-  /** Shared aggregation behind getMyExpenseDashboard / getTeamMemberExpenseDashboard. */
-  async buildPersonalExpenseDashboard(targetUserId) {
-    const userId = this.toObjectId(targetUserId);
+    const userId = this.toObjectId(user.id);
     const pendingStatuses = this.expensePendingStatuses();
     const rejectedStatuses = this.expenseRejectedStatuses();
     const approvedStatus = 'expense-approved';
@@ -2663,14 +1579,12 @@ class ExpenseService {
       userId,
       isDeleted: { $ne: true },
     };
-    const notDraft = { isDraft: { $ne: true } };
 
     const [facet] = await Expense.aggregate([
       { $match: match },
       {
         $facet: {
           totals: [
-            { $match: notDraft },
             {
               $group: {
                 _id: null,
@@ -2717,30 +1631,7 @@ class ExpenseService {
               },
             },
           ],
-          draft: [
-            { $match: { isDraft: true } },
-            {
-              $group: {
-                _id: null,
-                draftAmount: { $sum: '$amount' },
-                draftCount: { $sum: 1 },
-              },
-            },
-          ],
-          /** Per `type` breakdown (Travel/Food/Stay/...) — drives the category donut. */
-          byCategory: [
-            { $match: notDraft },
-            {
-              $group: {
-                _id: '$type',
-                amount: { $sum: '$amount' },
-                count: { $sum: 1 },
-              },
-            },
-            { $sort: { amount: -1 } },
-          ],
           monthly: [
-            { $match: notDraft },
             {
               $match: {
                 date: { $gte: rangeStart, $lte: rangeEnd },
@@ -2766,7 +1657,6 @@ class ExpenseService {
     ]);
 
     const totalsDoc = facet?.totals?.[0] || {};
-    const draftDoc = facet?.draft?.[0] || {};
     const monthlyMap = new Map(
       (facet?.monthly || []).map((row) => [
         `${row._id.year}-${row._id.month}`,
@@ -2801,15 +1691,6 @@ class ExpenseService {
         amount: this.formatExpenseDashboardMoney(totalsDoc.rejectedAmount),
         count: totalsDoc.rejectedCount || 0,
       },
-      draft: {
-        amount: this.formatExpenseDashboardMoney(draftDoc.draftAmount),
-        count: draftDoc.draftCount || 0,
-      },
-      byCategory: (facet?.byCategory || []).map((entry) => ({
-        type: entry._id,
-        amount: this.formatExpenseDashboardMoney(entry.amount),
-        count: entry.count,
-      })),
       monthly,
     };
   }
@@ -2844,7 +1725,6 @@ class ExpenseService {
 
     const match = {
       isDeleted: { $ne: true },
-      isDraft: { $ne: true },
       status: 'submitted',
       userId: { $in: teamUserIds },
     };
@@ -2911,76 +1791,6 @@ class ExpenseService {
     });
 
     return { data };
-  }
-
-  /**
-   * Multi-expense-for-one-meeting flow — every draft line the current user
-   * has saved but not yet submitted, newest first. Grouping by date + KAPP ID
-   * happens on the client (each group is small and this keeps the endpoint
-   * a plain list, easy to page later if needed).
-   */
-  async listExpenseDrafts(user) {
-    const rows = await Expense.find({
-      userId: this.toObjectId(user.id),
-      isDraft: true,
-      isDeleted: { $ne: true },
-    })
-      .sort({ date: -1, createdAt: 1 })
-      .lean();
-
-    return rows.map((row) => ({ ...row, isDraft: true }));
-  }
-
-  /**
-   * Multi-expense-for-one-meeting flow — the claimant hits "Submit" once for
-   * the whole date + KAPP ID group. Every matching draft line already carries
-   * its final routing (status/tlId/policy tag) from the moment it was saved,
-   * so submitting just lifts the `isDraft` flag; nothing is re-validated.
-   * Returns the now-submitted docs so the caller can send the deferred
-   * notification emails exactly as a normal create would have.
-   */
-  async submitExpenseDrafts(user, { date, kappId, instituteName }) {
-    const day = new Date(date);
-    day.setHours(0, 0, 0, 0);
-
-    const query = {
-      userId: this.toObjectId(user.id),
-      isDraft: true,
-      isDeleted: { $ne: true },
-      date: day,
-      kappId: String(kappId || '').trim(),
-    };
-    if (instituteName) {
-      query.instituteName = String(instituteName).trim();
-    }
-
-    const drafts = await Expense.find(query);
-    if (!drafts.length) {
-      throw new ApiError(
-        httpStatus.NOT_FOUND,
-        'No draft expenses found for this date and KAPP ID.'
-      );
-    }
-
-    for (const draft of drafts) {
-      draft.isDraft = false;
-      this.pushApprovalHistory(draft, {
-        action: 'submitted',
-        byUserId: user.id,
-        stage: 'employee',
-      });
-      await draft.save();
-    }
-
-    return Expense.find({ _id: { $in: drafts.map((d) => d._id) } }).populate([
-      {
-        path: 'userId',
-        select:
-          'firstName lastName employeeId email role teamLeadId subTeamLeadId expenseBand',
-      },
-      { path: 'tlId', select: 'firstName lastName employeeId email role' },
-      { path: 'attendeeUserIds', select: 'firstName lastName employeeId email' },
-    ]);
   }
 }
 
