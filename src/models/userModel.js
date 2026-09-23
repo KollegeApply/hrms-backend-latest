@@ -73,6 +73,17 @@ const userSchema = new Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
     },
+    /**
+     * Zonal Head — a temporary stand-in for the not-yet-modeled Account
+     * Manager → Team Lead → Zonal Head org hierarchy. Not mandatory: only
+     * set for employees who report into a zone. When set, their expenses
+     * pick up a mandatory Zonal Head approval stage after the Team Lead.
+     */
+    zonalHeadId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
     address: {
       // Optional: More detailed address structure can be added
       street: String,
