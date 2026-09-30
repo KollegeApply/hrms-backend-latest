@@ -2490,11 +2490,11 @@ class ExpenseService {
    * Personal My Dashboard — authenticated employee only.
    * Read-only aggregates; never accepts a client-supplied employee id.
    */
-  async getMyExpenseDashboard(user) {
+  async getMyExpenseDashboard(user, filters = {}) {
     if (!user?.id) {
       throw new ApiError(httpStatus.UNAUTHORIZED, 'Could not identify user.');
     }
-    return this.buildPersonalExpenseDashboard(user.id);
+    return this.buildPersonalExpenseDashboard(user.id, filters);
   }
 
   /**
@@ -2502,7 +2502,7 @@ class ExpenseService {
    * Lead viewing one of their own reportees from View Team (or Admin/HR
    * viewing anyone). Authorization happens here, not on the caller.
    */
-  async getTeamMemberExpenseDashboard(currentUser, targetUserId) {
+  async getTeamMemberExpenseDashboard(currentUser, targetUserId, filters = {}) {
     if (!mongoose.Types.ObjectId.isValid(targetUserId)) {
       throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid user id.');
     }
@@ -2532,7 +2532,7 @@ class ExpenseService {
       );
     }
 
-    return this.buildPersonalExpenseDashboard(targetUserId);
+    return this.buildPersonalExpenseDashboard(targetUserId, filters);
   }
 
   /**
@@ -2639,29 +2639,51 @@ class ExpenseService {
   }
 
   /** Shared aggregation behind getMyExpenseDashboard / getTeamMemberExpenseDashboard. */
-  async buildPersonalExpenseDashboard(targetUserId) {
+  async buildPersonalExpenseDashboard(targetUserId, filters = {}) {
     const userId = this.toObjectId(targetUserId);
     const pendingStatuses = this.expensePendingStatuses();
     const rejectedStatuses = this.expenseRejectedStatuses();
     const approvedStatus = 'expense-approved';
 
-    const now = new Date();
-    const monthKeys = [];
-    for (let i = 5; i >= 0; i -= 1) {
-      const cursor = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      monthKeys.push({
-        year: cursor.getFullYear(),
-        month: cursor.getMonth() + 1,
-      });
+    // An explicit fromDate/toDate (the dashboard's date-range filter) scopes
+    // every card and chart to that window; otherwise everything is all-time
+    // except the monthly chart, which defaults to the trailing 6 months.
+    const hasCustomRange = Boolean(filters.fromDate || filters.toDate);
+
+    let monthKeys = [];
+    let rangeStart;
+    let rangeEnd;
+    if (hasCustomRange) {
+      rangeStart = filters.fromDate ? new Date(filters.fromDate) : new Date(0);
+      rangeEnd = filters.toDate ? new Date(filters.toDate) : new Date();
+      rangeStart.setHours(0, 0, 0, 0);
+      rangeEnd.setHours(23, 59, 59, 999);
+
+      const cursor = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1);
+      const stop = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1);
+      while (cursor <= stop) {
+        monthKeys.push({ year: cursor.getFullYear(), month: cursor.getMonth() + 1 });
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
+    } else {
+      const now = new Date();
+      for (let i = 5; i >= 0; i -= 1) {
+        const cursor = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        monthKeys.push({
+          year: cursor.getFullYear(),
+          month: cursor.getMonth() + 1,
+        });
+      }
+      const first = monthKeys[0];
+      const last = monthKeys[monthKeys.length - 1];
+      rangeStart = new Date(first.year, first.month - 1, 1, 0, 0, 0, 0);
+      rangeEnd = new Date(last.year, last.month, 0, 23, 59, 59, 999);
     }
-    const first = monthKeys[0];
-    const last = monthKeys[monthKeys.length - 1];
-    const rangeStart = new Date(first.year, first.month - 1, 1, 0, 0, 0, 0);
-    const rangeEnd = new Date(last.year, last.month, 0, 23, 59, 59, 999);
 
     const match = {
       userId,
       isDeleted: { $ne: true },
+      ...(hasCustomRange ? { date: { $gte: rangeStart, $lte: rangeEnd } } : {}),
     };
     const notDraft = { isDraft: { $ne: true } };
 
@@ -2811,6 +2833,9 @@ class ExpenseService {
         count: entry.count,
       })),
       monthly,
+      isCustomRange: hasCustomRange,
+      fromDate: hasCustomRange ? rangeStart : null,
+      toDate: hasCustomRange ? rangeEnd : null,
     };
   }
 
