@@ -29,6 +29,10 @@ router.get(
   '/employee-leave-balance',
   employeeLeaveBalanceController.getBalancesForEmployee
 );
+router.post(
+  '/employee-leave-balance/bulk',
+  employeeLeaveBalanceController.getBalancesForEmployees
+);
 
 // Policy-driven leave application
 router.post('/apply', authenticateUser, safeLeaveAttachmentUpload, leaveController.applyForLeave);

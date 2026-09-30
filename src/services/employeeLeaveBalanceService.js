@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const EmployeeLeaveBalance = require('../models/employeeLeaveBalanceModel');
 const LeaveType = require('../models/leaveTypeModel');
 const User = require('../models/userModel');
@@ -324,6 +325,207 @@ class EmployeeLeaveBalanceService {
       console.error('Error in getBalancesForEmployee:', error);
       throw error;
     }
+  }
+
+  // Get leave balances for multiple employees, keyed by employee id
+  // Same calculation as getBalancesForEmployee, but read-only and batched:
+  // a fixed number of queries for all employees instead of ~10+ per employee.
+  async getBalancesForEmployees(employeeIds = []) {
+    const uniqueIds = [...new Set(employeeIds.map(String))];
+    const result = {};
+    uniqueIds.forEach((id) => {
+      result[id] = [];
+    });
+
+    const validIds = uniqueIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
+    if (validIds.length === 0) return result;
+
+    const currentYear = new Date().getFullYear();
+    const { yearStart, yearEnd } = this.getYearBounds(currentYear);
+    const key = (userId, leaveTypeId) => `${userId}|${leaveTypeId}`;
+
+    const users = await User.find({ _id: { $in: validIds } })
+      .select('_id status hireDate leavePolicyId')
+      .lean();
+    if (users.length === 0) return result;
+
+    const userIds = users.map((u) => u._id);
+    const policyIds = [
+      ...new Set(users.map((u) => u.leavePolicyId && String(u.leavePolicyId)).filter(Boolean)),
+    ];
+
+    const [policyMappings, balances, yearLeaves, statusChanges] = await Promise.all([
+      LeavePolicyMapping.find({ leavePolicyId: { $in: policyIds }, isDeleted: false })
+        .populate('leaveTypeId', '_id name code')
+        .lean(),
+      EmployeeLeaveBalance.find({ userId: { $in: userIds } })
+        .select('userId leaveTypeId total carryForwarded')
+        .lean(),
+      leaveApplicationModel
+        .find({
+          userId: { $in: userIds },
+          status: { $in: ['approved', 'pending', 'tl-pending', 'hr-pending'] },
+          isDeleted: false,
+          dates: { $elemMatch: { $gte: yearStart, $lte: yearEnd } },
+        })
+        .select('userId leaveTypeId status totalDays')
+        .lean(),
+      EmployeeHistory.find({
+        employeeId: { $in: userIds },
+        entity: 'status',
+        previous: 'probation',
+        changed: 'onroll',
+      })
+        .sort({ actionAt: -1 })
+        .select('employeeId actionAt')
+        .lean(),
+    ]);
+
+    // Policy mappings grouped by policy
+    const mappingsByPolicy = new Map();
+    policyMappings.forEach((m) => {
+      const policyId = String(m.leavePolicyId);
+      if (!mappingsByPolicy.has(policyId)) mappingsByPolicy.set(policyId, []);
+      mappingsByPolicy.get(policyId).push(m);
+    });
+
+    // Balance rows per user+type; duplicates merged the same way consolidateDuplicateBalances does
+    const balanceMap = new Map();
+    balances.forEach((b) => {
+      if (!b.leaveTypeId) return;
+      const k = key(b.userId, b.leaveTypeId);
+      const existing = balanceMap.get(k);
+      if (!existing) {
+        balanceMap.set(k, { total: b.total || 0, carryForwarded: b.carryForwarded || 0 });
+      } else {
+        existing.total = Math.max(existing.total, b.total || 0);
+        existing.carryForwarded = Math.max(existing.carryForwarded, b.carryForwarded || 0);
+      }
+    });
+
+    // Approved (used) and pending days in the current year per user+type
+    const approvedMap = new Map();
+    const pendingMap = new Map();
+    yearLeaves.forEach((leave) => {
+      const k = key(leave.userId, leave.leaveTypeId);
+      const target = leave.status === 'approved' ? approvedMap : pendingMap;
+      target.set(k, (target.get(k) || 0) + (leave.totalDays || 0));
+    });
+
+    // Latest probation -> onroll change per user (sorted desc, first one wins)
+    const statusChangeMap = new Map();
+    statusChanges.forEach((h) => {
+      const id = String(h.employeeId);
+      if (!statusChangeMap.has(id)) statusChangeMap.set(id, h.actionAt);
+    });
+
+    // Unused probation leave for users who became onroll this year
+    const unusedProbationMap = new Map();
+    const transitionedUsers = users.filter((u) => {
+      const changeDate = statusChangeMap.get(String(u._id));
+      return u.status === 'onroll' && changeDate && changeDate.getFullYear() === currentYear;
+    });
+    if (transitionedUsers.length > 0) {
+      const probationLeaveType = await LeaveType.findOne({ code: 'PROBATION' }).select('_id').lean();
+      const probationLeaves = probationLeaveType
+        ? await leaveApplicationModel
+            .find({
+              userId: { $in: transitionedUsers.map((u) => u._id) },
+              leaveTypeId: probationLeaveType._id,
+              status: { $in: ['approved', 'pending', 'tl-pending', 'hr-pending'] },
+              isDeleted: false,
+            })
+            .select('userId dates totalDays')
+            .lean()
+        : [];
+
+      transitionedUsers.forEach((u) => {
+        if (!probationLeaveType) {
+          unusedProbationMap.set(String(u._id), 0);
+          return;
+        }
+        const start = new Date(u.hireDate);
+        const end = new Date(statusChangeMap.get(String(u._id)));
+        const monthsDiff =
+          (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+        const probationAccrued = monthsDiff * 1.0;
+        // Mirrors Mongo's `dates: { $gte: start, $lte: end }` array semantics
+        const usedDays = probationLeaves
+          .filter(
+            (l) =>
+              String(l.userId) === String(u._id) &&
+              (l.dates || []).some((d) => d >= start) &&
+              (l.dates || []).some((d) => d <= end)
+          )
+          .reduce((acc, l) => acc + (l.totalDays || 0), 0);
+        unusedProbationMap.set(String(u._id), Math.max(0, probationAccrued - usedDays) || 0);
+      });
+    }
+
+    users.forEach((user) => {
+      const userId = String(user._id);
+      const mappings = mappingsByPolicy.get(String(user.leavePolicyId)) || [];
+
+      const filteredMappings = mappings.filter((mapping) => {
+        const code = mapping.leaveTypeId?.code;
+        if (!code || code === 'LOP') return false;
+        return user.status === 'probation' ? code === 'PROBATION' : code !== 'PROBATION';
+      });
+
+      const hireDate = new Date(user.hireDate);
+      const hireYear = hireDate.getFullYear();
+      const hireMonth = hireDate.getMonth();
+      const statusChangeDate = statusChangeMap.get(userId);
+
+      result[userId] = filteredMappings.map((mapping) => {
+        const leaveType = mapping.leaveTypeId;
+        const k = key(userId, leaveType._id);
+        const balance = balanceMap.get(k);
+
+        let accrued = 0;
+        let carryForwarded = balance?.carryForwarded || 0;
+
+        if (user.status === 'onroll') {
+          if (statusChangeDate && statusChangeDate.getFullYear() === currentYear) {
+            const onrollMonths = 12 - statusChangeDate.getMonth();
+            accrued =
+              mapping.accrualType === 'monthly'
+                ? onrollMonths * mapping.accrualPerMonth
+                : mapping.quota;
+            if (leaveType.code === 'ANNUAL') {
+              carryForwarded = unusedProbationMap.get(userId) || 0;
+            }
+          } else {
+            const remainingMonths =
+              hireYear < currentYear ? 12 : hireYear === currentYear ? 12 - hireMonth : 0;
+            accrued =
+              mapping.accrualType === 'monthly'
+                ? remainingMonths * mapping.accrualPerMonth
+                : mapping.quota;
+          }
+        } else {
+          accrued = balance?.total || 0;
+        }
+
+        // Existing balance rows get `used` synced from approved applications
+        const used = balance ? approvedMap.get(k) || 0 : 0;
+        const pendingDays = pendingMap.get(k) || 0;
+        const available = Math.floor((balance?.total || 0) - used - pendingDays);
+
+        return {
+          leaveTypeId: {
+            _id: leaveType._id,
+            name: leaveType.name,
+            code: leaveType.code,
+          },
+          total: Math.floor(accrued + carryForwarded),
+          used,
+          available: available < 0 ? 0 : available,
+        };
+      });
+    });
+
+    return result;
   }
 
   // Accrue leave for an employee (called by cron or on-demand)

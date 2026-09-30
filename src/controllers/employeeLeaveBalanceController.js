@@ -14,6 +14,20 @@ const employeeLeaveBalanceController = {
       next(err);
     }
   },
+
+  async getBalancesForEmployees(req, res, next) {
+    try {
+      const { employeeIds } = req.body;
+      if (!Array.isArray(employeeIds) || employeeIds.length === 0)
+        throw new ApiError(httpStatus.BAD_REQUEST, 'employeeIds must be a non-empty array');
+      if (employeeIds.length > 1000)
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Maximum 1000 employeeIds allowed');
+      const balances = await employeeLeaveBalanceService.getBalancesForEmployees(employeeIds);
+      res.json(balances);
+    } catch (err) {
+      next(err);
+    }
+  },
 };
 
 module.exports = employeeLeaveBalanceController;
