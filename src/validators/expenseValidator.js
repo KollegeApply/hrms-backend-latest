@@ -185,7 +185,7 @@ const createExpenseSchema = Joi.object({
         }
       }
       if (subCategory === 'Client Gifting' || subCategory === 'Client Lunch') {
-        if (!(value.clientName || '').trim()) {
+        if (subCategory === 'Client Lunch' && !(value.clientName || '').trim()) {
           return helpers.message({ custom: 'Client Name is required.' });
         }
         if (!(value.clientPocName || '').trim()) {
@@ -269,6 +269,14 @@ const myMonthlyTotalSchema = Joi.object({
   toDate: Joi.date().optional(),
   type: Joi.string().trim().allow('').optional(),
   status: Joi.string().trim().allow('').optional(),
+}).options({ stripUnknown: true });
+
+/** My Dashboard / Team Member Dashboard — optional date-range filter. */
+const myDashboardSchema = Joi.object({
+  fromDate: Joi.date().optional(),
+  toDate: Joi.date().min(Joi.ref('fromDate')).optional().messages({
+    'date.min': 'toDate must be on or after fromDate.',
+  }),
 }).options({ stripUnknown: true });
 
 /** Team Lead Bulk Approve summary — one row per employee per month. */
@@ -524,6 +532,7 @@ module.exports = {
   expenseDashboardRecordsSchema,
   tlBulkSummarySchema,
   myMonthlyTotalSchema,
+  myDashboardSchema,
   expenseIdSchema,
   updateExpenseStatusSchema,
   raiseFinanceIssueSchema,

@@ -737,7 +737,13 @@ const getExpenseDashboardEmployeeRecords = catchAsync(async (req, res) => {
 });
 
 const getMyExpenseDashboard = catchAsync(async (req, res) => {
-  const dashboard = await expenseService.getMyExpenseDashboard(req.user);
+  const validatedQuery = await expenseValidator.myDashboardSchema.validateAsync(
+    req.query
+  );
+  const dashboard = await expenseService.getMyExpenseDashboard(
+    req.user,
+    validatedQuery
+  );
 
   res.status(httpStatus.OK).json({
     status: true,
@@ -765,9 +771,13 @@ const getMyMonthlyExpenseTotal = catchAsync(async (req, res) => {
 
 /** Team Lead/Sub Team Lead viewing one reportee's dashboard from View Team (Admin/HR: anyone). */
 const getTeamMemberExpenseDashboard = catchAsync(async (req, res) => {
+  const validatedQuery = await expenseValidator.myDashboardSchema.validateAsync(
+    req.query
+  );
   const dashboard = await expenseService.getTeamMemberExpenseDashboard(
     req.user,
-    req.params.userId
+    req.params.userId,
+    validatedQuery
   );
 
   res.status(httpStatus.OK).json({
