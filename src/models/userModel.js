@@ -182,6 +182,20 @@ const userSchema = new Schema(
       },
       required: false,
     },
+    /**
+     * CRM zone/team — only set for a subset of users (CRM account owners).
+     * Optional with no default, so other users don't get these keys at all.
+     */
+    crmZone: {
+      type: String,
+      trim: true,
+      required: false,
+    },
+    crmTeam: {
+      type: String,
+      trim: true,
+      required: false,
+    },
   },
   {
     timestamps: true, // Adds createdAt and updatedAt automatically
