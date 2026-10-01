@@ -73,6 +73,17 @@ const userSchema = new Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
     },
+    /**
+     * Zonal Head — a temporary stand-in for the not-yet-modeled Account
+     * Manager → Team Lead → Zonal Head org hierarchy. Not mandatory: only
+     * set for employees who report into a zone. When set, their expenses
+     * pick up a mandatory Zonal Head approval stage after the Team Lead.
+     */
+    zonalHeadId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
     address: {
       // Optional: More detailed address structure can be added
       street: String,
@@ -169,6 +180,20 @@ const userSchema = new Schema(
         values: VALID_EXPENSE_BANDS,
         message: 'Expense band must be K1, K2, K3, or K4.',
       },
+      required: false,
+    },
+    /**
+     * CRM zone/team — only set for a subset of users (CRM account owners).
+     * Optional with no default, so other users don't get these keys at all.
+     */
+    crmZone: {
+      type: String,
+      trim: true,
+      required: false,
+    },
+    crmTeam: {
+      type: String,
+      trim: true,
       required: false,
     },
   },

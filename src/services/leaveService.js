@@ -1152,12 +1152,9 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
 
       while (pointer.isSameOrBefore(endMoment, 'day')) {
         const dateStr = pointer.format('YYYY-MM-DD');
-        const istDay = pointer.day(); // 0 = Sunday, 1 = Monday...
         (`Processing date: ${dateStr}, existingLeaveDates has: ${existingLeaveDates.has(dateStr)}`);
-        
-        if (istDay === 0) {
-          // addReason('Sunday', dateStr);
-        } else if (existingLeaveDates.has(dateStr)) {
+
+        if (existingLeaveDates.has(dateStr)) {
           // Check if it's a half-day leave conflict
           (`Date ${dateStr} has existing leave. isHalfDay: ${isHalfDay}, existingHalfDayLeaves.has: ${existingHalfDayLeaves.has(dateStr)}`);
           if (isHalfDay && existingHalfDayLeaves.has(dateStr)) {

@@ -150,6 +150,28 @@ const getAllUsersForMeeting = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * Server-to-server endpoint for the Kapp Sales CRM backend: search Sales
+ * department employees by name/email/employeeId. Protected by
+ * verifyServiceSecret (x-api-secret header), not a logged-in HRMS user --
+ * there's no req.user here.
+ */
+const searchUsersForSalesCrm = catchAsync(async (req, res) => {
+  const { search, page, limit } = req?.query || {};
+
+  const result = await userService.searchUsersForSalesCrm({
+    search,
+    page: page ? parseInt(page, 10) : 1,
+    limit: limit ? parseInt(limit, 10) : 20,
+  });
+
+  res?.status(httpStatus.OK).json({
+    success: true,
+    message: 'Sales team users retrieved successfully.',
+    ...result,
+  });
+});
+
 const getUserById = catchAsync(async (req, res) => {
   // 1. Validate ID parameter (using Helper for basic check, Joi for strictness)
   await userValidator?.mongoIdSchema?.validateAsync(req.params); // Validate ID format
@@ -1125,6 +1147,7 @@ const rejectProfileChangeRequest = catchAsync(async (req, res) => {
 module.exports = {
   createUser,
   getAllUsers,
+  searchUsersForSalesCrm,
   getUserById,
   updateUser,
   deleteUser,

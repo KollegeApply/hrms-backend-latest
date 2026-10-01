@@ -80,6 +80,8 @@ const createUserSchema = Joi.object({
       'any.required': 'ID is required',
     })
     .optional(),
+  /** Not mandatory — only set for employees who report into a zone. */
+  zonalHeadId: Joi.string().trim().allow('', null).optional(),
 
   role: Joi.string()
     .valid(...VALID_USER_ROLES)
@@ -128,6 +130,8 @@ const updateUserSchema = Joi.object({
   teamLeadId: Joi.string().hex(),
   subTeamLeadId: Joi.string().hex().allow(null, ''),
   hrPocId: Joi.string().hex().allow(null, ''),
+  /** Not mandatory — only set for employees who report into a zone. */
+  zonalHeadId: Joi.string().hex().allow(null, ''),
 
   address: addressSchema.optional(),
   role: Joi.string()

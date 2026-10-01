@@ -288,6 +288,7 @@ class UserService {
       { path: 'teamLeadId', select: 'id firstName lastName email' },
       { path: 'subTeamLeadId', select: '_id firstName lastName email' },
       { path: 'department', select: '_id name' },
+      { path: 'zonalHeadId', select: 'id firstName lastName email' },
     ];
 
     if (isPaginated) {
@@ -321,6 +322,146 @@ class UserService {
       
       return { data: users };
     }
+  }
+
+  /**
+   * Server-to-server lookup for the Kapp Sales CRM backend: search HRMS
+   * employees by name/email/employeeId, scoped to the "Sales" department
+   * only. This is what powers "search by name, autofill the rest" when
+   * creating a Sales CRM user -- the CRM never needs its own copy of HRMS
+   * employee data, it just looks it up here on demand.
+   *
+   * "Sales team" here means the functional Department named "Sales" (the
+   * Department collection), not the top-level `team` field on User, which
+   * only holds company-level codes (e.g. "KollegeApply"/"Sportsdunia").
+   *
+   * This HRMS instance is shared across companies (KollegeApply and
+   * Sportsdunia both have a "Sales" department here), but the Sales CRM is
+   * a KollegeApply-only tool -- so on top of the department filter we also
+   * require employeeId to carry KollegeApply's own company prefix
+   * ("KAP_...", e.g. "KAP_00123"), so a Sportsdunia "Sales" employee can
+   * never leak through this endpoint. Hardcoded (not read from
+   * TEAM_CODE/env) because this endpoint is specifically and only for
+   * Kapp Sales CRM's own users -- it must never start showing a different
+   * company's employees just because this deployment's TEAM_CODE env var
+   * changes for an unrelated reason (e.g. employeeId generation elsewhere).
+   *
+   * @param {object} queryOptions
+   * @param {string} [queryOptions.search] - matched against firstName,
+   *   lastName, email, employeeId (and "First Last" / "Last First" combos).
+   * @param {number} [queryOptions.page]
+   * @param {number} [queryOptions.limit]
+   */
+  async searchUsersForSalesCrm(queryOptions) {
+    const { search, page = 1, limit = 20 } = queryOptions;
+
+    const emptyResult = {
+      data: [],
+      pagination: {
+        totalDocs: 0,
+        limit,
+        totalPages: 0,
+        currentPage: page,
+        hasPrevPage: false,
+        hasNextPage: false,
+        pagingCounter: 1,
+        prevPage: null,
+        nextPage: null,
+      },
+    };
+
+    const teamCode = 'KAP';
+
+    const salesDept = await Department.findOne({
+      name: { $regex: '^sales$', $options: 'i' },
+      isDeleted: false,
+    })
+      .select('_id name')
+      .lean();
+
+    if (!salesDept) {
+      logger.warn(
+        'searchUsersForSalesCrm: no "Sales" department exists yet -- returning empty list'
+      );
+      return emptyResult;
+    }
+
+    const query = {
+      department: salesDept._id,
+      isDeleted: false,
+      // Only currently active-ish employees -- same default as the normal
+      // employee listing (getAllUsers) uses when no status is requested.
+      status: { $in: ['probation', 'onroll'] },
+      // Only this deployment's own company (e.g. "KAP_00123", not
+      // "SD_00045") -- employeeId is generated as `${team}_${number}` at
+      // creation time, so this prefix reliably tells companies apart even
+      // though they share the same "Sales" department name.
+      employeeId: { $regex: new RegExp(`^${teamCode}_`, 'i') },
+    };
+
+    if (typeof search === 'string' && search.trim().length > 0) {
+      const searchTerm = search.trim();
+      const regex = new RegExp(searchTerm, 'i');
+      const searchFilters = [
+        { firstName: regex },
+        { lastName: regex },
+        { email: regex },
+        { employeeId: regex },
+      ];
+
+      const searchWords = searchTerm.split(/\s+/).filter((w) => w.length > 0);
+      if (searchWords.length >= 2) {
+        searchFilters.push(
+          {
+            $and: [
+              { firstName: new RegExp(searchWords[0], 'i') },
+              { lastName: new RegExp(searchWords[1], 'i') },
+            ],
+          },
+          {
+            $and: [
+              { firstName: new RegExp(searchWords[1], 'i') },
+              { lastName: new RegExp(searchWords[0], 'i') },
+            ],
+          }
+        );
+      }
+
+      query.$or = searchFilters;
+    }
+
+    const { data, pagination } = await paginate(
+      User,
+      query,
+      page,
+      limit,
+      { firstName: 1, lastName: 1 },
+      'firstName lastName email employeeId phoneNumber jobTitle status department team crmTeam crmZone',
+      { path: 'department', select: 'name' }
+    );
+
+    const results = data.map((user) => ({
+      // Maps 1:1 onto CreateUserDto in kapp-sales-crm-backend: name, email,
+      // kapp_id (required) + phone_number/team/crm_team/crm_zone (optional).
+      // The rest are extra display-only context for whoever is picking a
+      // person off the list. `team` is this same company-code (e.g. "KAP")
+      // the employeeId prefix is built from -- Sales CRM stores it on its
+      // own user row. `crm_team`/`crm_zone` are a separate, CRM-specific
+      // tag (only set on the subset of employees who are CRM account
+      // owners) -- not to be confused with the always-set `team` above.
+      kapp_id: user.employeeId || null,
+      name: [user.firstName, user.lastName].filter(Boolean).join(' ').trim(),
+      email: user.email || null,
+      phone_number: user.phoneNumber || null,
+      job_title: user.jobTitle || null,
+      department: user.department?.name || salesDept.name,
+      team: user.team || null,
+      crm_team: user.crmTeam || null,
+      crm_zone: user.crmZone || null,
+      status: user.status,
+    }));
+
+    return { data: results, pagination };
   }
 
   /**
@@ -370,7 +511,15 @@ class UserService {
   async getUserByIdForApi(id) {
     const userDoc = await this.getUserById(id);
     if (!userDoc) return null;
-    return this.formatUserApiResponse(userDoc);
+    const formatted = this.formatUserApiResponse(userDoc);
+    if (formatted) {
+      // Drives the Expense module's "Zonal Head" approval tab — true only
+      // for the handful of employees currently mapped as someone's zonalHeadId.
+      formatted.isZonalHead = Boolean(
+        await User.exists({ zonalHeadId: userDoc._id, isDeleted: { $ne: true } })
+      );
+    }
+    return formatted;
   }
 
   async getUserById(id) {
@@ -381,6 +530,7 @@ class UserService {
       .populate('teamLeadId', 'firstName lastName')
       .populate('subTeamLeadId', 'firstName lastName')
       .populate('hrPocId', 'firstName lastName email')
+      .populate('zonalHeadId', 'firstName lastName')
       .populate('userDetails');
 
     if (!userDoc) {
@@ -453,17 +603,18 @@ class UserService {
     }
 
     // Empty strings cannot be cast to ObjectId — treat as unset
-    ['teamLeadId', 'subTeamLeadId', 'hrPocId'].forEach((field) => {
+    ['teamLeadId', 'subTeamLeadId', 'hrPocId', 'zonalHeadId'].forEach((field) => {
       if (userData[field] === '') {
         userData[field] = null;
       }
     });
 
-    // Validate IDs (Team Lead, Sub Team Lead, HR POC)
+    // Validate IDs (Team Lead, Sub Team Lead, HR POC, Zonal Head)
     const idsToValidate = [
       { id: userData?.teamLeadId, label: 'Team Lead' },
       { id: userData?.subTeamLeadId, label: 'Sub Team Lead' },
       { id: userData?.hrPocId, label: 'HR' },
+      { id: userData?.zonalHeadId, label: 'Zonal Head' },
     ];
 
     for (const { id, label } of idsToValidate) {
@@ -778,7 +929,7 @@ class UserService {
     }
 
     // Empty strings cannot be cast to ObjectId — treat as unset
-    ['teamLeadId', 'subTeamLeadId', 'hrPocId'].forEach((field) => {
+    ['teamLeadId', 'subTeamLeadId', 'hrPocId', 'zonalHeadId'].forEach((field) => {
       if (updateData?.[field] === '') {
         updateData[field] = null;
       }
