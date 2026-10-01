@@ -2,6 +2,7 @@ const express = require('express');
 const {
   authenticateUser,
   authorizeRole,
+  authorizeRoleOrDepartment,
 } = require('../middleware/authMiddleware');
 const assetController = require('../controllers/assetController');
 const { USER_ROLES } = require('../utility/constants');
@@ -56,18 +57,21 @@ router.get(
   assetController.getPCDepartmentSummary,
 );
 
-// Route to fetch all assigned assets
+// Route to fetch all assigned assets (Finance department gets read-only access)
 router.get(
   '/assigned',
   authenticateUser,
-  authorizeRole([
-    USER_ROLES?.IT,
-    USER_ROLES?.HR,
-    USER_ROLES?.SUBADMIN,
-    USER_ROLES?.ADMIN,
-    USER_ROLES?.TEAMLEAD,
-    USER_ROLES?.SUBTEAMLEAD,
-  ]),
+  authorizeRoleOrDepartment(
+    [
+      USER_ROLES?.IT,
+      USER_ROLES?.HR,
+      USER_ROLES?.SUBADMIN,
+      USER_ROLES?.ADMIN,
+      USER_ROLES?.TEAMLEAD,
+      USER_ROLES?.SUBTEAMLEAD,
+    ],
+    ['finance']
+  ),
   assetController.fetchAssignedAssets
 );
 
