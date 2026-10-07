@@ -275,13 +275,6 @@ class ExpenseService {
       if (attendees.length !== ids.length) {
         throw new ApiError(httpStatus.BAD_REQUEST, 'One or more attendee users are invalid.');
       }
-      const expected = this.roundMoney(ids.length * TEAM_LUNCH_PER_ATTENDEE);
-      if (this.roundMoney(payload.amount) !== expected) {
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          `Team Lunch amount must be Rs.${expected} (${ids.length} attendee(s) × Rs.${TEAM_LUNCH_PER_ATTENDEE}).`
-        );
-      }
     } else if (
       this.isAttendeeEligibleType(payload) &&
       Array.isArray(payload.attendeeUserIds) &&
