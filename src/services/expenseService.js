@@ -244,7 +244,6 @@ class ExpenseService {
     }
 
     const band = this.resolveExpenseBand(submitter.expenseBand);
-    const teamName = submitter.team || user.team;
     const breaches = [];
     const addBreach = (rule, label, capAmount, enteredAmount, message) => {
       breaches.push({
@@ -271,17 +270,10 @@ class ExpenseService {
         _id: { $in: ids },
         isDeleted: { $ne: true },
       })
-        .select('_id team')
+        .select('_id')
         .lean();
       if (attendees.length !== ids.length) {
         throw new ApiError(httpStatus.BAD_REQUEST, 'One or more attendee users are invalid.');
-      }
-      const wrongTeam = attendees.find((a) => (a.team || '').trim() !== (teamName || '').trim());
-      if (wrongTeam) {
-        throw new ApiError(
-          httpStatus.BAD_REQUEST,
-          'All Team Lunch attendees must belong to the same team as the submitter.'
-        );
       }
       const expected = this.roundMoney(ids.length * TEAM_LUNCH_PER_ATTENDEE);
       if (this.roundMoney(payload.amount) !== expected) {
