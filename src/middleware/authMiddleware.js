@@ -102,7 +102,61 @@ const authorizeRole = (requiredRoles = []) => {
   };
 };
 
+/**
+ * Like authorizeRole, but also lets users from the given departments
+ * (matched by department name, case-insensitive) through.
+ */
+const authorizeRoleOrDepartment = (requiredRoles = [], allowedDepartments = []) => {
+  return async (req, res, next) => {
+    if (!req.user || !req.user.role) {
+      logger.error(
+        'Authorization failed: User data not found in request. Ensure authenticateUser runs first.'
+      );
+      return next(
+        new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Authorization error.')
+      );
+    }
+
+    if (requiredRoles.includes(req.user.role)) {
+      return next();
+    }
+
+    try {
+      const userWithDepartment = await User.findById(req.user.id)
+        .populate('department', 'name')
+        .select('department')
+        .lean();
+      const departmentName = userWithDepartment?.department?.name
+        ?.toLowerCase()
+        ?.trim();
+
+      if (departmentName && allowedDepartments.includes(departmentName)) {
+        logger.info(
+          `User ${req.user.id} (department: ${departmentName}) authorized via department access`
+        );
+        return next();
+      }
+    } catch (error) {
+      logger.error('Department authorization check failed', error);
+      return next(
+        new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Authorization error.')
+      );
+    }
+
+    logger.warn(
+      `Authorization denied for user ${req.user.id} (role: ${req.user.role}). Required roles: ${requiredRoles.join(', ')}, departments: ${allowedDepartments.join(', ')}`
+    );
+    return next(
+      new ApiError(
+        httpStatus.FORBIDDEN,
+        'Access denied. You do not have permission to perform this action.'
+      )
+    );
+  };
+};
+
 module.exports = {
   authenticateUser,
   authorizeRole,
+  authorizeRoleOrDepartment,
 };
