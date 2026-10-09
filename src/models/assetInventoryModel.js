@@ -4,6 +4,7 @@ const {
   VALID_ASSET_CATEGORIES,
   VALID_ASSET_CONDITIONS,
   VALID_ASSET_INVENTORY_STATUS,
+  ASSET_INVENTORY_STATUS,
 } = require('../utility/constants');
 
 const { Schema } = mongoose;
@@ -65,7 +66,6 @@ const assetInventorySchema = new Schema(
     serialNumber: {
       type: String,
       required: true,
-      unique: true,
       trim: true,
     },
     condition: {
@@ -121,6 +121,21 @@ assetInventorySchema.index({
   model: 'text',
   serialNumber: 'text',
 });
+/**
+ * Serial number must be unique only among active holdings. Once a unit is
+ * returned to the vendor it frees up the serial, so a replacement/repaired
+ * unit received back under the same serial can be re-added as a new entry.
+ */
+assetInventorySchema.index(
+  { serialNumber: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      isDeleted: { $ne: true },
+      status: { $ne: ASSET_INVENTORY_STATUS.RETURNED_TO_VENDOR },
+    },
+  }
+);
 assetInventorySchema.index({ status: 1 });
 assetInventorySchema.index({ assetType: 1 });
 assetInventorySchema.index({ assignedTo: 1 });
