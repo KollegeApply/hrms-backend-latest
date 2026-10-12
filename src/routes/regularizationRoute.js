@@ -39,11 +39,11 @@ router.get('/', authenticateUser, regularizationController.getRegularizations);
 // Get regularization request by ID
 router.get('/:id', authenticateUser, regularizationController.getRegularizationById);
 
-// Approve regularization request (Team Lead, HR, Admin)
-router.put('/:id/approve', authenticateUser, authorizeRole(['teamlead', 'hr', 'subadmin', 'admin']), validateApproveRegularization, regularizationController.approveRegularization);
+// Approve regularization request (Team Lead, Sub Team Lead, HR, Admin)
+router.put('/:id/approve', authenticateUser, authorizeRole(['teamlead', 'subteamlead', 'hr', 'subadmin', 'admin']), validateApproveRegularization, regularizationController.approveRegularization);
 
-// Reject regularization request (Team Lead, HR, Admin)
-router.put('/:id/reject', authenticateUser, authorizeRole(['teamlead', 'hr', 'subadmin', 'admin']), validateRejectRegularization, regularizationController.rejectRegularization);
+// Reject regularization request (Team Lead, Sub Team Lead, HR, Admin)
+router.put('/:id/reject', authenticateUser, authorizeRole(['teamlead', 'subteamlead', 'hr', 'subadmin', 'admin']), validateRejectRegularization, regularizationController.rejectRegularization);
 
 // Delete regularization request (only applicant can delete pending requests)
 router.delete('/:id', authenticateUser, regularizationController.deleteRegularization);

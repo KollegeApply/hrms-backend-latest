@@ -191,6 +191,10 @@ class leaveService {
           {
             path: 'teamLeadId',
             select: 'firstName lastName email employeeId'
+          },
+          {
+            path: 'subTeamLeadId',
+            select: 'firstName lastName email employeeId'
           }
         ]
       },
@@ -435,6 +439,10 @@ class leaveService {
           {
             path: 'teamLeadId',
             select: 'firstName lastName email employeeId'
+          },
+          {
+            path: 'subTeamLeadId',
+            select: 'firstName lastName email employeeId'
           }
         ]
       },
@@ -523,9 +531,8 @@ async updateLeaveStatus({ leaveId, action, editor }) {
     throw new ApiError(httpStatus.BAD_REQUEST, `Invalid action '${action}'. Valid actions are: ${validActions.join(', ')}`);
   }
 
-  const isTeamLead = ['teamlead', 'subteamlead'].includes(editorRole);
   const isAdminOrHR = ['admin', 'hr', 'subadmin'].includes(editorRole);
-  
+
   // Helper function to check if user is the Team Lead of the employee
   const isUserTeamLeadOfEmployee = async (userId, employeeId) => {
     const employee = await User.findById(employeeId).select('teamLeadId subTeamLeadId');
@@ -534,6 +541,17 @@ async updateLeaveStatus({ leaveId, action, editor }) {
       employee.subTeamLeadId?.toString() === userId.toString()
     );
   };
+
+  // A Team Lead always has action rights over their team.
+  // A Sub Team Lead only gets this delegated access if they are the
+  // employee's subTeamLeadId AND HR has turned on canApproveAsSubTeamLead for them.
+  let isTeamLead = editorRole === 'teamlead';
+  if (editorRole === 'subteamlead') {
+    const editorUser = await User.findById(editorId).select('canApproveAsSubTeamLead');
+    isTeamLead =
+      !!editorUser?.canApproveAsSubTeamLead &&
+      (await isUserTeamLeadOfEmployee(editorId, leave.userId));
+  }
   
   // 2. State Machine: Determine the next state based on current state, action, and user role
   switch (currentStatus) {
@@ -806,9 +824,18 @@ async updateLeaveStatus({ leaveId, action, editor }) {
     const searchConditions = this.buildSearchConditions(search);
     const dateFilter = this.buildDateRangeFilter(startDate, endDate);
 
+    // A Sub Team Lead only sees their subteam's requests here if HR has
+    // turned on canApproveAsSubTeamLead for them; their own-team (teamLeadId)
+    // requests, if any, are always visible.
+    const requester = await User.findById(id).select('canApproveAsSubTeamLead');
+    const leadMatchConditions = [{ teamLeadId: id }];
+    if (requester?.canApproveAsSubTeamLead) {
+      leadMatchConditions.push({ subTeamLeadId: id });
+    }
+
     const leadUsers = await User.find(
       {
-        $or: [{ teamLeadId: id }, { subTeamLeadId: id }],
+        $or: leadMatchConditions,
       },
       'id'
     );
@@ -849,6 +876,10 @@ async updateLeaveStatus({ leaveId, action, editor }) {
           },
           {
             path: 'teamLeadId',
+            select: 'firstName lastName email employeeId'
+          },
+          {
+            path: 'subTeamLeadId',
             select: 'firstName lastName email employeeId'
           }
         ]
@@ -1731,6 +1762,20 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
         teamMember &&
         (teamMember.teamLeadId?.toString() === currentUser.id ||
           teamMember.subTeamLeadId?.toString() === currentUser.id)
+      );
+    }
+
+    // Sub Team Leads can only take action if HR has turned on their
+    // delegated approval access AND they are the employee's subTeamLeadId.
+    if (currentUser.role === 'subteamlead') {
+      const [teamMember, self] = await Promise.all([
+        User.findById(leave.userId).select('teamLeadId subTeamLeadId'),
+        User.findById(currentUser.id).select('canApproveAsSubTeamLead'),
+      ]);
+      return (
+        !!self?.canApproveAsSubTeamLead &&
+        teamMember &&
+        teamMember.subTeamLeadId?.toString() === currentUser.id
       );
     }
 

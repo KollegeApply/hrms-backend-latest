@@ -169,6 +169,13 @@ const userSchema = new Schema(
       type: Boolean,
       default: false,
     },
+    // When true (HR-controlled), this sub-team-lead can also see and action
+    // (approve/reject) Leave, Regularization, and Expense requests for
+    // employees whose subTeamLeadId points to them -- in addition to the Team Lead.
+    canApproveAsSubTeamLead: {
+      type: Boolean,
+      default: false,
+    },
     shiftTime: {
       type: String,
       trim: true,
