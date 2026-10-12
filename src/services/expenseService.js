@@ -995,10 +995,23 @@ class ExpenseService {
             '_id'
           );
         } else {
+          // A SubTL actor only gets their subteam's queue here if HR has
+          // turned on canApproveAsSubTeamLead for them.
+          let includeSubTeam = true;
+          if (role === 'subteamlead') {
+            const actorUser = await User.findById(user.id).select('canApproveAsSubTeamLead');
+            includeSubTeam = !!actorUser?.canApproveAsSubTeamLead;
+          }
+
+          const matchConditions = [{ teamLeadId: user.id }];
+          if (includeSubTeam) {
+            matchConditions.push({ subTeamLeadId: user.id });
+          }
+
           teamUsers = await User.find(
             {
               team: user.team,
-              $or: [{ teamLeadId: user.id }, { subTeamLeadId: user.id }],
+              $or: matchConditions,
               isDeleted: { $ne: true },
             },
             '_id'
@@ -1297,10 +1310,15 @@ class ExpenseService {
         const employee = await User.findById(expense.userId).select(
           'teamLeadId subTeamLeadId zonalHeadId'
         );
-        const isDirectLead =
-          employee &&
-          (employee.teamLeadId?.toString() === actorId ||
-            employee.subTeamLeadId?.toString() === actorId);
+        const isTeamLeadMatch = employee?.teamLeadId?.toString() === actorId;
+        let isSubTeamLeadMatch = employee?.subTeamLeadId?.toString() === actorId;
+        // A SubTL actor only gets delegated approval rights here if HR has
+        // turned on canApproveAsSubTeamLead for them.
+        if (isSubTeamLeadMatch && role === 'subteamlead') {
+          const actorUser = await User.findById(actorId).select('canApproveAsSubTeamLead');
+          isSubTeamLeadMatch = !!actorUser?.canApproveAsSubTeamLead;
+        }
+        const isDirectLead = employee && (isTeamLeadMatch || isSubTeamLeadMatch);
 
         if (!isSuperAdmin && !isDirectLead) {
           throw new ApiError(
@@ -2506,9 +2524,15 @@ class ExpenseService {
     const actorId = String(currentUser.id || currentUser._id || '');
     const isAdminRole = this.adminRoles.includes(role);
     const isTlRole = this.tlRoles.includes(role);
-    const isDirectLead =
-      String(targetUser.teamLeadId || '') === actorId ||
-      String(targetUser.subTeamLeadId || '') === actorId;
+    const isTeamLeadMatch = String(targetUser.teamLeadId || '') === actorId;
+    let isSubTeamLeadMatch = String(targetUser.subTeamLeadId || '') === actorId;
+    // A SubTL actor only gets delegated dashboard access here if HR has
+    // turned on canApproveAsSubTeamLead for them.
+    if (isSubTeamLeadMatch && role === 'subteamlead') {
+      const actorUser = await User.findById(actorId).select('canApproveAsSubTeamLead');
+      isSubTeamLeadMatch = !!actorUser?.canApproveAsSubTeamLead;
+    }
+    const isDirectLead = isTeamLeadMatch || isSubTeamLeadMatch;
 
     if (!isAdminRole && !(isTlRole && isDirectLead)) {
       throw new ApiError(

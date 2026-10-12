@@ -1002,7 +1002,9 @@ class UserService {
   }
 
   /**
-   * Soft delete a user by ID.
+   * Permanently (hard) delete a user by ID, so their email can be reused
+   * by a future user. Related records (leave balances, employee history,
+   * etc.) are NOT cascaded -- only the user document itself is removed.
    * @param {string} id - The user's MongoDB ObjectId.
    * @param {string} team - Requester's team.
    * @param {string} deletedById - ID of the user performing the delete.
@@ -1010,10 +1012,10 @@ class UserService {
    */
   async deleteUser(id, team, deletedById) {
     logger.info(
-      `Attempting to soft delete user with ID: ${id}, deleted by user ID: ${deletedById}`
+      `Attempting to hard delete user with ID: ${id}, deleted by user ID: ${deletedById}`
     );
     const result1 = await User.findById(id);
-    if (result1.isDeleted) {
+    if (!result1) {
       return false;
     }
 
@@ -1024,20 +1026,16 @@ class UserService {
       return false;
     }
 
-    const result = await User.findByIdAndUpdate(
-      id,
-      { isDeleted: true }, // Mark as deleted
-      { new: true } // Option not strictly needed for deletion check but good practice
-    );
+    const result = await User.findByIdAndDelete(id);
 
     if (result) {
       logger.info(
-        `User soft deleted successfully. Target user ID: ${id}, deleted by user ID: ${deletedById}`
+        `User hard deleted successfully. Target user ID: ${id}, deleted by user ID: ${deletedById}`
       );
       return true;
     } else {
       logger.warn(
-        `Soft delete failed: User not found with ID: ${id}, attempted by user ID: ${deletedById}`
+        `Hard delete failed: User not found with ID: ${id}, attempted by user ID: ${deletedById}`
       );
       return false;
     }
