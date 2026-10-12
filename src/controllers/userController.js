@@ -925,6 +925,17 @@ const updateShiftTime = catchAsync(async (req, res) => {
   if (Object.prototype.hasOwnProperty.call(validatedData, 'isEmergencyRegularizationAllowed')) {
     targetUser.isEmergencyRegularizationAllowed = validatedData.isEmergencyRegularizationAllowed;
   }
+
+  // Only HR can grant/revoke a sub-team-lead's delegated approval access.
+  if (Object.prototype.hasOwnProperty.call(validatedData, 'canApproveAsSubTeamLead')) {
+    if (!isHr) {
+      throw new ApiError(
+        httpStatus.FORBIDDEN,
+        'Only HR can update sub-team-lead approval access.'
+      );
+    }
+    targetUser.canApproveAsSubTeamLead = validatedData.canApproveAsSubTeamLead;
+  }
   await targetUser.save();
 
   // 7. Send response
@@ -935,6 +946,7 @@ const updateShiftTime = catchAsync(async (req, res) => {
       id: targetUser.id,
       shiftTime: targetUser.shiftTime,
       isEmergencyRegularizationAllowed: targetUser.isEmergencyRegularizationAllowed,
+      canApproveAsSubTeamLead: targetUser.canApproveAsSubTeamLead,
     },
   });
 });

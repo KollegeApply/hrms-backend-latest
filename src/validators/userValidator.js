@@ -363,9 +363,10 @@ const updateShiftTimeSchema = Joi.object({
     )
     .optional(),
   isEmergencyRegularizationAllowed: Joi.boolean().optional(),
+  canApproveAsSubTeamLead: Joi.boolean().optional(),
 })
   // At least one of the fields must be provided
-  .or('shiftTime', 'isEmergencyRegularizationAllowed')
+  .or('shiftTime', 'isEmergencyRegularizationAllowed', 'canApproveAsSubTeamLead')
   .options({ stripUnknown: true });
 
 

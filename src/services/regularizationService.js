@@ -201,9 +201,16 @@ const regularizationService = {
           const teamMembers = await this.getTeamMembers(userId);
           roleBasedUserIds = teamMembers.map(id => id.toString());
         } else if (userRole === 'subteamlead') {
-          // Sub team leads can see their sub team members' requests
-          const subTeamMembers = await this.getSubTeamMembers(userId);
-          roleBasedUserIds = subTeamMembers.map(id => id.toString());
+          // Sub team leads only see their sub team members' requests here if
+          // HR has turned on canApproveAsSubTeamLead for them; otherwise they
+          // only see their own requests (same as an employee).
+          const reviewer = await User.findById(userId).select('canApproveAsSubTeamLead');
+          if (reviewer?.canApproveAsSubTeamLead) {
+            const subTeamMembers = await this.getSubTeamMembers(userId);
+            roleBasedUserIds = subTeamMembers.map(id => id.toString());
+          } else {
+            roleBasedUserIds = [userId.toString()];
+          }
         } else if (['hr', 'subadmin', 'admin'].includes(userRole)) {
           // HR/Admin/SubAdmin can see all requests by default (within team)
           const teamMembers = await User.find({ team }).select('_id');
@@ -227,9 +234,16 @@ const regularizationService = {
           const teamMembers = await this.getTeamMembers(userId);
           roleBasedUserIds = teamMembers.map(id => id.toString());
         } else if (userRole === 'subteamlead') {
-          // Sub team leads can see their sub team members' requests
-          const subTeamMembers = await this.getSubTeamMembers(userId);
-          roleBasedUserIds = subTeamMembers.map(id => id.toString());
+          // Sub team leads only see their sub team members' requests here if
+          // HR has turned on canApproveAsSubTeamLead for them; otherwise they
+          // only see their own requests (same as an employee).
+          const reviewer = await User.findById(userId).select('canApproveAsSubTeamLead');
+          if (reviewer?.canApproveAsSubTeamLead) {
+            const subTeamMembers = await this.getSubTeamMembers(userId);
+            roleBasedUserIds = subTeamMembers.map(id => id.toString());
+          } else {
+            roleBasedUserIds = [userId.toString()];
+          }
         } else if (['hr', 'subadmin', 'admin'].includes(userRole)) {
           // HR/Admin/SubAdmin can see all requests by default (within team)
           const teamMembers = await User.find({ team }).select('_id');
@@ -390,7 +404,7 @@ const regularizationService = {
       const unorderedAttendances = await Attendance.find({ _id: { $in: ids } })
         .populate({
           path: 'user',
-          select: 'firstName lastName employeeId email role teamLeadId',
+          select: 'firstName lastName employeeId email role teamLeadId subTeamLeadId',
           populate: {
             path: 'department',
             select: 'name'
@@ -443,7 +457,7 @@ const regularizationService = {
       }
 
       // Check access permissions
-      if (!this.canReview(attendance, userId, userRole)) {
+      if (!(await this.canReview(attendance, userId, userRole))) {
         throw new Error('Access denied');
       }
 
@@ -476,15 +490,19 @@ const regularizationService = {
         throw new Error('Regularization request not found');
       }
 
-      if (!this.canReview(attendance, reviewerId, userRole)) {
+      if (!(await this.canReview(attendance, reviewerId, userRole))) {
         throw new Error('Access denied');
       }
 
       const regularization = attendance.regularization;
       let newStatus = regularization.status;
 
-      // Check if user is a team lead (either by role or by being assigned as teamLeadId)
-      const isTeamLead = userRole === 'teamlead' || await this.isUserTeamLead(reviewerId, attendance.user._id);
+      // Check if user is a team lead (either by role, by being assigned as
+      // teamLeadId, or by being an HR-enabled subTeamLeadId delegate)
+      const isTeamLead =
+        userRole === 'teamlead' ||
+        (userRole === 'subteamlead' && (await this.canReview(attendance, reviewerId, userRole))) ||
+        (await this.isUserTeamLead(reviewerId, attendance.user._id));
 
       if (isTeamLead && regularization.status === 'tl-pending') {
         // Team Lead approval (including HR/Admin/SubAdmin who are team leads)
@@ -538,15 +556,19 @@ const regularizationService = {
         throw new Error('Regularization request not found');
       }
 
-      if (!this.canReview(attendance, reviewerId, userRole)) {
+      if (!(await this.canReview(attendance, reviewerId, userRole))) {
         throw new Error('Access denied');
       }
 
       const regularization = attendance.regularization;
       let newStatus = regularization.status;
 
-      // Check if user is a team lead (either by role or by being assigned as teamLeadId)
-      const isTeamLead = userRole === 'teamlead' || await this.isUserTeamLead(reviewerId, attendance.user._id);
+      // Check if user is a team lead (either by role, by being assigned as
+      // teamLeadId, or by being an HR-enabled subTeamLeadId delegate)
+      const isTeamLead =
+        userRole === 'teamlead' ||
+        (userRole === 'subteamlead' && (await this.canReview(attendance, reviewerId, userRole))) ||
+        (await this.isUserTeamLead(reviewerId, attendance.user._id));
 
       if (isTeamLead && regularization.status === 'tl-pending') {
         // Team Lead rejection (including HR/Admin/SubAdmin who are team leads)
@@ -693,7 +715,7 @@ const regularizationService = {
   },
   
 
-  canReview(attendance, userId, userRole) {
+  async canReview(attendance, userId, userRole) {
     if (userRole === 'admin' || userRole === 'subadmin') {
       return true;
     }
@@ -708,6 +730,16 @@ const regularizationService = {
       return true; // We'll handle team membership in the query itself
     }
 
+    if (userRole === 'subteamlead') {
+      // Sub team lead can only review if HR has turned on their delegated
+      // approval access AND they are the employee's actual subTeamLeadId.
+      const reviewer = await User.findById(userId).select('canApproveAsSubTeamLead');
+      if (!reviewer?.canApproveAsSubTeamLead) {
+        return false;
+      }
+      return this.isUserSubTeamLead(userId, attendance.user._id);
+    }
+
     return false;
   },
 
@@ -716,6 +748,16 @@ const regularizationService = {
     try {
       const employee = await User.findById(employeeId).select('teamLeadId');
       return employee && employee.teamLeadId && employee.teamLeadId.toString() === reviewerId.toString();
+    } catch (error) {
+      return false;
+    }
+  },
+
+  // Helper method to check if a user is the sub team lead for a specific employee
+  async isUserSubTeamLead(reviewerId, employeeId) {
+    try {
+      const employee = await User.findById(employeeId).select('subTeamLeadId');
+      return employee && employee.subTeamLeadId && employee.subTeamLeadId.toString() === reviewerId.toString();
     } catch (error) {
       return false;
     }
