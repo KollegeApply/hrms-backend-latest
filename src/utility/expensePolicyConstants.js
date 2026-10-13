@@ -101,11 +101,14 @@ const TECHNICAL_TOOLS_DEFAULTS = {
 const TL_ROLES_FOR_TEAM_LUNCH = ['teamlead', 'subteamlead'];
 
 /**
- * Per-user monthly spend budget across every expense type. Purely
+ * Per-user monthly spend budget — Travel and Food only. Purely
  * informational: the Add Expense form meters the month's running total
- * against it, and going over is allowed (the meter just turns red).
+ * (Travel + Food claims) against it, and going over is allowed (the meter
+ * just turns red). Every other expense type (Stay, Miscellaneous, Mobile
+ * Bill, Technical Tools, Team Lunch) never counts toward it.
  */
 const MONTHLY_EXPENSE_BUDGET = 8000;
+const MONTHLY_EXPENSE_BUDGET_TYPES = ['Travel', 'Food'];
 
 /**
  * Policy caps inform the claimant, they never block submission. Every expense
@@ -148,4 +151,5 @@ module.exports = {
   EXPENSE_POLICY_TAGS,
   EXPENSE_POLICY_TAG_VALUES,
   MONTHLY_EXPENSE_BUDGET,
+  MONTHLY_EXPENSE_BUDGET_TYPES,
 };
