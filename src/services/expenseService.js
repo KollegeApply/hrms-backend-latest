@@ -21,6 +21,7 @@ const {
   EXPENSE_POLICY_TAGS,
   EXPENSE_POLICY_TAG_VALUES,
   MONTHLY_EXPENSE_BUDGET,
+  MONTHLY_EXPENSE_BUDGET_TYPES,
 } = require('../utility/expensePolicyConstants');
 
 /** Special support account allowed to view All Expenses and TL-approve/reject submitted rows. */
@@ -2585,10 +2586,15 @@ class ExpenseService {
       date: { $gte: rangeStart, $lte: rangeEnd },
     };
 
-    const types = this.splitCsvFilter(filters.type);
-    if (types.length) {
-      match.type = { $in: types };
-    }
+    // The monthly budget is scoped to Travel + Food only — every other
+    // expense type never counts toward it. A caller-supplied type filter is
+    // intersected with that fixed set (not unioned), so filtering down to an
+    // out-of-scope type like "Stay" correctly totals to zero, not "everything".
+    const requestedTypes = this.splitCsvFilter(filters.type);
+    const types = requestedTypes.length
+      ? requestedTypes.filter((t) => MONTHLY_EXPENSE_BUDGET_TYPES.includes(t))
+      : MONTHLY_EXPENSE_BUDGET_TYPES;
+    match.type = { $in: types };
 
     const statuses = this.splitCsvFilter(filters.status);
     match.status = {
