@@ -241,6 +241,22 @@ const listExpenseSchema = Joi.object({
     .optional(),
   search: Joi.string().trim().allow(''),
   userId: objectIdSchema.optional(),
+  /** CSV of Base location (Intracity) / Outstation (Intercity); Travel only. */
+  tripContext: Joi.string()
+    .trim()
+    .allow('')
+    .custom((value, helpers) => {
+      if (!value) return value;
+      const values = value.split(',').map((v) => v.trim()).filter(Boolean);
+      const invalid = values.filter((v) => !TRIP_CONTEXT_VALUES.includes(v));
+      if (invalid.length) {
+        return helpers.error('any.invalid');
+      }
+      return value;
+    }, 'Trip context validation')
+    .messages({
+      'any.invalid': `tripContext must be one of: ${TRIP_CONTEXT_VALUES.join(', ')}`,
+    }),
   /** CSV of in-policy / out-of-policy; empty means no policy filter. */
   policyTag: Joi.string()
     .trim()
