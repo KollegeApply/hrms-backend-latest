@@ -1129,6 +1129,13 @@ class ExpenseService {
       query.type = { $in: types };
     }
 
+    // Travel > Trip Context — Base location (Intracity) vs Outstation
+    // (Intercity). Only Travel rows carry this field.
+    const tripContexts = this.splitCsvFilter(filters.tripContext);
+    if (tripContexts.length) {
+      query.tripContext = { $in: tripContexts };
+    }
+
     // In-policy / out-of-policy tag filter. Rows predating the policy tag
     // carry no field at all, so "in policy" has to include the missing case.
     const policyTags = this.splitCsvFilter(filters.policyTag);
