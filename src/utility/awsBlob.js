@@ -1,8 +1,16 @@
 const AWS = require("aws-sdk");
 const dotenv = require("dotenv");
 const mime = require("mime-types");
+const { BlobServiceClient } = require("@azure/storage-blob");
 
 dotenv.config();
+
+// Azure Blob is used only when STORAGE_PROVIDER=azure (set on Azure DEV); otherwise S3 as before
+const useAzure = process.env.STORAGE_PROVIDER === "azure";
+const azureContainer = useAzure
+  ? BlobServiceClient.fromConnectionString(process.env.AZURE_BLOB_CONNECTION_STRING)
+      .getContainerClient(process.env.AZURE_BLOB_CONTAINER)
+  : null;
 
 // AWS S3 CONFIG
 const s3 = new AWS.S3({
@@ -17,6 +25,14 @@ async function uploadToAWS(fileBuffer, originalName, folderName = 'hrms-cif-docu
   const fileName = `${folderName}/${timestamp}-${cleanName}`.replace(/\/+/g, '/');
   
   const contentType = mime.lookup(originalName) || 'application/octet-stream';
+
+  if (useAzure) {
+    // Returns the same relative path format as the S3 branch below
+    await azureContainer.getBlockBlobClient(fileName).uploadData(fileBuffer, {
+      blobHTTPHeaders: { blobContentType: contentType },
+    });
+    return fileName.replace(/^\//, '');
+  }
 
   const params = {
     Bucket: process.env.AWS_S3_BUCKET_NAME,
