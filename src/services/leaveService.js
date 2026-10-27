@@ -13,6 +13,7 @@ const LeavePolicyMapping = require('../models/leavePolicyMappingModel');
 const EmployeeLeaveBalance = require('../models/employeeLeaveBalanceModel');
 const employeeLeaveBalanceService = require('./employeeLeaveBalanceService');
 const moment = require('moment-timezone');
+const { TL_EMPLOYEE_CODES_WITH_AUTO_APPROVAL } = require('../utility/constants');
 const { paginate, transformDocumentPaths } = require('../utility/common');
 const { calculateBiometricStatus } = require('./biometricWebhookService');
 
@@ -1706,9 +1707,17 @@ async validateLeaveDates(userId, startDate, endDate, leaveTypeId, isHalfDay = fa
       // Check if employee has a Team Lead
       const employee = await User.findById(userId).populate('teamLeadId subTeamLeadId');
       let initialStatus = 'tl-pending';
-      
+
       // If employee has no TL, set status to hr-pending
       if (!employee.teamLeadId && !employee.subTeamLeadId) {
+        initialStatus = 'hr-pending';
+      }
+
+      // If employee's TL/SubTL is on the auto-approval list, skip TL and go straight to HR
+      if (
+        TL_EMPLOYEE_CODES_WITH_AUTO_APPROVAL.includes(employee.teamLeadId?.employeeId) ||
+        TL_EMPLOYEE_CODES_WITH_AUTO_APPROVAL.includes(employee.subTeamLeadId?.employeeId)
+      ) {
         initialStatus = 'hr-pending';
       }
 

@@ -340,6 +340,35 @@ const deleteUser = catchAsync(async (req, res) => {
   }
 });
 
+const toggleLoginAccess = catchAsync(async (req, res) => {
+  const userId = req?.params?.id;
+  if (!Helper.isValidMongoId(userId)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Invalid user ID format.');
+  }
+  const { isLoginDisabled } = req?.body || {};
+  if (typeof isLoginDisabled !== 'boolean') {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'isLoginDisabled must be a boolean.');
+  }
+  if (String(req?.user?.id) === String(userId)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'You cannot deactivate your own account.');
+  }
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { isLoginDisabled },
+    { new: true }
+  );
+  if (!user) {
+    throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
+  }
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: isLoginDisabled
+      ? 'User deactivated. They can no longer log in.'
+      : 'User activated. They can log in again.',
+    data: { id: user.id, isLoginDisabled: user.isLoginDisabled },
+  });
+});
+
 const login = catchAsync(async (req, res) => {
   // 1. Validate request body
   const { email, password } = await userValidator.loginSchema.validateAsync(
@@ -1163,6 +1192,7 @@ module.exports = {
   getUserById,
   updateUser,
   deleteUser,
+  toggleLoginAccess,
   login,
   changePassword,
   forgotPassword,

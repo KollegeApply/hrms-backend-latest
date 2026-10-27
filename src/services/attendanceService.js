@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Attendance = require('../models/attendanceModel');
 const User = require('../models/userModel');
 const LeaveApplication = require('../models/leaveApplicationModel');
@@ -485,7 +486,7 @@ async getTeamMembers(leaderId) {
   return teamUsers.map((u) => u._id);
 },
 
-  async getAttendance(userId, role, startDateStr, endDateStr) {
+  async getAttendance(userId, role, startDateStr, endDateStr, filterUserIds) {
     try {
       let startDate, endDate;
       let dateQuery = {};
@@ -541,6 +542,27 @@ async getTeamMembers(leaderId) {
       }
       // For HR/Admin/SubAdmin or Finance teamlead, no user filter is applied (they see all attendance)
 
+      // Optionally narrow further to a specific set of users (e.g. only the users
+      // shown on the current page of the Attendance Log table). This only ever
+      // narrows the result - it intersects with, and never widens, the
+      // role-based scoping already applied above.
+      if (Array.isArray(filterUserIds) && filterUserIds.length > 0) {
+        const validIds = filterUserIds.filter((id) => mongoose.isValidObjectId(id));
+        if (validIds.length > 0) {
+          if (!query.user) {
+            query.user = { $in: validIds };
+          } else if (query.user.$in) {
+            const existing = new Set(query.user.$in.map((id) => id.toString()));
+            query.user = { $in: validIds.filter((id) => existing.has(id.toString())) };
+          } else {
+            const existingId = query.user.toString();
+            query.user = validIds.some((id) => id.toString() === existingId)
+              ? query.user
+              : { $in: [] };
+          }
+        }
+      }
+
       const attendance = await Attendance.find(query)
         .populate('user', '_id firstName lastName employeeId workType hireDate shiftTime')
         .populate('leaveId')
@@ -558,7 +580,7 @@ async getTeamMembers(leaderId) {
       }
 
       const pendingLeaves = await LeaveApplication.find(pendingLeaveQuery)
-        .select('_id userId dates status')
+        .select('_id userId dates status isHalfDay halfDayType')
         .lean();
 
       const pendingLeaveByUserDate = new Map();

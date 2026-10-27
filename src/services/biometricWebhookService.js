@@ -546,7 +546,11 @@ async function calculateBiometricStatus(userId, biometricCheckIn, biometricCheck
       }
     }
 
-    if (attendance?.leaveId) {
+    if (attendance?.leaveId && typeof attendance.leaveId === 'object' && 'isHalfDay' in attendance.leaveId) {
+      // Already populated/selected by the caller (e.g. attendanceService's list query) - avoid a redundant DB round trip.
+      hasHalfDayLeave = attendance.leaveId.isHalfDay === true;
+      isFirstHalfLeave = hasHalfDayLeave && attendance.leaveId.halfDayType === 'first';
+    } else if (attendance?.leaveId) {
       try {
         const LeaveApplication = require('../models/leaveApplicationModel');
         const linkedLeave = await LeaveApplication.findById(attendance.leaveId)

@@ -3,6 +3,7 @@ const User = require('../models/userModel');
 const mongoose = require('mongoose');
 const moment = require('moment-timezone');
 const { transformDocumentPaths } = require('../utility/common');
+const { TL_EMPLOYEE_CODES_WITH_AUTO_APPROVAL } = require('../utility/constants');
 
 // Helper to get a consistent public base URL for images (Azure/S3)
 // Prefer IMAGE_BASE_URL, but gracefully fall back to AWS_S3_BASE_URL
@@ -76,6 +77,26 @@ const regularizationService = {
         date: requestDate.toDate()
       });
 
+      // WFO employees must have completed at least 7 biometric hours on this date
+      // before they are allowed to regularize their HRMS check-in/out for it.
+      const applicant = await User.findById(userId)
+        .select('workType teamLeadId subTeamLeadId')
+        .populate('teamLeadId subTeamLeadId', 'employeeId');
+      if (applicant?.workType === 'WFO') {
+        const bioIn = existingAttendance?.biometricCheckIn;
+        const bioOut = existingAttendance?.biometricCheckOut;
+        const biometricHours =
+          bioIn && bioOut
+            ? (new Date(bioOut) - new Date(bioIn)) / (1000 * 60 * 60)
+            : 0;
+
+        if (biometricHours < 7) {
+          throw new Error(
+            `Regularization cannot be applied. Biometric hours for this date are ${biometricHours.toFixed(2)} hrs, which is less than the required 7 hours.`
+          );
+        }
+      }
+
       // Block duplicate requests; allow re-apply after revoke or TL/HR rejection
       const reapplyAllowedStatuses = ['revoked', 'tl-rejected', 'hr-rejected'];
       if (
@@ -105,6 +126,15 @@ const regularizationService = {
         throw new Error('Cannot create regularization request when attendance is already marked as present');
       }
 
+      // If employee's TL/SubTL is on the auto-approval list, skip TL and go straight to HR
+      let initialStatus = 'tl-pending';
+      if (
+        TL_EMPLOYEE_CODES_WITH_AUTO_APPROVAL.includes(applicant?.teamLeadId?.employeeId) ||
+        TL_EMPLOYEE_CODES_WITH_AUTO_APPROVAL.includes(applicant?.subTeamLeadId?.employeeId)
+      ) {
+        initialStatus = 'hr-pending';
+      }
+
       // Create or update attendance record with regularization
       const regularizationData = {
         type,
@@ -113,7 +143,7 @@ const regularizationService = {
         requestedCheckOutTime: moment.tz(`${date} ${correctedCheckOut}`, 'Asia/Kolkata').toDate(),
         evidence: type === 'emergency' ? { url: evidence } : undefined,
         regularizationMode: regularizationMode || 'normal',
-        status: 'tl-pending',
+        status: initialStatus,
         appliedAt: new Date(),
         appliedBy: userId
       };
