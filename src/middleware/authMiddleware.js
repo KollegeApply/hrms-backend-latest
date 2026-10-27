@@ -32,6 +32,15 @@ const authenticateUser = async (req, res, next) => {
      return res.status(401).json({ message: 'User not found' });
    }
 
+   if (user.isLoginDisabled) {
+     return next(
+       new ApiError(
+         httpStatus.FORBIDDEN,
+         'Your account has been deactivated. Please contact HR.'
+       )
+     );
+   }
+
    if(team){
      user.team = team;
    }

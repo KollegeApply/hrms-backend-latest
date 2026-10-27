@@ -197,6 +197,10 @@ function getTeamEmailConfig(team) {
 
 const OTP_EXPIRY_MINUTES = 10;
 
+// Employees reporting to a TL with this employee code skip the TL approval
+// step for leave/regularization and go straight to HR.
+const TL_EMPLOYEE_CODES_WITH_AUTO_APPROVAL = ['KAP_231',];
+
 const RANK = {
   admin: 1,
   subadmin: 2,
@@ -270,6 +274,7 @@ module.exports = {
   IT_MAIL_PASS,
   HRMS_QUERY_EMAIL,
   OTP_EXPIRY_MINUTES,
+  TL_EMPLOYEE_CODES_WITH_AUTO_APPROVAL,
   HR_EMAIL,
   IT_EMAIL,
   ADMIN_EMAILS,

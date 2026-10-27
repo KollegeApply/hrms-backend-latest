@@ -137,6 +137,14 @@ router.get(
   userController?.getUserById
 );
 
+// Activate/Deactivate login access: HR only
+router.put(
+  '/:id/login-access',
+  authenticateUser,
+  authorizeRole([USER_ROLES?.HR]),
+  userController.toggleLoginAccess
+);
+
 // Update User: Allow self-update (limited fields) OR HR/Admin update (more fields)
 // The service layer should handle *which* fields can be updated based on role
 router.put(

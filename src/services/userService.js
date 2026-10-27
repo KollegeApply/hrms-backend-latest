@@ -128,12 +128,16 @@ class UserService {
     const shouldSeeAllUsers = ['hr', 'subadmin', 'admin'].includes(currentUser?.role) || 
                               (isFinanceTeamlead && isAttendanceLog);
 
-    const skipTeamScope = shouldSeeAllUsers || context === 'meeting';
+    const skipTeamScope =
+      shouldSeeAllUsers ||
+      context === 'meeting' ||
+      role === 'teamlead' ||
+      role === 'subteamlead';
 
     const query = {
-      // Skip team filter for HR/Admin/Subadmin or Finance teamlead when isAttendanceLog is true
-      // ...(skipTeamScope ? {} : { team: currentUser?.team }),
-      team: currentUser?.team,
+      // Skip team filter when HR/Admin/Subadmin, Finance teamlead (attendance), meeting picker,
+      // or when fetching teamlead/subteamlead options (so TL/SubTL can be assigned across teams)
+      ...(skipTeamScope ? {} : { team: currentUser?.team }),
       status: status === null ? { $in: ['probation', 'onroll'] } : status,
       isDeleted: false,
     };
@@ -1065,6 +1069,14 @@ class UserService {
       return null;
     }
 
+    if (user?.isLoginDisabled) {
+      logger.warn(`Authentication failed: login disabled for email: ${email}`);
+      throw new ApiError(
+        httpStatus.FORBIDDEN,
+        'Your account has been deactivated. Please contact HR.'
+      );
+    }
+
     const isPasswordMatch = await bcrypt.compare(password, user?.password);
 
     if (!isPasswordMatch) {
@@ -1964,3 +1976,4 @@ class UserService {
 }
 
 module.exports = new UserService(); // Export an instance
+

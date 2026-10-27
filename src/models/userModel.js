@@ -120,6 +120,11 @@ const userSchema = new Schema(
       default: false,
       // select: false, // Hide by default unless explicitly queried
     },
+    // HR-controlled. When true the user is deactivated and cannot log in to HRMS.
+    isLoginDisabled: {
+      type: Boolean,
+      default: false,
+    },
     workingDays: {
       type: Number,
       default: 6,

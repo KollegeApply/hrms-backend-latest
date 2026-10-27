@@ -68,13 +68,20 @@ exports.getAttendance = async (req, res) => {
   try {
     const userId = req?.user?.id;
     const role = req?.user?.role;
-    const { startDate, endDate } = req.query;
+    const { startDate, endDate, userIds } = req.query;
+
+    // Optional comma-separated list of user ids to narrow the result to
+    // (e.g. only the users shown on the current page of the Attendance Log).
+    const filterUserIds = typeof userIds === 'string' && userIds.trim()
+      ? userIds.split(',').map((id) => id.trim()).filter(Boolean)
+      : undefined;
 
     const result = await attendanceService.getAttendance(
       userId,
       role,
       startDate,
-      endDate
+      endDate,
+      filterUserIds
     );
 
     return res.status(result.statusCode).json(result.data);

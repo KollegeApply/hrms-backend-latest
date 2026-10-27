@@ -39,4 +39,7 @@ const leaveApplicationSchema = new Schema(
   { timestamps: true }
 );
 
+leaveApplicationSchema.index({ userId: 1, dates: 1 });
+leaveApplicationSchema.index({ status: 1, dates: 1 });
+
 module.exports = mongoose.model('LeaveApplication', leaveApplicationSchema);
