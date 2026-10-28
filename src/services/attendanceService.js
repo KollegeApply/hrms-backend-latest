@@ -486,7 +486,7 @@ async getTeamMembers(leaderId) {
   return teamUsers.map((u) => u._id);
 },
 
-  async getAttendance(userId, role, startDateStr, endDateStr, filterUserIds) {
+  async getAttendance(userId, role, startDateStr, endDateStr, filterUserIds, team) {
     try {
       let startDate, endDate;
       let dateQuery = {};
@@ -540,7 +540,12 @@ async getTeamMembers(leaderId) {
       } else if (!['hr', 'subadmin', 'admin'].includes(role) && !isFinanceTeamlead) {
         query.user = userId;
       }
-      // For HR/Admin/SubAdmin or Finance teamlead, no user filter is applied (they see all attendance)
+      // Admin/SubAdmin see all attendance. HR and Finance teamlead see all attendance
+      // of their own team only (SD users see SD, Kapp users see Kapp).
+      if (role === 'hr' || isFinanceTeamlead) {
+        const teamUsers = await User.find({ team }, '_id').lean();
+        query.user = { $in: teamUsers.map((u) => u._id) };
+      }
 
       // Optionally narrow further to a specific set of users (e.g. only the users
       // shown on the current page of the Attendance Log table). This only ever
