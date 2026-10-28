@@ -81,7 +81,8 @@ exports.getAttendance = async (req, res) => {
       role,
       startDate,
       endDate,
-      filterUserIds
+      filterUserIds,
+      req?.user?.team
     );
 
     return res.status(result.statusCode).json(result.data);
