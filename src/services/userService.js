@@ -134,10 +134,14 @@ class UserService {
       role === 'teamlead' ||
       role === 'subteamlead';
 
+    // Attendance log: HR and Finance teamlead only see users of their own team
+    const scopeAttendanceToTeam =
+      isAttendanceLog && (currentUser?.role === 'hr' || isFinanceTeamlead);
+
     const query = {
       // Skip team filter when HR/Admin/Subadmin, Finance teamlead (attendance), meeting picker,
       // or when fetching teamlead/subteamlead options (so TL/SubTL can be assigned across teams)
-      ...(skipTeamScope ? {} : { team: currentUser?.team }),
+      ...(skipTeamScope && !scopeAttendanceToTeam ? {} : { team: currentUser?.team }),
       status: status === null ? { $in: ['probation', 'onroll'] } : status,
       isDeleted: false,
     };
