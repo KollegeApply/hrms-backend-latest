@@ -134,6 +134,9 @@ class Helper {
     cc = [],
     team,
     attachments = [],
+    messageId,
+    inReplyTo,
+    references,
   }) {
     if (!team) {
       logger.error('Team must be provided to send email.');
@@ -199,11 +202,15 @@ class Helper {
       subject,
       html: message,
       ...(attachments.length > 0 && { attachments }),
+      ...(messageId && { messageId }),
+      ...(inReplyTo && { inReplyTo }),
+      ...(references && { references }),
     };
 
     try {
       const info = await transporter.sendMail(mailOptions);
       logger.info(`Email sent to ${receiverEmails.join(', ')} | ID: ${info.messageId}`);
+      return info;
     } catch (error) {
       const errorMessage = error?.message || error;
       logger.error(`Failed to send email: ${errorMessage}`, {
