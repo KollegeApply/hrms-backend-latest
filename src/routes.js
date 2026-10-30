@@ -22,6 +22,7 @@ const expenseRoutes = require('./routes/expenseRoute');
 const biometricWebhookRoutes = require('./routes/biometricWebhookRoute');
 const companypolicyRoute = require('./routes/companypolicyRoute')
 const externalRoutes = require('./routes/externalRoute');
+const resignationRoutes = require('./routes/resignationRoute');
 // const otherRoutes = require('./routes/otherRoutes'); // Example for future routes
 
 const router = express.Router();
@@ -117,6 +118,10 @@ const defaultRoutes = [
   {
     path: `/api/${apiVersion}/external`,
     route: externalRoutes,
+  },
+  {
+    path: `/api/${apiVersion}/resignation`,
+    route: resignationRoutes,
   }
 
   // Add other route configurations here
