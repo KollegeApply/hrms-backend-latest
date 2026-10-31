@@ -381,7 +381,7 @@ async function sendRegularizationReminders() {
       status: { $in: ['probation','onroll'] },
       isDeleted: false,
     });
-
+    
     if (users.length === 0) {
       logger.info('No users found for regularization reminders.');
       return;

@@ -5,6 +5,10 @@ const Ticket = require('../models/ticketModel');
 const httpStatus = require('http-status');
 const ApiError = require('../utility/ApiError');
 const { default: mongoose } = require('mongoose');
+const {
+  HR_GRIEVANCE_TICKET_TYPE,
+  HR_GRIEVANCE_EXTRA_EMAILS,
+} = require('../utility/constants');
 
 class TicketService {
   async createTicket(ticketData) {
@@ -54,6 +58,13 @@ async getAllTickets(currentUser, query = {}, team) {
     if (currentUser.role === "IT") {
       matchStage['$or'] = [
         { ticketType: "Admin & IT" },
+        { createdBy: new mongoose.Types.ObjectId(currentUser.id) }
+      ];
+    } else if (
+      HR_GRIEVANCE_EXTRA_EMAILS.includes(currentUser.email?.toLowerCase())
+    ) {
+      matchStage['$or'] = [
+        { ticketType: HR_GRIEVANCE_TICKET_TYPE },
         { createdBy: new mongoose.Types.ObjectId(currentUser.id) }
       ];
     } else if (currentUser.email === process.env.HRMS_QUERY_EMAIL) {
