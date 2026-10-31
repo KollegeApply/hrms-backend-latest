@@ -137,6 +137,14 @@ const ADMIN_EMAILS = process.env.ADMIN_EMAILS?.split(',').map(e => e.trim()).fil
 const TEAM_SD = process.env.TEAM_SD;
 const TEAM_KAP = process.env.TEAM_KAP;
 
+// Special case: these users (KAP_237, KAP_017) also receive and can view
+// every "HR & Grievance query" ticket, in addition to HR.
+const HR_GRIEVANCE_TICKET_TYPE = 'HR & Grievance query';
+const HR_GRIEVANCE_EXTRA_EMAILS = [
+  'office.admin@kollegeapply.com',
+  'shivam.chawla@kollegeapply.com',
+];
+
 function getTeamEmailConfig(team) {
   const normalizedTeam = team?.toUpperCase();
   const config = {
@@ -241,6 +249,8 @@ const SYSTEM_LAUNCH_YEAR = 2025;
 const SYSTEM_START_MONTH = 4;
 
 module.exports = {
+  HR_GRIEVANCE_TICKET_TYPE,
+  HR_GRIEVANCE_EXTRA_EMAILS,
   USER_ROLES,
   EXPENSE_BANDS,
   VALID_EXPENSE_BANDS: Object.values(EXPENSE_BANDS),
