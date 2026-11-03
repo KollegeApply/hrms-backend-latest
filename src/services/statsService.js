@@ -5,6 +5,7 @@ const Holiday = require('../models/holidayModel');
 const Attendance = require('../models/attendanceModel');
 const { default: mongoose } = require('mongoose');
 const leaveService = require('./leaveService');
+const attendanceService = require('./attendanceService');
 const {
   SYSTEM_LAUNCH_YEAR,
   SYSTEM_START_MONTH,
@@ -136,6 +137,11 @@ class StatsService {
         holidays
       );
 
+      // 5. Biometric LOP (late in / early out days beyond the monthly grace)
+      const biometricLop = (await attendanceService.getBiometricLopCounts([userId])).get(
+        userId.toString()
+      );
+
       return {
         workingDays: totalWorkingDays,
         workingDaysElapsed,
@@ -148,6 +154,7 @@ class StatsService {
         lateCheckInDays,
         earlyOutDays,
         lateInEarlyOutDays,
+        biometricLopCount: biometricLop?.lopCount ?? 0,
       };
     } catch (error) {
       console.error('Error in getMonthlyStats:', error);
