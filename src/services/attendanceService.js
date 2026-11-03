@@ -2,6 +2,8 @@ const mongoose = require('mongoose');
 const Attendance = require('../models/attendanceModel');
 const User = require('../models/userModel');
 const LeaveApplication = require('../models/leaveApplicationModel');
+const Holiday = require('../models/holidayModel');
+const { isWeeklyOff } = require('../utility/common');
 const { startOfDay, endOfDay } = require('date-fns');
 const moment = require('moment-timezone');
 const { calculateBiometricStatus } = require('./biometricWebhookService');
@@ -14,6 +16,14 @@ const LEAVE_ATTENDANCE_STATUSES = [
 ];
 
 const PENDING_WORKFLOW_STATUSES = ['tl-pending', 'hr-pending'];
+
+// Biometric statuses (other than present / leave) that count towards LOP.
+// Absent working days count too (see getBiometricLopCounts).
+const BIOMETRIC_IRREGULAR_STATUSES = ['late_in', 'early_out', 'late_in_early_out'];
+// Full-day leaves fully cover the day, so a punch on that day is not counted.
+const FULL_DAY_LEAVE_STATUSES = ['leave_applied', 'leave_applied_full'];
+// Irregular biometric days allowed per month before they start counting as LOP.
+const BIOMETRIC_LOP_GRACE_DAYS = 4;
 
 /**
  * Applies the same leave/regularisation display overrides used for `status`
@@ -28,6 +38,89 @@ const resolveAttendanceDisplayStatus = (record, baseStatus) => {
   if (PENDING_WORKFLOW_STATUSES.includes(leaveStatus)) return leaveStatus;
 
   return baseStatus;
+};
+
+/**
+ * Fetches attendance for `query` and resolves the display `status` /
+ * `biometricStatus` exactly as the Attendance Log shows them. The raw
+ * biometric status (before regularisation/leave overrides) is kept on
+ * `biometricBaseStatus`.
+ */
+const buildAttendanceWithDisplayStatus = async (query, dateQuery) => {
+  const attendance = await Attendance.find(query)
+    .populate('user', '_id firstName lastName employeeId workType hireDate shiftTime')
+    .populate('leaveId')
+    .populate('wfhId')
+    .sort({ date: -1, checkInTime: -1 })
+    .lean();
+
+  const pendingLeaveQuery = {
+    status: { $in: PENDING_WORKFLOW_STATUSES },
+    isDeleted: { $ne: true },
+    dates: dateQuery,
+  };
+  if (query.user) {
+    pendingLeaveQuery.userId = query.user;
+  }
+
+  const pendingLeaves = await LeaveApplication.find(pendingLeaveQuery)
+    .select('_id userId dates status isHalfDay halfDayType')
+    .lean();
+
+  const pendingLeaveByUserDate = new Map();
+  for (const leave of pendingLeaves) {
+    for (const leaveDate of leave.dates || []) {
+      const dateKey = moment(leaveDate).tz('Asia/Kolkata').format('YYYY-MM-DD');
+      pendingLeaveByUserDate.set(`${leave.userId}_${dateKey}`, leave);
+    }
+  }
+
+  const attendanceWithDisplayStatus = await Promise.all(
+    attendance.map(async (record) => {
+      const recordUserId = record.user?._id || record.user;
+      const shiftTime = record.user?.shiftTime;
+
+      if (!record.leaveId) {
+        const dateKey = moment(record.date).tz('Asia/Kolkata').format('YYYY-MM-DD');
+        const pendingLeave = pendingLeaveByUserDate.get(`${recordUserId}_${dateKey}`);
+        if (pendingLeave) {
+          record.leaveId = pendingLeave;
+        }
+      }
+
+      let biometricBase = record.biometricStatus;
+
+      if (LEAVE_ATTENDANCE_STATUSES.includes(record.status)) {
+        if (record.biometricCheckIn) {
+          biometricBase = await calculateBiometricStatus(
+            recordUserId,
+            record.biometricCheckIn,
+            record.biometricCheckOut,
+            record,
+            shiftTime
+          );
+        } else {
+          biometricBase = record.status;
+        }
+      } else if (record.biometricCheckIn) {
+        biometricBase = await calculateBiometricStatus(
+          recordUserId,
+          record.biometricCheckIn,
+          record.biometricCheckOut,
+          record,
+          shiftTime
+        );
+      }
+
+      record.status = resolveAttendanceDisplayStatus(record, record.status);
+      record.biometricBaseStatus = biometricBase;
+      record.biometricStatus = resolveAttendanceDisplayStatus(record, biometricBase);
+
+      return record;
+    })
+  );
+
+  return attendanceWithDisplayStatus;
 };
 
 // Helper function to get the start and end of the current month
@@ -568,77 +661,7 @@ async getTeamMembers(leaderId) {
         }
       }
 
-      const attendance = await Attendance.find(query)
-        .populate('user', '_id firstName lastName employeeId workType hireDate shiftTime')
-        .populate('leaveId')
-        .populate('wfhId')
-        .sort({ date: -1, checkInTime: -1 })
-        .lean();
-
-      const pendingLeaveQuery = {
-        status: { $in: PENDING_WORKFLOW_STATUSES },
-        isDeleted: { $ne: true },
-        dates: dateQuery,
-      };
-      if (query.user) {
-        pendingLeaveQuery.userId = query.user;
-      }
-
-      const pendingLeaves = await LeaveApplication.find(pendingLeaveQuery)
-        .select('_id userId dates status isHalfDay halfDayType')
-        .lean();
-
-      const pendingLeaveByUserDate = new Map();
-      for (const leave of pendingLeaves) {
-        for (const leaveDate of leave.dates || []) {
-          const dateKey = moment(leaveDate).tz('Asia/Kolkata').format('YYYY-MM-DD');
-          pendingLeaveByUserDate.set(`${leave.userId}_${dateKey}`, leave);
-        }
-      }
-
-      const attendanceWithDisplayStatus = await Promise.all(
-        attendance.map(async (record) => {
-          const recordUserId = record.user?._id || record.user;
-          const shiftTime = record.user?.shiftTime;
-
-          if (!record.leaveId) {
-            const dateKey = moment(record.date).tz('Asia/Kolkata').format('YYYY-MM-DD');
-            const pendingLeave = pendingLeaveByUserDate.get(`${recordUserId}_${dateKey}`);
-            if (pendingLeave) {
-              record.leaveId = pendingLeave;
-            }
-          }
-
-          let biometricBase = record.biometricStatus;
-
-          if (LEAVE_ATTENDANCE_STATUSES.includes(record.status)) {
-            if (record.biometricCheckIn) {
-              biometricBase = await calculateBiometricStatus(
-                recordUserId,
-                record.biometricCheckIn,
-                record.biometricCheckOut,
-                record,
-                shiftTime
-              );
-            } else {
-              biometricBase = record.status;
-            }
-          } else if (record.biometricCheckIn) {
-            biometricBase = await calculateBiometricStatus(
-              recordUserId,
-              record.biometricCheckIn,
-              record.biometricCheckOut,
-              record,
-              shiftTime
-            );
-          }
-
-          record.status = resolveAttendanceDisplayStatus(record, record.status);
-          record.biometricStatus = resolveAttendanceDisplayStatus(record, biometricBase);
-
-          return record;
-        })
-      );
+      const attendanceWithDisplayStatus = await buildAttendanceWithDisplayStatus(query, dateQuery);
 
       return {
         status: 'success',
@@ -653,6 +676,114 @@ async getTeamMembers(leaderId) {
         message: 'Failed to fetch attendance data.',
       };
     }
+  },
+
+  /**
+   * Counts, per user, the days in the given month (IST) whose biometric status is
+   * irregular (late in / early out / both) or absent. A day is absent when it is a
+   * past working day (not today, a weekly off, a holiday or before the hire date)
+   * with no biometric punch and no leave. Days whose regularisation is fully
+   * approved, or that are covered by an approved full-day leave, are not counted.
+   * The first BIOMETRIC_LOP_GRACE_DAYS are free; every day beyond that adds 1 LOP.
+   *
+   * @param {Array<ObjectId|string>} userIds
+   * @param {Date} [referenceDate] - any date in the month to count (defaults to now)
+   * @returns {Promise<Map<string, { irregularDays: number, lopCount: number }>>}
+   */
+  async getBiometricLopCounts(userIds, referenceDate = new Date()) {
+    const result = new Map();
+    const validIds = (userIds || []).filter((id) => mongoose.isValidObjectId(id));
+    if (validIds.length === 0) return result;
+
+    const month = moment(referenceDate).tz('Asia/Kolkata');
+    const monthStart = month.clone().startOf('month');
+    const monthEnd = month.clone().endOf('month');
+    const dateQuery = { $gte: monthStart.toDate(), $lte: monthEnd.toDate() };
+    const toDateKey = (date) => moment(date).tz('Asia/Kolkata').format('YYYY-MM-DD');
+
+    const [records, users, holidays] = await Promise.all([
+      buildAttendanceWithDisplayStatus({ user: { $in: validIds }, date: dateQuery }, dateQuery),
+      User.find({ _id: { $in: validIds } }).select('_id hireDate workType').lean(),
+      Holiday.find({ date: dateQuery, isDeleted: { $ne: true }, holidayType: { $ne: 'Restricted' } })
+        .select('date')
+        .lean(),
+    ]);
+
+    // Only past working days can be absent (today's punches may still come in).
+    const todayKey = toDateKey(new Date());
+    const holidayKeys = new Set(holidays.map((h) => toDateKey(h.date)));
+    const workingDayKeys = [];
+    for (const day = monthStart.clone(); day.isSameOrBefore(monthEnd, 'day'); day.add(1, 'day')) {
+      const dateKey = day.format('YYYY-MM-DD');
+      if (dateKey >= todayKey) break;
+      if (holidayKeys.has(dateKey)) continue;
+      if (isWeeklyOff(new Date(day.year(), day.month(), day.date()))) continue;
+      workingDayKeys.push(dateKey);
+    }
+    const workingDaySet = new Set(workingDayKeys);
+
+    const userById = new Map(users.map((u) => [u._id.toString(), u]));
+    for (const id of validIds) {
+      result.set(id.toString(), { irregularDays: 0, lopCount: 0 });
+    }
+    const isBeforeHire = (userId, dateKey) => {
+      const hireDate = userById.get(userId)?.hireDate;
+      return !!hireDate && dateKey < toDateKey(hireDate);
+    };
+    // Biometric doesn't apply to WFH employees, so they are never marked absent.
+    const canBeAbsent = (userId, dateKey) => {
+      const user = userById.get(userId);
+      if (!user || user.workType === 'WFH') return false;
+      return workingDaySet.has(dateKey);
+    };
+
+    const recordDays = new Set();
+    const countedDays = new Set();
+    for (const record of records) {
+      const recordUserId = (record.user?._id || record.user)?.toString();
+      if (!result.has(recordUserId)) continue;
+
+      const dateKey = toDateKey(record.date);
+      const dayKey = `${recordUserId}_${dateKey}`;
+      recordDays.add(dayKey);
+      if (countedDays.has(dayKey) || isBeforeHire(recordUserId, dateKey)) continue;
+
+      if (record.regularization?.status === 'approved') continue;
+      // `status` is already display-resolved, so a still-pending leave shows as
+      // tl-pending/hr-pending here and keeps counting until it is approved.
+      if (FULL_DAY_LEAVE_STATUSES.includes(record.status)) continue;
+
+      const base = record.biometricBaseStatus;
+      const isIrregular = BIOMETRIC_IRREGULAR_STATUSES.includes(base);
+      const isAbsent =
+        (!base || base === 'absent') &&
+        record.status !== 'wfh_applied' &&
+        canBeAbsent(recordUserId, dateKey);
+
+      if (isIrregular || isAbsent) {
+        countedDays.add(dayKey);
+        result.get(recordUserId).irregularDays += 1;
+      }
+    }
+
+    // Working days with no attendance record at all are absent.
+    for (const [userId, counts] of result) {
+      for (const dateKey of workingDayKeys) {
+        if (
+          !recordDays.has(`${userId}_${dateKey}`) &&
+          !isBeforeHire(userId, dateKey) &&
+          canBeAbsent(userId, dateKey)
+        ) {
+          counts.irregularDays += 1;
+        }
+      }
+    }
+
+    for (const counts of result.values()) {
+      counts.lopCount = Math.max(0, counts.irregularDays - BIOMETRIC_LOP_GRACE_DAYS);
+    }
+
+    return result;
   },
 
   async getTodayCheckInStatus(userId) {
