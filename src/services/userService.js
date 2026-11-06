@@ -28,6 +28,7 @@ const Feedback = require('../models/feedbackModel');
 const CompanyPolicy = require('../models/companypolicyModel');
 const UserDetails = require('../models/userDetailsModel');
 const _ = require('lodash');
+const attendanceService = require('./attendanceService');
 
 class UserService {
   /**
@@ -316,6 +317,7 @@ class UserService {
           user.averageRating = await this.calculateAverageRating(user._id);
         }
       }
+      if (context !== 'meeting') await this.attachBiometricLopCounts(paginatedResult.data);
       
       return paginatedResult;
     } else {
@@ -327,6 +329,7 @@ class UserService {
           user.averageRating = await this.calculateAverageRating(user._id);
         }
       }
+      if (context !== 'meeting') await this.attachBiometricLopCounts(users);
       
       return { data: users };
     }
@@ -1710,6 +1713,18 @@ class UserService {
    * @param {string} userTeam - The logged-in user's team
    * @returns {Promise<Object>} - Response with team members data
    */
+  /**
+   * Sets `lopCount` (biometric late-in/early-out days beyond the monthly grace)
+   * on each user document for the current month.
+   */
+  async attachBiometricLopCounts(users) {
+    if (!Array.isArray(users) || users.length === 0) return;
+    const lopCounts = await attendanceService.getBiometricLopCounts(users.map((u) => u._id));
+    for (const user of users) {
+      user.lopCount = lopCounts.get(user._id.toString())?.lopCount ?? 0;
+    }
+  }
+
   async getTeamDetails(userId, userRole, userTeam, filters = {}) {
     try {
       // Only allow TL and SubTL
@@ -1815,6 +1830,7 @@ class UserService {
           return u;
         })
       );
+      await this.attachBiometricLopCounts(filteredUsers);
 
       return {
         status: true,

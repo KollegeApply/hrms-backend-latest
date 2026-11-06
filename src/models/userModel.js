@@ -233,6 +233,9 @@ userSchema.set('toJSON', {
     if (doc.averageRating !== undefined) {
       ret.averageRating = doc.averageRating;
     }
+    if (doc.lopCount !== undefined) {
+      ret.lopCount = doc.lopCount;
+    }
     
     return ret;
   },
@@ -250,6 +253,9 @@ userSchema.set('toObject', {
     // Preserve dynamically added fields like averageRating
     if (doc.averageRating !== undefined) {
       ret.averageRating = doc.averageRating;
+    }
+    if (doc.lopCount !== undefined) {
+      ret.lopCount = doc.lopCount;
     }
     
     return ret;

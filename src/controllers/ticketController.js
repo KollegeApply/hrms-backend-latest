@@ -4,7 +4,13 @@ const TicketService = require('../services/ticketService');
 const ticketValidator = require('../validators/ticketValidator');
 const logger = require('../config/logger');
 const User = require('../models/userModel');
-const { HR_EMAIL, IT_EMAIL, getTeamEmailConfig } = require('../utility/constants');
+const {
+  HR_EMAIL,
+  IT_EMAIL,
+  getTeamEmailConfig,
+  HR_GRIEVANCE_TICKET_TYPE,
+  HR_GRIEVANCE_EXTRA_EMAILS,
+} = require('../utility/constants');
 const Helper = require('../utility/helper');
 const { uploadToAWS } = require('../utility/awsBlob');
 const { transformDocumentPaths } = require('../utility/common');
@@ -68,6 +74,8 @@ const createTicket = catchAsync(async (req, res) => {
     } else if (newTicket.ticketType === "HRMS Query") {
       // HRMS Query tickets are handled by HR team
       teamEmails.push(configEmails?.HRMS_QUERY_EMAIL);
+    } else if (newTicket.ticketType === HR_GRIEVANCE_TICKET_TYPE) {
+      teamEmails.push(...HR_GRIEVANCE_EXTRA_EMAILS);
     }
 
     const emailSubject = `New Ticket Raised - ${newTicket.subject}`;
@@ -181,6 +189,8 @@ const updateTicket = catchAsync(async (req, res) => {
         // HRMS Query tickets are handled by HR team
         ccEmails = [configEmails?.HR_EMAIL, configEmails?.HRMS_QUERY_EMAIL];
         fromIT = false;
+      } else if(updatedTicket?.ticketType === HR_GRIEVANCE_TICKET_TYPE){
+        ccEmails = [configEmails?.HR_EMAIL, ...HR_GRIEVANCE_EXTRA_EMAILS];
       }
       
       Helper.sendEmail({
