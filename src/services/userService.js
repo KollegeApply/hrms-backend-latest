@@ -337,7 +337,8 @@ class UserService {
 
   /**
    * Server-to-server lookup for the Kapp Sales CRM backend: search HRMS
-   * KollegeApply employees (any department) by name/email/employeeId. This is what powers "search by name, autofill the rest" when
+   * employees by name/email/employeeId, scoped to the "Sales" department
+   * only. This is what powers "search by name, autofill the rest" when
    * creating a Sales CRM user -- the CRM never needs its own copy of HRMS
    * employee data, it just looks it up here on demand.
    *
@@ -365,10 +366,39 @@ class UserService {
   async searchUsersForSalesCrm(queryOptions) {
     const { search, page = 1, limit = 20 } = queryOptions;
 
+    const emptyResult = {
+      data: [],
+      pagination: {
+        totalDocs: 0,
+        limit,
+        totalPages: 0,
+        currentPage: page,
+        hasPrevPage: false,
+        hasNextPage: false,
+        pagingCounter: 1,
+        prevPage: null,
+        nextPage: null,
+      },
+    };
+
     const teamCode = 'KAP';
 
-    // Any department: the CRM also needs people outside Sales (central team, leadership).
+    const salesDept = await Department.findOne({
+      name: { $regex: '^sales$', $options: 'i' },
+      isDeleted: false,
+    })
+      .select('_id name')
+      .lean();
+
+    if (!salesDept) {
+      logger.warn(
+        'searchUsersForSalesCrm: no "Sales" department exists yet -- returning empty list'
+      );
+      return emptyResult;
+    }
+
     const query = {
+      department: salesDept._id,
       isDeleted: false,
       // Only currently active-ish employees -- same default as the normal
       // employee listing (getAllUsers) uses when no status is requested.
@@ -435,7 +465,7 @@ class UserService {
       email: user.email || null,
       phone_number: user.phoneNumber || null,
       job_title: user.jobTitle || null,
-      department: user.department?.name || null,
+      department: user.department?.name || salesDept.name,
       team: user.team || null,
       crm_team: user.crmTeam || null,
       crm_zone: user.crmZone || null,

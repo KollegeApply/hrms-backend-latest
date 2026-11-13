@@ -26,6 +26,9 @@ router.get('/tl-bulk-summary', expenseController.getTlBulkSummary);
 router.get('/filing-cutoff', expenseController.getExpenseFilingCutoff);
 router.put('/filing-cutoff', expenseController.updateExpenseFilingCutoff);
 router.get('/filing-cutoff/history', expenseController.getExpenseFilingCutoffHistory);
+// Policy: monthly out-of-station travel mandate (Expense department only; enforced in service).
+router.put('/outstation-mandate', expenseController.setOutstationMandate);
+router.get('/outstation-mandate', expenseController.listOutstationMandates);
 router.get('/', expenseController.getExpenses);
 router.put('/bulk/approve', expenseController.bulkApproveExpenses);
 router.put('/bulk/reject', expenseController.bulkRejectExpenses);

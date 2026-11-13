@@ -50,6 +50,16 @@ const expenseSchema = new Schema(
     kappId: { type: String, trim: true, maxlength: 50 },
     /** Travel — manually entered institute name for the meeting visited. */
     instituteName: { type: String, trim: true, maxlength: 200 },
+    /** Travel — actual starting point of the trip (Policy: only Office -> Client -> Office is reimbursable). */
+    tripOrigin: { type: String, enum: ['Office', 'Other'] },
+    /** Travel — which leg of the meeting this line is: Office -> Client or Client -> Office. */
+    tripLeg: { type: String, enum: ['Outbound', 'Return'] },
+    /** Travel (Return leg) — where the return trip ended; only Office is reimbursable. */
+    tripReturnTo: { type: String, enum: ['Office', 'Other'] },
+    /** Travel — free text when the trip origin is not the Office. */
+    tripOriginDetail: { type: String, trim: true, maxlength: 200 },
+    /** Travel — specific locality / address of the client site (destination). */
+    destination: { type: String, trim: true, maxlength: 300 },
     /** Travel — Base location (Intracity) vs Outstation (Intercity). */
     tripContext: {
       type: String,
