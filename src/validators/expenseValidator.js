@@ -5,6 +5,8 @@ const {
   FOOD_SUBCATEGORIES,
   MISCELLANEOUS_SUBCATEGORIES,
   TRIP_CONTEXT_VALUES,
+  TRIP_ORIGIN_VALUES,
+  TRIP_LEG_VALUES,
   EXPENSE_POLICY_TAG_VALUES,
 } = require('../utility/expensePolicyConstants');
 
@@ -63,6 +65,21 @@ const createExpenseSchema = Joi.object({
     .valid(...TRIP_CONTEXT_VALUES)
     .allow('', null)
     .optional(),
+  /** Policy: every travel claim states where the trip started and the client site visited. */
+  tripOrigin: Joi.string()
+    .valid(...TRIP_ORIGIN_VALUES)
+    .allow('', null)
+    .optional(),
+  tripLeg: Joi.string()
+    .valid(...TRIP_LEG_VALUES)
+    .allow('', null)
+    .optional(),
+  tripReturnTo: Joi.string()
+    .valid(...TRIP_ORIGIN_VALUES)
+    .allow('', null)
+    .optional(),
+  tripOriginDetail: Joi.string().trim().max(200).allow('', null).optional(),
+  destination: Joi.string().trim().max(300).allow('', null).optional(),
   amount: Joi.number().precision(2).greater(0).required().messages({
     'number.base': 'Amount must be a valid number.',
     'number.greater': 'Amount must be greater than 0.',
@@ -130,16 +147,47 @@ const createExpenseSchema = Joi.object({
           custom: `Trip Context is required for Travel expenses and must be one of: ${TRIP_CONTEXT_VALUES.join(', ')}`,
         });
       }
-    } else if (value.tripContext) {
+      // Claim documentation (Policy): no origin / destination, no payment.
+      const isReturnLeg = value.tripLeg === 'Return';
+      if (isReturnLeg) {
+        if (!value.tripReturnTo || !TRIP_ORIGIN_VALUES.includes(value.tripReturnTo)) {
+          return helpers.message({
+            custom: `Where the return trip ended is required and must be one of: ${TRIP_ORIGIN_VALUES.join(', ')}`,
+          });
+        }
+        if (value.tripReturnTo !== 'Office' && !(value.tripOriginDetail || '').trim()) {
+          return helpers.message({
+            custom: 'Please state where the return trip ended when it is not the Office.',
+          });
+        }
+      } else {
+        if (!value.tripOrigin || !TRIP_ORIGIN_VALUES.includes(value.tripOrigin)) {
+          return helpers.message({
+            custom: `Trip origin is required for Travel expenses and must be one of: ${TRIP_ORIGIN_VALUES.join(', ')}`,
+          });
+        }
+        if (value.tripOrigin !== 'Office' && !(value.tripOriginDetail || '').trim()) {
+          return helpers.message({
+            custom: 'Please state the actual starting point of the trip when it is not the Office.',
+          });
+        }
+      }
+      if (!(value.destination || '').trim()) {
+        return helpers.message({
+          custom:
+            'Destination (locality / address of the client site) is required for Travel expenses.',
+        });
+      }
+    } else if (value.tripContext || value.tripOrigin || value.tripReturnTo || value.tripLeg || value.destination) {
       return helpers.message({
-        custom: 'tripContext is only allowed for Travel expenses.',
+        custom: 'tripContext, tripOrigin and destination are only allowed for Travel expenses.',
       });
     }
 
     if (kappIdMandatory) {
       if (!(value.kappId || '').trim()) {
         return helpers.message({
-          custom: `KAPP ID is required for ${type} expenses.`,
+          custom: `KAAP ID is required for ${type} expenses.`,
         });
       }
       if (!(value.instituteName || '').trim()) {
@@ -520,6 +568,20 @@ const submitExpenseDraftsSchema = Joi.object({
 }).options({ stripUnknown: true });
 
 /** FR-1.1/1.2 — Admin-only global/department expense filing cutoff toggle. */
+/** Expense dept — mark an employee's monthly out-of-station travel mandate. */
+const outstationMandateSchema = Joi.object({
+  userId: objectIdSchema.required(),
+  year: Joi.number().integer().min(2000).max(2100).required(),
+  month: Joi.number().integer().min(1).max(12).required(),
+  completed: Joi.boolean().required(),
+  remark: Joi.string().trim().max(300).allow('', null).optional(),
+}).options({ stripUnknown: true });
+
+const outstationMandateListSchema = Joi.object({
+  year: Joi.number().integer().min(2000).max(2100).required(),
+  month: Joi.number().integer().min(1).max(12).required(),
+}).options({ stripUnknown: true });
+
 const updateExpenseFilingCutoffSchema = Joi.object({
   cutoffActive: Joi.boolean().required().messages({
     'any.required': 'cutoffActive is required.',
@@ -556,4 +618,6 @@ module.exports = {
   bulkRejectExpenseSchema,
   updateExpenseFilingCutoffSchema,
   submitExpenseDraftsSchema,
+  outstationMandateSchema,
+  outstationMandateListSchema,
 };
