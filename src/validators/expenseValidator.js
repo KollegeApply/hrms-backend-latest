@@ -371,6 +371,22 @@ const raiseFinanceIssueSchema = Joi.object({
     }),
 });
 
+/** Finance "Mark as Paid" — the reason is all Finance submits. */
+const markExpensePaidSchema = Joi.object({
+  id: objectIdSchema.required(),
+  remark: Joi.string()
+    .trim()
+    .min(5)
+    .max(500)
+    .required()
+    .messages({
+      'string.min': 'Reason must be at least 5 characters.',
+      'string.max': 'Reason must be at most 500 characters.',
+      'any.required': 'Reason is required.',
+      'string.empty': 'Reason is required.',
+    }),
+});
+
 const allowedStatuses = [
   'submitted',
   'tl-approved',
@@ -382,6 +398,7 @@ const allowedStatuses = [
   'expense-rejected',
   'expense-returned',
   'expense-approved',
+  'paid',
 ];
 
 const updateExpenseStatusSchema = Joi.object({
@@ -614,6 +631,7 @@ module.exports = {
   expenseIdSchema,
   updateExpenseStatusSchema,
   raiseFinanceIssueSchema,
+  markExpensePaidSchema,
   bulkApproveExpenseSchema,
   bulkRejectExpenseSchema,
   updateExpenseFilingCutoffSchema,

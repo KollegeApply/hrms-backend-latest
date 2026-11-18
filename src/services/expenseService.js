@@ -287,6 +287,11 @@ class ExpenseService {
     ];
   }
 
+  /** Finally approved claims — `paid` is an approved claim Finance has reimbursed. */
+  expenseApprovedStatuses() {
+    return ['expense-approved', 'paid'];
+  }
+
   /** Existing rejection statuses in the Expense workflow. */
   expenseRejectedStatuses() {
     return ['tl-rejected', 'zonal-rejected', 'expense-rejected'];
@@ -465,7 +470,10 @@ class ExpenseService {
         999
       );
       // Anything not yet rejected counts (still in-flight or fully approved).
-      const relevantStatuses = [...this.expensePendingStatuses(), 'expense-approved'];
+      const relevantStatuses = [
+        ...this.expensePendingStatuses(),
+        ...this.expenseApprovedStatuses(),
+      ];
 
       if (payload.tripContext === TRIP_CONTEXTS.BASE_LOCATION) {
         // Mode restriction — Account Managers: bus, auto, metro, personal 2-wheeler.
@@ -1375,12 +1383,14 @@ class ExpenseService {
       'expense-returned',
       'expense-approved',
       'expense-rejected',
+      'paid',
     ];
     // Finance Review Fin. Status dropdown options only — "All" must match the dropdown.
     const financeQueueStatuses = [
       'admin-approved',
       'expense-returned',
       'expense-approved',
+      'paid',
     ];
 
     if (statuses.length) {
@@ -1808,6 +1818,43 @@ class ExpenseService {
     return expense.save();
   }
 
+  /**
+   * Finance "Mark as Paid" — the last step of the flow. Only an
+   * `expense-approved` claim can be paid, and a reason is mandatory. The
+   * reason is kept in `financeRemark` and in the approval history.
+   */
+  async markExpensePaid({ expenseId, remark, currentUser }) {
+    if (!(await this.canRaiseFinanceIssue(currentUser))) {
+      throw new ApiError(
+        httpStatus.FORBIDDEN,
+        'Only the Finance department or Admin can mark an expense as paid.'
+      );
+    }
+    const expense = await Expense.findById(expenseId);
+    if (!expense || expense.isDeleted) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'Expense not found.');
+    }
+    if (expense.status !== 'expense-approved') {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        `Only an Expense Approved claim can be marked as paid. This expense is '${expense.status}'.`
+      );
+    }
+
+    const actorId = String(currentUser.id || currentUser._id || '');
+    expense.status = 'paid';
+    expense.paidAt = new Date();
+    expense.paidBy = actorId;
+    expense.financeRemark = remark;
+    this.pushApprovalHistory(expense, {
+      action: 'paid',
+      byUserId: actorId,
+      remark,
+      stage: 'finance-payment',
+    });
+    return expense.save();
+  }
+
   async bulkUpdateExpenseStatus({ expenseIds, remark, action, currentUser }) {
     const succeeded = [];
     const failed = [];
@@ -1925,7 +1972,7 @@ class ExpenseService {
     for (const entry of statuses) {
       const normalized = entry.toLowerCase();
       if (normalized === 'approved') {
-        mapped.push('expense-approved');
+        mapped.push(...this.expenseApprovedStatuses());
       } else if (normalized === 'pending') {
         mapped.push(...this.expensePendingStatuses());
       } else if (normalized === 'rejected') {
@@ -2146,7 +2193,7 @@ class ExpenseService {
     const perPage = Math.max(1, Number(limit) || 10);
     const skip = (currentPage - 1) * perPage;
     const pendingStatuses = this.expensePendingStatuses();
-    const approvedStatus = 'expense-approved';
+    const approvedStatuses = this.expenseApprovedStatuses();
 
     const summaryFacet = [
       {
@@ -2156,7 +2203,7 @@ class ExpenseService {
           totalAppliedExpense: { $sum: '$amount' },
           totalApprovedExpense: {
             $sum: {
-              $cond: [{ $eq: ['$status', approvedStatus] }, '$amount', 0],
+              $cond: [{ $in: ['$status', approvedStatuses] }, '$amount', 0],
             },
           },
           totalPendingExpense: {
@@ -2197,7 +2244,7 @@ class ExpenseService {
         applied: { $sum: '$amount' },
         approved: {
           $sum: {
-            $cond: [{ $eq: ['$status', approvedStatus] }, '$amount', 0],
+            $cond: [{ $in: ['$status', approvedStatuses] }, '$amount', 0],
           },
         },
       },
@@ -2323,7 +2370,7 @@ class ExpenseService {
         applied: { $sum: '$amount' },
         approved: {
           $sum: {
-            $cond: [{ $eq: ['$status', approvedStatus] }, '$amount', 0],
+            $cond: [{ $in: ['$status', approvedStatuses] }, '$amount', 0],
           },
         },
         employeeIds: { $addToSet: '$userId' },
@@ -2884,7 +2931,7 @@ class ExpenseService {
     match.status = {
       $in: statuses.length
         ? statuses
-        : [...this.expensePendingStatuses(), 'expense-approved'],
+        : [...this.expensePendingStatuses(), ...this.expenseApprovedStatuses()],
     };
 
     const [result] = await Expense.aggregate([
@@ -2942,7 +2989,7 @@ class ExpenseService {
     const userId = this.toObjectId(targetUserId);
     const pendingStatuses = this.expensePendingStatuses();
     const rejectedStatuses = this.expenseRejectedStatuses();
-    const approvedStatus = 'expense-approved';
+    const approvedStatuses = this.expenseApprovedStatuses();
 
     // An explicit fromDate/toDate (the dashboard's date-range filter) scopes
     // every card and chart to that window; otherwise everything is all-time
@@ -2999,12 +3046,12 @@ class ExpenseService {
                 appliedCount: { $sum: 1 },
                 approvedAmount: {
                   $sum: {
-                    $cond: [{ $eq: ['$status', approvedStatus] }, '$amount', 0],
+                    $cond: [{ $in: ['$status', approvedStatuses] }, '$amount', 0],
                   },
                 },
                 approvedCount: {
                   $sum: {
-                    $cond: [{ $eq: ['$status', approvedStatus] }, 1, 0],
+                    $cond: [{ $in: ['$status', approvedStatuses] }, 1, 0],
                   },
                 },
                 pendingAmount: {
@@ -3076,7 +3123,7 @@ class ExpenseService {
                 applied: { $sum: '$amount' },
                 approved: {
                   $sum: {
-                    $cond: [{ $eq: ['$status', approvedStatus] }, '$amount', 0],
+                    $cond: [{ $in: ['$status', approvedStatuses] }, '$amount', 0],
                   },
                 },
               },

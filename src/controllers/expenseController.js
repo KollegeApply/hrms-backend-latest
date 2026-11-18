@@ -1110,6 +1110,28 @@ const raiseFinanceIssue = catchAsync(async (req, res) => {
   });
 });
 
+const markExpensePaid = catchAsync(async (req, res) => {
+  const validated = await expenseValidator.markExpensePaidSchema.validateAsync({
+    id: req.params.id,
+    remark: req.body.remark,
+  });
+
+  const expense = await expenseService.markExpensePaid({
+    expenseId: validated.id,
+    remark: validated.remark,
+    currentUser: req.user,
+  });
+  const expenseDoc = await Expense.findById(expense._id)
+    .populate(expensePopulatePaths)
+    .lean();
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Expense marked as paid.',
+    data: applyAttachmentUrlTransform(expenseDoc),
+  });
+});
+
 const deleteExpense = catchAsync(async (req, res) => {
   const validated = await expenseValidator.expenseIdSchema.validateAsync({
     id: req.params.id,
@@ -1139,6 +1161,7 @@ module.exports = {
   getTlBulkSummary,
   updateExpenseStatus,
   raiseFinanceIssue,
+  markExpensePaid,
   bulkApproveExpenses,
   bulkRejectExpenses,
   deleteExpense,
