@@ -3337,7 +3337,7 @@ class Helper {
           Hi <strong>${userName}</strong>,
         </p>
         <p style="color: #555; font-size: 16px; line-height: 1.6;">
-          This is a reminder to file all your pending travel and client-visit expenses in the HRMS before the 3rd of the following month for expenses incurred in the previous month.
+          This is a reminder to file all your pending travel and client-visit expenses in the HRMS by the 2nd of the following month (5:00 PM) for expenses incurred in the previous month.
         </p>
         <div style="background-color: #fafafa; padding: 15px; border-radius: 5px; margin-top: 20px;">
           <p style="color: #666; font-size: 14px; margin: 0 0 10px 0;">

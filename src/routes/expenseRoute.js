@@ -26,6 +26,9 @@ router.get('/tl-bulk-summary', expenseController.getTlBulkSummary);
 router.get('/filing-cutoff', expenseController.getExpenseFilingCutoff);
 router.put('/filing-cutoff', expenseController.updateExpenseFilingCutoff);
 router.get('/filing-cutoff/history', expenseController.getExpenseFilingCutoffHistory);
+// Policy: monthly out-of-station travel mandate (Expense department only; enforced in service).
+router.put('/outstation-mandate', expenseController.setOutstationMandate);
+router.get('/outstation-mandate', expenseController.listOutstationMandates);
 router.get('/', expenseController.getExpenses);
 router.put('/bulk/approve', expenseController.bulkApproveExpenses);
 router.put('/bulk/reject', expenseController.bulkRejectExpenses);
@@ -34,6 +37,8 @@ router.put('/:id', safeExpenseAttachmentUpload, expenseController.updateExpense)
 router.put('/:id/status', expenseController.updateExpenseStatus);
 // Finance "Raise an Issue" — records a note on the claim; never changes its status.
 router.post('/:id/issues', expenseController.raiseFinanceIssue);
-router.delete('/:id', expenseController.deleteExpense);
+// Finance "Mark as Paid" — moves an `expense-approved` claim to `paid` with a reason.
+router.put('/:id/paid', expenseController.markExpensePaid);
+router.delete('/:id',expenseController.deleteExpense);
 
 module.exports = router;

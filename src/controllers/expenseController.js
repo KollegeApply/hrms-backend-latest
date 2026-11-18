@@ -73,6 +73,11 @@ function parseCreateExpenseBody(req) {
     kappId: req.body.kappId,
     instituteName: req.body.instituteName,
     tripContext: req.body.tripContext,
+    tripOrigin: req.body.tripOrigin,
+    tripLeg: req.body.tripLeg,
+    tripReturnTo: req.body.tripReturnTo,
+    tripOriginDetail: req.body.tripOriginDetail,
+    destination: req.body.destination,
     expenseCategory: req.body.expenseCategory,
     isDraft: req.body.isDraft,
   });
@@ -998,6 +1003,28 @@ const updateExpenseFilingCutoff = catchAsync(async (req, res) => {
   });
 });
 
+/** Travel policy — Expense department lists completed mandates for a month. */
+const listOutstationMandates = catchAsync(async (req, res) => {
+  const validated = await expenseValidator.outstationMandateListSchema.validateAsync(req.query);
+  const data = await expenseService.listOutstationMandates(req.user, validated);
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Out-of-station travel mandates fetched successfully.',
+    data,
+  });
+});
+
+/** Travel policy — Expense department marks the monthly out-of-station mandate. */
+const setOutstationMandate = catchAsync(async (req, res) => {
+  const validated = await expenseValidator.outstationMandateSchema.validateAsync(req.body);
+  const data = await expenseService.setOutstationMandate(req.user, validated);
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Out-of-station travel mandate updated successfully.',
+    data,
+  });
+});
+
 /** FR-1.1/1.2 — Expense department only, audit trail. */
 const getExpenseFilingCutoffHistory = catchAsync(async (req, res) => {
   const data = await expenseService.getExpenseFilingCutoffHistory(req.user);
@@ -1083,6 +1110,28 @@ const raiseFinanceIssue = catchAsync(async (req, res) => {
   });
 });
 
+const markExpensePaid = catchAsync(async (req, res) => {
+  const validated = await expenseValidator.markExpensePaidSchema.validateAsync({
+    id: req.params.id,
+    remark: req.body.remark,
+  });
+
+  const expense = await expenseService.markExpensePaid({
+    expenseId: validated.id,
+    remark: validated.remark,
+    currentUser: req.user,
+  });
+  const expenseDoc = await Expense.findById(expense._id)
+    .populate(expensePopulatePaths)
+    .lean();
+
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: 'Expense marked as paid.',
+    data: applyAttachmentUrlTransform(expenseDoc),
+  });
+});
+
 const deleteExpense = catchAsync(async (req, res) => {
   const validated = await expenseValidator.expenseIdSchema.validateAsync({
     id: req.params.id,
@@ -1112,12 +1161,15 @@ module.exports = {
   getTlBulkSummary,
   updateExpenseStatus,
   raiseFinanceIssue,
+  markExpensePaid,
   bulkApproveExpenses,
   bulkRejectExpenses,
   deleteExpense,
   getExpenseFilingCutoff,
   updateExpenseFilingCutoff,
   getExpenseFilingCutoffHistory,
+  setOutstationMandate,
+  listOutstationMandates,
   getExpenseDrafts,
   submitExpenseDrafts,
 };

@@ -583,7 +583,7 @@ async function sendExpenseFilingReminders() {
       const userName = `${user.firstName} ${user.lastName}`;
       emailQueue.push({
         receiverEmails: [user.email],
-        subject: 'Reminder: File your travel expense claims by the 3rd of the following month for expenses incurred in the previous month',
+        subject: 'Reminder: File your travel expense claims by the 2nd of the following month, 5:00 PM for expenses incurred in the previous month',
         message: Helper.getExpenseFilingReminder(userName, dashboardUrl, user.team),
         team: user.team
       });

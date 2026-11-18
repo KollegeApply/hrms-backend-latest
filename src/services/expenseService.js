@@ -6,6 +6,8 @@ const Expense = require('../models/expenseModel');
 const User = require('../models/userModel');
 const Department = require('../models/departmentModel');
 const ExpenseFilingCutoff = require('../models/expenseFilingCutoffModel');
+const ExpenseOutstationMandate = require('../models/expenseOutstationMandateModel');
+const Attendance = require('../models/attendanceModel');
 const {
   TEAM_LUNCH_PER_ATTENDEE,
   MOBILE_BILL_FIXED_AMOUNT,
@@ -17,6 +19,12 @@ const {
   TRIP_CONTEXTS,
   BASE_LOCATION_TRAVEL_PER_MEETING_CAP,
   BASE_LOCATION_TRAVEL_MONTHLY_CAP,
+  OUTSTATION_LOCAL_ADDON_CAP,
+  OUTSTATION_LOCAL_COMMUTE_SUBCATEGORIES,
+  AM_DISALLOWED_INTRACITY_SUBCATEGORIES,
+  TRIP_ORIGINS,
+  EXPENSE_SUBMISSION_DEADLINE_DAY,
+  EXPENSE_SUBMISSION_DEADLINE_HOUR_IST,
   DEFAULT_EXPENSE_FILING_CUTOFF_MESSAGE,
   EXPENSE_POLICY_TAGS,
   EXPENSE_POLICY_TAG_VALUES,
@@ -143,6 +151,115 @@ class ExpenseService {
     return Math.round(Number(n) * 100) / 100;
   }
 
+  /** Account Managers (K3/K4) are the role category with the tightest mode list. */
+  isAccountManagerBand(band) {
+    return band === 'K3' || band === 'K4';
+  }
+
+  /**
+   * Policy: previous month's expenses are filed by the 2nd of the month by
+   * 5:00 PM (IST), and nothing from an earlier month can be claimed later.
+   * An expense dated in the current month is always fine; one dated in the
+   * previous month is fine only until the deadline passes.
+   */
+  assertWithinSubmissionWindow(expenseDate, now = new Date()) {
+    // Shift "now" into IST so the deadline is the same wherever the server runs.
+    const ist = new Date(now.getTime() + (5 * 60 + 30) * 60 * 1000);
+    const nowYear = ist.getUTCFullYear();
+    const nowMonth = ist.getUTCMonth();
+    const nowDay = ist.getUTCDate();
+    const nowHour = ist.getUTCHours();
+
+    const diff =
+      (nowYear - expenseDate.getFullYear()) * 12 + (nowMonth - expenseDate.getMonth());
+    if (diff <= 0) return;
+
+    const beforeDeadline =
+      nowDay < EXPENSE_SUBMISSION_DEADLINE_DAY ||
+      (nowDay === EXPENSE_SUBMISSION_DEADLINE_DAY &&
+        nowHour < EXPENSE_SUBMISSION_DEADLINE_HOUR_IST);
+    if (diff === 1 && beforeDeadline) return;
+
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Expenses of a previous month had to be filed by the ${EXPENSE_SUBMISSION_DEADLINE_DAY}nd of the month by ${EXPENSE_SUBMISSION_DEADLINE_HOUR_IST - 12}:00 PM. This expense can no longer be claimed.`
+    );
+  }
+
+  /** Office check-in on the claimed date (biometric / web check-in). */
+  async hasOfficeCheckIn(userId, expenseDate) {
+    const dayStart = new Date(expenseDate);
+    dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    const record = await Attendance.findOne({
+      user: this.toObjectId(userId),
+      $or: [
+        { date: { $gte: dayStart, $lt: dayEnd } },
+        { checkInTime: { $gte: dayStart, $lt: dayEnd } },
+        { biometricCheckIn: { $gte: dayStart, $lt: dayEnd } },
+      ],
+    })
+      .select('checkInTime biometricCheckIn')
+      .lean();
+    return Boolean(record && (record.checkInTime || record.biometricCheckIn));
+  }
+
+  /** Has the out-of-station mandate been marked complete for this user-month? */
+  async isOutstationMandateCompleted(userId, expenseDate) {
+    const row = await ExpenseOutstationMandate.findOne({
+      userId: this.toObjectId(userId),
+      year: expenseDate.getFullYear(),
+      month: expenseDate.getMonth() + 1,
+    })
+      .select('completed')
+      .lean();
+    return Boolean(row?.completed);
+  }
+
+  /** Expense-dept only — employees whose out-of-station mandate is complete for a month. */
+  async listOutstationMandates(currentUser, { year, month }) {
+    const isExpenseDeptUser = await this.isExpenseDepartmentUser(currentUser.id);
+    if (!isExpenseDeptUser) {
+      throw new ApiError(
+        httpStatus.FORBIDDEN,
+        'Only the Expense department can view the out-of-station travel mandate.'
+      );
+    }
+    return ExpenseOutstationMandate.find({ year, month, completed: true })
+      .populate('userId', 'firstName lastName employeeId email expenseBand')
+      .sort({ updatedAt: -1 })
+      .lean();
+  }
+
+  /** Expense-dept only — set the monthly out-of-station mandate status of an employee. */
+  async setOutstationMandate(currentUser, { userId, year, month, completed, remark }) {
+    const isExpenseDeptUser = await this.isExpenseDepartmentUser(currentUser.id);
+    if (!isExpenseDeptUser) {
+      throw new ApiError(
+        httpStatus.FORBIDDEN,
+        'Only the Expense department can update the out-of-station travel mandate.'
+      );
+    }
+    const target = await User.findOne({ _id: userId, isDeleted: { $ne: true } })
+      .select('_id')
+      .lean();
+    if (!target) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
+    }
+    return ExpenseOutstationMandate.findOneAndUpdate(
+      { userId: this.toObjectId(userId), year, month },
+      {
+        $set: {
+          completed: Boolean(completed),
+          remark: remark?.trim() || undefined,
+          updatedBy: currentUser.id,
+        },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean();
+  }
+
   /** Sales Expense carries KAPP ID / Institute Name; Normal Expense never does. */
   isSalesExpense(payload) {
     return payload.expenseCategory !== 'normal';
@@ -168,6 +285,11 @@ class ExpenseService {
       'admin-approved',
       'expense-returned',
     ];
+  }
+
+  /** Finally approved claims — `paid` is an approved claim Finance has reimbursed. */
+  expenseApprovedStatuses() {
+    return ['expense-approved', 'paid'];
   }
 
   /** Existing rejection statuses in the Expense workflow. */
@@ -337,27 +459,94 @@ class ExpenseService {
         }
       }
 
+      const monthStart = new Date(expenseDate.getFullYear(), expenseDate.getMonth(), 1);
+      const monthEnd = new Date(
+        expenseDate.getFullYear(),
+        expenseDate.getMonth() + 1,
+        0,
+        23,
+        59,
+        59,
+        999
+      );
+      // Anything not yet rejected counts (still in-flight or fully approved).
+      const relevantStatuses = [
+        ...this.expensePendingStatuses(),
+        ...this.expenseApprovedStatuses(),
+      ];
+
       if (payload.tripContext === TRIP_CONTEXTS.BASE_LOCATION) {
+        // Mode restriction — Account Managers: bus, auto, metro, personal 2-wheeler.
+        if (
+          this.isAccountManagerBand(band) &&
+          AM_DISALLOWED_INTRACITY_SUBCATEGORIES.includes(sc)
+        ) {
+          addBreach(
+            'travel-mode-not-allowed',
+            'Travel mode not allowed for your role',
+            0,
+            payload.amount,
+            `${sc} is not an allowed intracity mode for an Account Manager (Bus, Auto, Metro and personal 2-wheeler only).`
+          );
+        }
+
+        // Only Office -> Client -> Office is reimbursable.
+        // Outbound leg must start at the Office; Return leg must end at the Office.
+        const legEndpoint =
+          payload.tripLeg === 'Return' ? payload.tripReturnTo : payload.tripOrigin;
+        if (legEndpoint && legEndpoint !== TRIP_ORIGINS.OFFICE) {
+          addBreach(
+            'trip-origin-not-office',
+            'Trip must start from the Office',
+            0,
+            payload.amount,
+            'Only Office → Client → Office travel is reimbursable. Home-to-client and client-to-home travel is not reimbursed.'
+          );
+        }
+
+        // Office check-in is a condition of eligibility (biometric / check-in data).
+        const checkedIn = await this.hasOfficeCheckIn(user.id, expenseDate);
+        if (!checkedIn) {
+          addBreach(
+            'office-check-in-missing',
+            'No office check-in on the claimed date',
+            0,
+            payload.amount,
+            'No office check-in / biometric record was found for the claimed date. Intracity claims must be verified against the office check-in.'
+          );
+        }
+
+        const kappId = String(payload.kappId || '').trim();
         const perMeetingCap = BASE_LOCATION_TRAVEL_PER_MEETING_CAP[band];
-        if (perMeetingCap != null && Number(payload.amount) > perMeetingCap) {
+
+        // Cost per meeting is a binding cap: every line of one KAAP ID + date
+        // (e.g. both legs, toll, parking) is one meeting and shares the cap.
+        let meetingTotal = Number(payload.amount);
+        if (kappId) {
+          const sameMeeting = await Expense.find({
+            ...excludeSelf,
+            userId: this.toObjectId(user.id),
+            type: 'Travel',
+            tripContext: TRIP_CONTEXTS.BASE_LOCATION,
+            kappId,
+            date: expenseDate,
+            status: { $in: relevantStatuses },
+            isDeleted: { $ne: true },
+          })
+            .select('amount')
+            .lean();
+          meetingTotal += sameMeeting.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+        }
+        meetingTotal = this.roundMoney(meetingTotal);
+        if (perMeetingCap != null && meetingTotal > perMeetingCap) {
           addBreach(
             'base-location-travel-per-meeting',
             'Base location (Intracity) travel per-meeting cap',
             perMeetingCap,
-            payload.amount,
-            `Claimed Rs.${this.roundMoney(payload.amount)} against a per-meeting cap of Rs.${perMeetingCap} for band ${band}.`
+            meetingTotal,
+            `Claimed Rs.${meetingTotal} for this meeting against a per-meeting cap of Rs.${perMeetingCap} for band ${band}.`
           );
         }
-
-        const y = expenseDate.getFullYear();
-        const m = expenseDate.getMonth();
-        const monthStart = new Date(y, m, 1);
-        const monthEnd = new Date(y, m + 1, 0, 23, 59, 59, 999);
-        // "Approved/created" per PRD = anything not yet rejected (still in-flight or fully approved).
-        const relevantStatuses = [
-          ...this.expensePendingStatuses(),
-          'expense-approved',
-        ];
 
         const monthToDate = await Expense.find({
           ...excludeSelf,
@@ -368,7 +557,7 @@ class ExpenseService {
           status: { $in: relevantStatuses },
           isDeleted: { $ne: true },
         })
-          .select('amount')
+          .select('amount kappId date')
           .lean();
 
         const existingSum = monthToDate.reduce(
@@ -383,6 +572,65 @@ class ExpenseService {
             BASE_LOCATION_TRAVEL_MONTHLY_CAP,
             projectedTotal,
             `Takes this month's Base location (Intracity) travel total to Rs.${projectedTotal}, against a monthly cap of Rs.${BASE_LOCATION_TRAVEL_MONTHLY_CAP}.`
+          );
+        }
+
+        // Monthly entitlement = per-meeting cap x evidenced meetings
+        // (distinct KAAP ID + date), so spend can't exceed what the
+        // meetings the person actually held would have earned.
+        if (kappId && perMeetingCap != null) {
+          const meetingKeys = new Set(
+            monthToDate
+              .filter((e) => String(e.kappId || '').trim())
+              .map((e) => `${String(e.kappId).trim()}|${new Date(e.date).toDateString()}`)
+          );
+          meetingKeys.add(`${kappId}|${expenseDate.toDateString()}`);
+          const entitlement = perMeetingCap * meetingKeys.size;
+          if (projectedTotal > entitlement) {
+            addBreach(
+              'base-location-travel-entitlement',
+              'Monthly entitlement (cap × meetings)',
+              entitlement,
+              projectedTotal,
+              `Month's intracity travel of Rs.${projectedTotal} exceeds the entitlement of Rs.${entitlement} (Rs.${perMeetingCap} × ${meetingKeys.size} evidenced meeting${meetingKeys.size === 1 ? '' : 's'}).`
+            );
+          }
+        }
+      } else if (
+        payload.tripContext === TRIP_CONTEXTS.OUTSTATION &&
+        OUTSTATION_LOCAL_COMMUTE_SUBCATEGORIES.includes(sc)
+      ) {
+        // Local commute in the outstation city (hotel -> client -> hotel) is
+        // met only by the conditional add-on, released when the monthly
+        // out-of-station mandate is completed in full (all-or-nothing).
+        const mandateDone = await this.isOutstationMandateCompleted(user.id, expenseDate);
+        const addOnCap = mandateDone ? OUTSTATION_LOCAL_ADDON_CAP[band] || 0 : 0;
+
+        const monthLocal = await Expense.find({
+          ...excludeSelf,
+          userId: this.toObjectId(user.id),
+          type: 'Travel',
+          tripContext: TRIP_CONTEXTS.OUTSTATION,
+          subCategory: { $in: OUTSTATION_LOCAL_COMMUTE_SUBCATEGORIES },
+          date: { $gte: monthStart, $lte: monthEnd },
+          status: { $in: relevantStatuses },
+          isDeleted: { $ne: true },
+        })
+          .select('amount')
+          .lean();
+        const projectedLocal = this.roundMoney(
+          monthLocal.reduce((sum, e) => sum + Number(e.amount || 0), 0) +
+            Number(payload.amount)
+        );
+        if (projectedLocal > addOnCap) {
+          addBreach(
+            'outstation-local-addon',
+            'Out-of-station local commute add-on',
+            addOnCap,
+            projectedLocal,
+            mandateDone
+              ? `Takes this month's out-of-station local commute to Rs.${projectedLocal}, against the add-on of Rs.${addOnCap}.`
+              : `The out-of-station travel mandate is not marked complete for this month, so the add-on (Rs.${OUTSTATION_LOCAL_ADDON_CAP[band] || 0}) is withheld.`
           );
         }
       }
@@ -588,6 +836,7 @@ class ExpenseService {
         'Future dates are not allowed for expense submission.'
       );
     }
+    this.assertWithinSubmissionWindow(expenseDate);
 
     const userWithLeads = await User.findById(user.id)
       .select('teamLeadId subTeamLeadId team role')
@@ -618,6 +867,8 @@ class ExpenseService {
         type: payload.type,
         amount: payload.amount,
         name: payload.name,
+        // Both legs of one meeting (Outbound / Return) are separate lines.
+        ...(payload.type === 'Travel' ? { tripLeg: payload.tripLeg || 'Outbound' } : {}),
         isDeleted: { $ne: true },
       });
       if (duplicateExpense) {
@@ -720,6 +971,20 @@ class ExpenseService {
         ? String(payload.instituteName || '').trim()
         : undefined,
       tripContext: payload.type === 'Travel' ? payload.tripContext : undefined,
+      tripLeg:
+        payload.type === 'Travel' ? payload.tripLeg || 'Outbound' : undefined,
+      tripOrigin:
+        payload.type === 'Travel' && payload.tripLeg !== 'Return'
+          ? payload.tripOrigin || undefined
+          : undefined,
+      tripReturnTo:
+        payload.type === 'Travel' && payload.tripLeg === 'Return'
+          ? payload.tripReturnTo || undefined
+          : undefined,
+      tripOriginDetail:
+        payload.type === 'Travel' ? payload.tripOriginDetail?.trim() || undefined : undefined,
+      destination:
+        payload.type === 'Travel' ? payload.destination?.trim() || undefined : undefined,
       amount: Number(payload.amount),
       purpose: payload.purpose,
       attachmentUrl: payload.attachmentUrl || undefined,
@@ -782,6 +1047,11 @@ class ExpenseService {
         'Future dates are not allowed for expense submission.'
       );
     }
+    // A rejected claim being corrected was already filed in time; a draft
+    // (or a changed date) is a fresh filing and must respect the window.
+    if (expense.isDraft || expenseDate.getTime() !== new Date(expense.date).setHours(0, 0, 0, 0)) {
+      this.assertWithinSubmissionWindow(expenseDate);
+    }
 
     const userWithLeads = await User.findById(user.id)
       .select('teamLeadId subTeamLeadId team role')
@@ -814,6 +1084,8 @@ class ExpenseService {
         type: payload.type,
         amount: payload.amount,
         name: payload.name,
+        // Both legs of one meeting (Outbound / Return) are separate lines.
+        ...(payload.type === 'Travel' ? { tripLeg: payload.tripLeg || 'Outbound' } : {}),
         isDeleted: { $ne: true },
       });
       if (duplicateExpense) {
@@ -927,6 +1199,19 @@ class ExpenseService {
         ? String(payload.instituteName || '').trim()
         : undefined;
       expense.tripContext = payload.type === 'Travel' ? payload.tripContext : undefined;
+      expense.tripLeg = payload.type === 'Travel' ? payload.tripLeg || 'Outbound' : undefined;
+      expense.tripOrigin =
+        payload.type === 'Travel' && payload.tripLeg !== 'Return'
+          ? payload.tripOrigin || undefined
+          : undefined;
+      expense.tripReturnTo =
+        payload.type === 'Travel' && payload.tripLeg === 'Return'
+          ? payload.tripReturnTo || undefined
+          : undefined;
+      expense.tripOriginDetail =
+        payload.type === 'Travel' ? payload.tripOriginDetail?.trim() || undefined : undefined;
+      expense.destination =
+        payload.type === 'Travel' ? payload.destination?.trim() || undefined : undefined;
       expense.amount = Number(payload.amount);
       expense.purpose = payload.purpose;
       expense.attachmentUrl = payload.attachmentUrl || undefined;
@@ -1098,12 +1383,14 @@ class ExpenseService {
       'expense-returned',
       'expense-approved',
       'expense-rejected',
+      'paid',
     ];
     // Finance Review Fin. Status dropdown options only — "All" must match the dropdown.
     const financeQueueStatuses = [
       'admin-approved',
       'expense-returned',
       'expense-approved',
+      'paid',
     ];
 
     if (statuses.length) {
@@ -1531,6 +1818,43 @@ class ExpenseService {
     return expense.save();
   }
 
+  /**
+   * Finance "Mark as Paid" — the last step of the flow. Only an
+   * `expense-approved` claim can be paid, and a reason is mandatory. The
+   * reason is kept in `financeRemark` and in the approval history.
+   */
+  async markExpensePaid({ expenseId, remark, currentUser }) {
+    if (!(await this.canRaiseFinanceIssue(currentUser))) {
+      throw new ApiError(
+        httpStatus.FORBIDDEN,
+        'Only the Finance department or Admin can mark an expense as paid.'
+      );
+    }
+    const expense = await Expense.findById(expenseId);
+    if (!expense || expense.isDeleted) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'Expense not found.');
+    }
+    if (expense.status !== 'expense-approved') {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        `Only an Expense Approved claim can be marked as paid. This expense is '${expense.status}'.`
+      );
+    }
+
+    const actorId = String(currentUser.id || currentUser._id || '');
+    expense.status = 'paid';
+    expense.paidAt = new Date();
+    expense.paidBy = actorId;
+    expense.financeRemark = remark;
+    this.pushApprovalHistory(expense, {
+      action: 'paid',
+      byUserId: actorId,
+      remark,
+      stage: 'finance-payment',
+    });
+    return expense.save();
+  }
+
   async bulkUpdateExpenseStatus({ expenseIds, remark, action, currentUser }) {
     const succeeded = [];
     const failed = [];
@@ -1648,7 +1972,7 @@ class ExpenseService {
     for (const entry of statuses) {
       const normalized = entry.toLowerCase();
       if (normalized === 'approved') {
-        mapped.push('expense-approved');
+        mapped.push(...this.expenseApprovedStatuses());
       } else if (normalized === 'pending') {
         mapped.push(...this.expensePendingStatuses());
       } else if (normalized === 'rejected') {
@@ -1869,7 +2193,7 @@ class ExpenseService {
     const perPage = Math.max(1, Number(limit) || 10);
     const skip = (currentPage - 1) * perPage;
     const pendingStatuses = this.expensePendingStatuses();
-    const approvedStatus = 'expense-approved';
+    const approvedStatuses = this.expenseApprovedStatuses();
 
     const summaryFacet = [
       {
@@ -1879,7 +2203,7 @@ class ExpenseService {
           totalAppliedExpense: { $sum: '$amount' },
           totalApprovedExpense: {
             $sum: {
-              $cond: [{ $eq: ['$status', approvedStatus] }, '$amount', 0],
+              $cond: [{ $in: ['$status', approvedStatuses] }, '$amount', 0],
             },
           },
           totalPendingExpense: {
@@ -1920,7 +2244,7 @@ class ExpenseService {
         applied: { $sum: '$amount' },
         approved: {
           $sum: {
-            $cond: [{ $eq: ['$status', approvedStatus] }, '$amount', 0],
+            $cond: [{ $in: ['$status', approvedStatuses] }, '$amount', 0],
           },
         },
       },
@@ -2046,7 +2370,7 @@ class ExpenseService {
         applied: { $sum: '$amount' },
         approved: {
           $sum: {
-            $cond: [{ $eq: ['$status', approvedStatus] }, '$amount', 0],
+            $cond: [{ $in: ['$status', approvedStatuses] }, '$amount', 0],
           },
         },
         employeeIds: { $addToSet: '$userId' },
@@ -2607,7 +2931,7 @@ class ExpenseService {
     match.status = {
       $in: statuses.length
         ? statuses
-        : [...this.expensePendingStatuses(), 'expense-approved'],
+        : [...this.expensePendingStatuses(), ...this.expenseApprovedStatuses()],
     };
 
     const [result] = await Expense.aggregate([
@@ -2665,7 +2989,7 @@ class ExpenseService {
     const userId = this.toObjectId(targetUserId);
     const pendingStatuses = this.expensePendingStatuses();
     const rejectedStatuses = this.expenseRejectedStatuses();
-    const approvedStatus = 'expense-approved';
+    const approvedStatuses = this.expenseApprovedStatuses();
 
     // An explicit fromDate/toDate (the dashboard's date-range filter) scopes
     // every card and chart to that window; otherwise everything is all-time
@@ -2722,12 +3046,12 @@ class ExpenseService {
                 appliedCount: { $sum: 1 },
                 approvedAmount: {
                   $sum: {
-                    $cond: [{ $eq: ['$status', approvedStatus] }, '$amount', 0],
+                    $cond: [{ $in: ['$status', approvedStatuses] }, '$amount', 0],
                   },
                 },
                 approvedCount: {
                   $sum: {
-                    $cond: [{ $eq: ['$status', approvedStatus] }, 1, 0],
+                    $cond: [{ $in: ['$status', approvedStatuses] }, 1, 0],
                   },
                 },
                 pendingAmount: {
@@ -2799,7 +3123,7 @@ class ExpenseService {
                 applied: { $sum: '$amount' },
                 approved: {
                   $sum: {
-                    $cond: [{ $eq: ['$status', approvedStatus] }, '$amount', 0],
+                    $cond: [{ $in: ['$status', approvedStatuses] }, '$amount', 0],
                   },
                 },
               },
@@ -3008,6 +3332,7 @@ class ExpenseService {
         'No draft expenses found for this date and KAPP ID.'
       );
     }
+    this.assertWithinSubmissionWindow(day);
 
     for (const draft of drafts) {
       draft.isDraft = false;
