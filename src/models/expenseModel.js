@@ -86,9 +86,14 @@ const expenseSchema = new Schema(
         'expense-rejected',
         'expense-returned',
         'expense-approved',
+        /** Finance marked the approved claim as paid (reimbursement done). */
+        'paid',
       ],
       default: 'submitted',
     },
+    /** Set when Finance marks an `expense-approved` claim as `paid`. */
+    paidAt: { type: Date },
+    paidBy: { type: Schema.Types.ObjectId, ref: 'User' },
     tlId: { type: Schema.Types.ObjectId, ref: 'User' },
     tlRemark: { type: String, trim: true, maxlength: 500 },
     expenseRemark: { type: String, trim: true, maxlength: 500 },

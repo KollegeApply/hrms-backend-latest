@@ -37,6 +37,8 @@ router.put('/:id', safeExpenseAttachmentUpload, expenseController.updateExpense)
 router.put('/:id/status', expenseController.updateExpenseStatus);
 // Finance "Raise an Issue" — records a note on the claim; never changes its status.
 router.post('/:id/issues', expenseController.raiseFinanceIssue);
-router.delete('/:id', expenseController.deleteExpense);
+// Finance "Mark as Paid" — moves an `expense-approved` claim to `paid` with a reason.
+router.put('/:id/paid', expenseController.markExpensePaid);
+router.delete('/:id',expenseController.deleteExpense);
 
 module.exports = router;
