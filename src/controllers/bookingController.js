@@ -13,6 +13,28 @@ const listRooms = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).json({ status: true, data: rooms });
 });
 
+const listRoomBlocks = catchAsync(async (req, res) => {
+  const { date } = await validator.getRoomBlocksQuerySchema.validateAsync(req.query);
+  const blocks = await bookingService.listRoomBlocks({ date, userId: req.user.id });
+  res.status(httpStatus.OK).json({ status: true, data: blocks });
+});
+
+const setRoomBlock = catchAsync(async (req, res) => {
+  const { id } = await validator.idParamSchema.validateAsync({ id: req.params.id });
+  const { date, blocked } = await validator.setRoomBlockSchema.validateAsync(req.body);
+  const block = await bookingService.setRoomBlock({
+    roomId: id,
+    date,
+    blocked,
+    user: req.user,
+  });
+  res.status(httpStatus.OK).json({
+    status: true,
+    message: blocked ? 'Room blocked for the day' : 'Room unblocked',
+    data: block,
+  });
+});
+
 const getBookings = catchAsync(async (req, res) => {
   const query = await validator.getBookingsQuerySchema.validateAsync(req.query);
   const bookings = await bookingService.getBookings({
@@ -330,6 +352,6 @@ const submitMom = catchAsync(async (req, res) => {
   res.status(httpStatus.OK).json({ status: true, message: 'MOM sent successfully', data: result });
 });
 
-module.exports = { listRooms, getBookings, createBooking, cancelBooking, updateBooking, submitMom };
+module.exports = { listRooms, listRoomBlocks, setRoomBlock, getBookings, createBooking, cancelBooking, updateBooking, submitMom };
 
 
