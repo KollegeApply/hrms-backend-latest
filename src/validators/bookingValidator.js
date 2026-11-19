@@ -69,4 +69,21 @@ const submitMomSchema = Joi.object({
 
 module.exports.submitMomSchema = submitMomSchema;
 
+// Room day-block (toggle) schemas — `date` is the calendar day as YYYY-MM-DD.
+const dayStringSchema = Joi.string()
+  .pattern(/^\d{4}-\d{2}-\d{2}$/)
+  .messages({ 'string.pattern.base': 'date must be in YYYY-MM-DD format' });
+
+const getRoomBlocksQuerySchema = Joi.object({
+  date: dayStringSchema.required().messages({ 'any.required': 'date is required.' }),
+}).options({ stripUnknown: true });
+
+const setRoomBlockSchema = Joi.object({
+  date: dayStringSchema.required().messages({ 'any.required': 'date is required.' }),
+  blocked: Joi.boolean().required().messages({ 'any.required': 'blocked is required.' }),
+}).options({ stripUnknown: true });
+
+module.exports.getRoomBlocksQuerySchema = getRoomBlocksQuerySchema;
+module.exports.setRoomBlockSchema = setRoomBlockSchema;
+
 

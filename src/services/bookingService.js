@@ -2,13 +2,113 @@ const ApiError = require('../utility/ApiError');
 const { default: httpStatus } = require('http-status');
 const Booking = require('../models/bookingModel');
 const Rooms = require('../models/roomModel');
+const RoomBlock = require('../models/roomBlockModel');
 const Helper = require('../utility/helper');
 const { getTeamEmailConfig } = require('../utility/constants');
 const moment = require('moment-timezone');
 
+const BLOCK_TZ = 'Asia/Kolkata';
+const BLOCK_DAY_FORMAT = 'YYYY-MM-DD';
+
 class BookingService {
   async listRooms() {
     return Rooms.find({}).sort({ name: 1 });
+  }
+
+  /** Every IST calendar day (`YYYY-MM-DD`) a booking window touches. */
+  blockDaysForRange(startTime, endTime) {
+    const start = moment(startTime).tz(BLOCK_TZ);
+    // End is exclusive: a booking ending exactly at midnight does not touch the next day.
+    const end = moment(endTime).tz(BLOCK_TZ).subtract(1, 'millisecond');
+    const days = [];
+    const cursor = start.clone().startOf('day');
+    while (cursor.isSameOrBefore(end, 'day') && days.length < 31) {
+      days.push(cursor.format(BLOCK_DAY_FORMAT));
+      cursor.add(1, 'day');
+    }
+    return days;
+  }
+
+  /** Blocks for one day, with the blocker's name for the hover tooltip. */
+  async listRoomBlocks({ date, userId }) {
+    const blocks = await RoomBlock.find({ date }).populate(
+      'blockedBy',
+      'firstName lastName email'
+    );
+    // `isMine` is decided here from the authenticated user, so the UI never has
+    // to guess the logged-in user's id from the profile shape.
+    return blocks.map((b) => ({
+      ...b.toObject(),
+      isMine: String(b.blockedBy?._id || b.blockedBy) === String(userId),
+    }));
+  }
+
+  /**
+   * Turn the day-block for a room on or off.
+   * - ON: any user, for today or a future day. One block per room per day.
+   * - OFF: only the user who switched it on.
+   * The block is keyed by day, so it never carries over to the next day.
+   */
+  async setRoomBlock({ roomId, date, blocked, user }) {
+    const room = await Rooms.findById(roomId);
+    if (!room) {
+      throw new ApiError(httpStatus.NOT_FOUND, 'Room not found');
+    }
+
+    const existing = await RoomBlock.findOne({ roomId, date });
+
+    if (blocked) {
+      if (date < moment().tz(BLOCK_TZ).format(BLOCK_DAY_FORMAT)) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Cannot block a room for a past date');
+      }
+      if (existing) {
+        await existing.populate('blockedBy', 'firstName lastName email');
+        throw new ApiError(
+          httpStatus.CONFLICT,
+          `Room is already blocked for this day by ${this.blockerName(existing.blockedBy)}`
+        );
+      }
+      const created = await RoomBlock.create({ roomId, date, blockedBy: user.id });
+      return RoomBlock.findById(created._id).populate('blockedBy', 'firstName lastName email');
+    }
+
+    if (!existing) return null; // already off
+    const isBlocker = existing.blockedBy.toString() === String(user.id);
+    if (!isBlocker) {
+      await existing.populate('blockedBy', 'firstName lastName email');
+      throw new ApiError(
+        httpStatus.FORBIDDEN,
+        `Only ${this.blockerName(existing.blockedBy)} can unblock this room`
+      );
+    }
+    await existing.deleteOne();
+    return null;
+  }
+
+  blockerName(u) {
+    const full = [u?.firstName, u?.lastName].filter(Boolean).join(' ').trim();
+    return full || u?.email || 'another user';
+  }
+
+  /**
+   * Reject a booking window that falls on a day the room is blocked by
+   * someone else. The blocker themselves can still book their blocked room.
+   */
+  async assertRoomNotBlocked({ roomId, startTime, endTime, userId }) {
+    const days = this.blockDaysForRange(startTime, endTime);
+    const blocks = await RoomBlock.find({ roomId, date: { $in: days } }).populate(
+      'blockedBy',
+      'firstName lastName email'
+    );
+    const foreign = blocks.find(
+      (b) => String(b.blockedBy?._id || b.blockedBy) !== String(userId)
+    );
+    if (foreign) {
+      throw new ApiError(
+        httpStatus.CONFLICT,
+        `Room is blocked for ${foreign.date} by ${this.blockerName(foreign.blockedBy)}`
+      );
+    }
   }
 
   async getBookings({ roomId, date, startTime, endTime, status, userType, userId }) {
@@ -68,6 +168,8 @@ class BookingService {
     if (!room) {
       throw new ApiError(httpStatus.NOT_FOUND, 'Room not found');
     }
+
+    await this.assertRoomNotBlocked({ roomId, startTime, endTime, userId });
 
     // Overlap check for same room, pending/confirmed
     const overlap = await Booking.findOne({
@@ -137,6 +239,16 @@ class BookingService {
     const nextRoom = updates.roomId || booking.roomId;
     const nextStart = updates.startTime ? new Date(updates.startTime) : booking.startTime;
     const nextEnd = updates.endTime ? new Date(updates.endTime) : booking.endTime;
+
+    // Only re-check the block when the room or time actually changes.
+    if (updates.roomId || updates.startTime || updates.endTime) {
+      await this.assertRoomNotBlocked({
+        roomId: nextRoom,
+        startTime: nextStart,
+        endTime: nextEnd,
+        userId: booking.userId,
+      });
+    }
 
     const overlap = await Booking.findOne({
       _id: { $ne: booking._id },
