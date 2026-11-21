@@ -9,6 +9,7 @@ router.use(authenticateUser);
 router.post('/verify-password', controller.verifyPassword);
 router.get('/config', controller.getConfig);
 router.get('/cc-users', controller.getCcUsers);
+router.post('/send-otp', controller.sendOtp);
 router.post('/', controller.apply);
 router.get('/mine', controller.getMine);
 

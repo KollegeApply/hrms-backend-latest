@@ -8,6 +8,9 @@ const applySchema = Joi.object({
   emailSubject: Joi.string().trim().min(1).max(300).required(),
   emailBody: Joi.string().trim().min(1).max(10000).required(),
   lastWorkingDay: Joi.date().required(),
+  otp: Joi.string().pattern(/^\d{4}$/).required().messages({
+    'string.pattern.base': 'Enter the 4-digit OTP.',
+  }),
   extraCc: Joi.array().items(Joi.string().trim().email()).default([]),
 });
 
@@ -42,6 +45,10 @@ const getCcUsers = catchAsync(async (req, res) => {
   respond(res, await resignationService.getCcUsers(req.user));
 });
 
+const sendOtp = catchAsync(async (req, res) => {
+  respond(res, await resignationService.sendApplyOtp(req.user), 'OTP sent to your email.');
+});
+
 const apply = catchAsync(async (req, res) => {
   const payload = await applySchema.validateAsync(req.body);
   const data = await resignationService.applyResignation(req.user, payload);
@@ -70,4 +77,4 @@ const hrAction = catchAsync(async (req, res) => {
   respond(res, await resignationService.hrAction(req.user, req.params.id, payload), 'Updated.');
 });
 
-module.exports = { verifyPassword, getConfig, getCcUsers, apply, getMine, getTl, getHr, tlAction, hrAction };
+module.exports = { verifyPassword, getConfig, getCcUsers, sendOtp, apply, getMine, getTl, getHr, tlAction, hrAction };
