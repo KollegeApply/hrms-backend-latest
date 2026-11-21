@@ -150,6 +150,10 @@ const userSchema = new Schema(
       required: false,
       select: false, // Don't return expiry by default
     },
+    // Resignation submit OTP (hashed); see resignationService.
+    resignationOtp: { type: String, select: false },
+    resignationOtpExpires: { type: Date, select: false },
+    resignationOtpAttempts: { type: Number, default: 0, select: false },
     formStatus : {
       type: String,
       enum: ["pending","draft","submitted","reminder_sent","underReview","approved"],

@@ -1,4 +1,5 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { default: httpStatus } = require('http-status');
 const User = require('../models/userModel');
 const Resignation = require('../models/resignationModel');
@@ -10,6 +11,11 @@ const {
   getTeamEmailConfig,
   EMPLOYEE_STATUS,
 } = require('../utility/constants');
+
+const OTP_EXPIRY_MINUTES = 10;
+const OTP_RESEND_SECONDS = 30;
+const OTP_MAX_ATTEMPTS = 5;
+const hashOtp = (otp) => crypto.createHash('sha256').update(String(otp)).digest('hex');
 
 const HR_ROLES = ['hr', 'admin', 'subadmin'];
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
@@ -131,8 +137,70 @@ const getCcUsers = async (actor) => {
   }));
 };
 
+// Emails a 4-digit OTP to the employee; it must be entered to submit the resignation.
+const sendApplyOtp = async (actor) => {
+  const user = await User.findById(actor.id).select(
+    '+resignationOtp +resignationOtpExpires +resignationOtpAttempts email team'
+  );
+  if (!user) throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
+
+  if (user.resignationOtpExpires) {
+    const sentAt = user.resignationOtpExpires.getTime() - OTP_EXPIRY_MINUTES * 60 * 1000;
+    const wait = Math.ceil((sentAt + OTP_RESEND_SECONDS * 1000 - Date.now()) / 1000);
+    if (wait > 0) {
+      throw new ApiError(httpStatus.TOO_MANY_REQUESTS, `Please wait ${wait}s before requesting another OTP.`);
+    }
+  }
+
+  const otp = String(crypto.randomInt(0, 10000)).padStart(4, '0');
+  user.resignationOtp = hashOtp(otp);
+  user.resignationOtpExpires = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
+  user.resignationOtpAttempts = 0;
+  await user.save();
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; font-size: 14px; color: #222;">
+      <p>Use this OTP to submit your resignation in HRMS:</p>
+      <p style="font-size: 28px; letter-spacing: 8px; font-weight: bold;">${otp}</p>
+      <p>It is valid for ${OTP_EXPIRY_MINUTES} minutes. If you did not request this, ignore this email.</p>
+    </div>`;
+  try {
+    await Helper.sendEmail({
+      receiverEmails: [user.email],
+      subject: 'HRMS Resignation OTP',
+      message: html,
+      team: actor.team,
+    });
+  } catch (err) {
+    logger.error(`Resignation OTP email failed for ${user.id}: ${err?.message}`);
+    throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, 'Could not send the OTP email. Try again.');
+  }
+  return { expiresInMinutes: OTP_EXPIRY_MINUTES };
+};
+
+const consumeApplyOtp = async (userId, otp) => {
+  const user = await User.findById(userId).select(
+    '+resignationOtp +resignationOtpExpires +resignationOtpAttempts'
+  );
+  if (!user?.resignationOtp || !user.resignationOtpExpires || user.resignationOtpExpires < new Date()) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'OTP expired. Please request a new one.');
+  }
+  if ((user.resignationOtpAttempts || 0) >= OTP_MAX_ATTEMPTS) {
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Too many wrong attempts. Please request a new OTP.');
+  }
+  if (user.resignationOtp !== hashOtp(otp)) {
+    user.resignationOtpAttempts = (user.resignationOtpAttempts || 0) + 1;
+    await user.save();
+    throw new ApiError(httpStatus.BAD_REQUEST, 'Incorrect OTP.');
+  }
+  user.resignationOtp = undefined;
+  user.resignationOtpExpires = undefined;
+  user.resignationOtpAttempts = 0;
+  await user.save();
+};
+
 const applyResignation = async (user, payload) => {
-  const { emailSubject, emailBody, lastWorkingDay, extraCc = [] } = payload;
+  const { emailSubject, emailBody, lastWorkingDay, extraCc = [], otp } = payload;
 
   const cfg = await getApplyConfig(user.id, user.team);
   if (cfg.hasActiveRequest) {
@@ -155,6 +223,8 @@ const applyResignation = async (user, payload) => {
   if (lwd < toDay(new Date())) {
     throw new ApiError(httpStatus.BAD_REQUEST, 'Last working day cannot be in the past.');
   }
+
+  await consumeApplyOtp(user.id, otp);
 
   const cc = uniqueEmails([...cfg.cc, ...extra]).filter((e) => e !== cfg.to.toLowerCase());
 
@@ -355,6 +425,7 @@ module.exports = {
   getApplyConfig,
   getCcUsers,
   applyResignation,
+  sendApplyOtp,
   getMine,
   getForTl,
   getForHr,
