@@ -5,6 +5,7 @@
 // own shared secret env var, checked by verifyServiceSecret.
 const express = require('express');
 const userController = require('../controllers/userController');
+const salesCrmController = require('../controllers/salesCrmController');
 const { verifyServiceSecret } = require('../middleware/serviceAuthMiddleware');
 
 const router = express.Router();
@@ -15,6 +16,14 @@ router.get(
   '/sales-crm/users',
   verifyServiceSecret('HRMS_API_KEY'),
   userController.searchUsersForSalesCrm
+);
+
+// Kapp Sales CRM: Sales-department employees on APPROVED full-day leave on a day
+// (?date=YYYY-MM-DD, IST), so its DRS & Compliance report shows them as on leave.
+router.get(
+  '/sales-crm/leaves',
+  verifyServiceSecret('HRMS_API_KEY'),
+  salesCrmController.leavesForSalesCrm
 );
 
 module.exports = router;
