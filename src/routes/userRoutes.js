@@ -179,6 +179,11 @@ router.post(
   authenticateUser,
   userController?.changePassword
 );
+router.post(
+  '/change-password/send-otp',
+  authenticateUser,
+  userController?.sendPasswordChangeOtp
+);
 
 router.post('/forgot-password', userController?.forgotPassword); // Request OTP email
 // Update the handler for this route

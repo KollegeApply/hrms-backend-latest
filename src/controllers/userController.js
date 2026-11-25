@@ -397,19 +397,37 @@ const login = catchAsync(async (req, res) => {
 
 const changePassword = catchAsync(async (req, res) => {
   // 1. Validate request body
-  const { oldPassword, newPassword } =
+  const { oldPassword, newPassword, otp } =
     await userValidator.changePasswordSchema.validateAsync(req.body);
 
   // 2. Get user ID from authenticated user
   const userId = req?.user?.id; // Assumes authenticateUser middleware ran successfully
 
-  // 3. Call service to change password
-  await userService.changePassword(userId, oldPassword, newPassword);
+  // 3. Call service to change password (OTP required while mustChangePassword is set)
+  await userService.changePassword(userId, oldPassword, newPassword, otp);
 
   // 4. Send success response
   res?.status(httpStatus.OK).json({
     status: true,
     message: 'Password changed successfully.',
+  });
+});
+
+// Step 1 of the forced password change: verify passwords and email a 4-digit OTP
+const sendPasswordChangeOtp = catchAsync(async (req, res) => {
+  const { oldPassword, newPassword } =
+    await userValidator.changePasswordSchema.validateAsync(req.body);
+
+  const data = await userService.sendPasswordChangeOtp(
+    req?.user?.id,
+    oldPassword,
+    newPassword
+  );
+
+  res?.status(httpStatus.OK).json({
+    status: true,
+    message: `OTP sent to ${data.email}.`,
+    data,
   });
 });
 
@@ -1195,6 +1213,7 @@ module.exports = {
   toggleLoginAccess,
   login,
   changePassword,
+  sendPasswordChangeOtp,
   forgotPassword,
   verifyOtp,
   bulkUpload,

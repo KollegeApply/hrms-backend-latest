@@ -312,6 +312,40 @@ class Helper {
     `;
   }
 
+  /**
+   * Email with the 4-digit OTP that confirms a (forced) password change.
+   * @param {string} firstName
+   * @param {string} otp
+   * @param {number} expiryMinutes
+   * @returns {string} - HTML email content.
+   */
+  static getPasswordChangeOtpEmail(firstName, otp, expiryMinutes) {
+    const digits = String(otp)
+      .split('')
+      .map(
+        (d) =>
+          `<td style="width: 48px; height: 56px; text-align: center; font-size: 28px; font-weight: bold; color: #16324F; background: #eef4fc; border: 1px solid #c9dcf5; border-radius: 8px;">${d}</td>`
+      )
+      .join('<td style="width: 10px;"></td>');
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 560px; margin: 20px auto; border-radius: 12px; overflow: hidden; border: 1px solid #e5e7eb;">
+      <div style="background: linear-gradient(135deg, #16324F, #408EE0); background-color: #16324F; padding: 24px 28px; color: #ffffff;">
+        <h1 style="margin: 0; font-size: 20px;">Confirm your password change</h1>
+      </div>
+      <div style="background: #ffffff; padding: 28px;">
+        <p style="color: #444; font-size: 15px; line-height: 1.6; margin: 0 0 12px;">Hi ${firstName || 'there'},</p>
+        <p style="color: #444; font-size: 15px; line-height: 1.6; margin: 0 0 20px;">Use this OTP to finish updating your HRMS password:</p>
+        <table role="presentation" style="margin: 0 auto 20px; border-collapse: separate;"><tr>${digits}</tr></table>
+        <p style="color: #444; font-size: 14px; line-height: 1.6; margin: 0 0 8px;">This OTP is valid for <strong>${expiryMinutes} minutes</strong>.</p>
+        <p style="color: #444; font-size: 14px; line-height: 1.6; margin: 0;">If you didn't try to change your password, contact HR right away. Never share this OTP with anyone.</p>
+      </div>
+      <div style="background: #f9fafb; padding: 14px 28px; text-align: center; font-size: 12px; color: #999;">
+        This is an automated message. Please do not reply.
+      </div>
+    </div>
+    `;
+  }
+
   static leaveWFHApproval(userName, requestType, date, leaveType = '', reason, team, jobTitle, employeeId, department) {
     const displayTeam = getTeamEmailConfig(team);
 

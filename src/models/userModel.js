@@ -33,6 +33,12 @@ const userSchema = new Schema(
       required: [true, 'Password is required'],
       select: false, // Do not return password by default
     },
+    // True for accounts created by HR/Admin with a temporary password.
+    // The user must set their own password on first login; cleared once they do.
+    mustChangePassword: {
+      type: Boolean,
+      default: false,
+    },
     employeeId: {
       type: String,
       unique: true,
@@ -150,6 +156,10 @@ const userSchema = new Schema(
       required: false,
       select: false, // Don't return expiry by default
     },
+    // Password-change OTP (hashed) for the forced password-change flow; see userService.
+    passwordChangeOtp: { type: String, select: false },
+    passwordChangeOtpExpires: { type: Date, select: false },
+    passwordChangeOtpAttempts: { type: Number, default: 0, select: false },
     // Resignation submit OTP (hashed); see resignationService.
     resignationOtp: { type: String, select: false },
     resignationOtpExpires: { type: Date, select: false },
