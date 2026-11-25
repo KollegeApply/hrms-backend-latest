@@ -1,4 +1,5 @@
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const User = require('../models/userModel');
 const Helper = require('../utility/helper');
 const {
@@ -28,6 +29,13 @@ const Feedback = require('../models/feedbackModel');
 const CompanyPolicy = require('../models/companypolicyModel');
 const UserDetails = require('../models/userDetailsModel');
 const _ = require('lodash');
+
+// Forced password-change OTP settings
+const PASSWORD_OTP_EXPIRY_MINUTES = 5;
+const PASSWORD_OTP_RESEND_SECONDS = 30;
+const PASSWORD_OTP_MAX_ATTEMPTS = 5;
+const hashOtp = (otp) =>
+  crypto.createHash('sha256').update(String(otp)).digest('hex');
 const attendanceService = require('./attendanceService');
 
 class UserService {
@@ -680,6 +688,7 @@ class UserService {
       password: hashedPassword,
       email: userData?.email?.toLowerCase(),
       leavePolicyId: assignedPolicy._id,
+      mustChangePassword: true, // force password change on first login
     });
 
     const savedUser = await user.save();
@@ -816,6 +825,7 @@ class UserService {
 
     // Prevent password update through this method (should have a dedicated password reset/change flow)
     delete updateData?.password;
+    delete updateData?.mustChangePassword;
 
     const validWorkTypes = ['WFO', 'WFH'];
     if (updateData?.workType && !validWorkTypes.includes(updateData.workType)) {
@@ -1110,12 +1120,62 @@ class UserService {
    * @returns {Promise<boolean>} - True if the password was changed successfully.
    * @throws {ApiError} - If user not found, old password mismatch, or update fails.
    */
-  async changePassword(userId, oldPassword, newPassword) {
+  async changePassword(userId, oldPassword, newPassword, otp) {
     logger.info(`Attempting password change for user ID: ${userId}`);
 
-    // Fetch user *with* password selected
-    const user = await User.findById(userId).select('+password');
+    // Fetch user *with* password and OTP fields selected
+    const user = await User.findById(userId).select(
+      '+password +passwordChangeOtp +passwordChangeOtpExpires +passwordChangeOtpAttempts'
+    );
 
+    await this._checkPasswordChange(user, userId, oldPassword, newPassword);
+
+    // Forced password change must be confirmed with the emailed OTP
+    if (user.mustChangePassword) {
+      if (!otp) {
+        throw new ApiError(httpStatus.BAD_REQUEST, 'OTP is required.');
+      }
+      if (
+        !user.passwordChangeOtp ||
+        !user.passwordChangeOtpExpires ||
+        user.passwordChangeOtpExpires < new Date()
+      ) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          'OTP expired. Please request a new one.'
+        );
+      }
+      if ((user.passwordChangeOtpAttempts || 0) >= PASSWORD_OTP_MAX_ATTEMPTS) {
+        throw new ApiError(
+          httpStatus.BAD_REQUEST,
+          'Too many wrong attempts. Please request a new OTP.'
+        );
+      }
+      if (user.passwordChangeOtp !== hashOtp(otp)) {
+        user.passwordChangeOtpAttempts = (user.passwordChangeOtpAttempts || 0) + 1;
+        await user.save();
+        throw new ApiError(httpStatus.BAD_REQUEST, 'Incorrect OTP.');
+      }
+    }
+
+    // Hash the new password
+    user.password = await bcrypt.hash(newPassword, 10);
+    user.mustChangePassword = false; // forced password change completed
+    user.passwordChangeOtp = undefined;
+    user.passwordChangeOtpExpires = undefined;
+    user.passwordChangeOtpAttempts = 0;
+    await user.save();
+
+    logger.info(`Password changed successfully for user ID: ${userId}`);
+    // Optionally: Send an email notification about the password change
+    return true;
+  }
+
+  /**
+   * Shared checks for a password change: user exists, current password is
+   * correct, and the new password differs from it.
+   */
+  async _checkPasswordChange(user, userId, oldPassword, newPassword) {
     if (!user || user?.isDeleted) {
       logger.warn(
         `Password change failed: User not found or deleted for ID: ${userId}`
@@ -1123,25 +1183,85 @@ class UserService {
       throw new ApiError(httpStatus.NOT_FOUND, 'User not found.');
     }
 
-    // Verify the old password
     const isPasswordMatch = await bcrypt.compare(oldPassword, user?.password);
     if (!isPasswordMatch) {
       logger.warn(
         `Password change failed: Incorrect old password for user ID: ${userId}`
       );
+      // 400 (not 401) so the frontend doesn't treat it as an expired session and log the user out
+      throw new ApiError(httpStatus.BAD_REQUEST, 'Incorrect current password.');
+    }
+
+    if (oldPassword === newPassword) {
       throw new ApiError(
-        httpStatus.UNAUTHORIZED,
-        'Incorrect current password.'
+        httpStatus.BAD_REQUEST,
+        'New password must be different from current password.'
+      );
+    }
+  }
+
+  /**
+   * Step 1 of the forced password change: checks the passwords, then emails a
+   * 4-digit OTP (valid PASSWORD_OTP_EXPIRY_MINUTES) that step 2 (changePassword) needs.
+   */
+  async sendPasswordChangeOtp(userId, oldPassword, newPassword) {
+    const user = await User.findById(userId).select(
+      '+password +passwordChangeOtp +passwordChangeOtpExpires +passwordChangeOtpAttempts'
+    );
+
+    await this._checkPasswordChange(user, userId, oldPassword, newPassword);
+
+    // Throttle resends
+    if (user.passwordChangeOtpExpires) {
+      const sentAt =
+        user.passwordChangeOtpExpires.getTime() -
+        PASSWORD_OTP_EXPIRY_MINUTES * 60 * 1000;
+      const wait = Math.ceil(
+        (sentAt + PASSWORD_OTP_RESEND_SECONDS * 1000 - Date.now()) / 1000
+      );
+      if (wait > 0) {
+        throw new ApiError(
+          httpStatus.TOO_MANY_REQUESTS,
+          `Please wait ${wait}s before requesting another OTP.`
+        );
+      }
+    }
+
+    const otp = String(crypto.randomInt(0, 10000)).padStart(4, '0');
+    const expires = new Date(Date.now() + PASSWORD_OTP_EXPIRY_MINUTES * 60 * 1000);
+    user.passwordChangeOtp = hashOtp(otp);
+    user.passwordChangeOtpExpires = expires;
+    user.passwordChangeOtpAttempts = 0;
+    await user.save();
+
+    try {
+      await Helper.sendEmail({
+        receiverEmails: [user.email],
+        subject: 'HRMS Password Change OTP',
+        message: Helper.getPasswordChangeOtpEmail(
+          user.firstName,
+          otp,
+          PASSWORD_OTP_EXPIRY_MINUTES
+        ),
+        team: user.team,
+      });
+    } catch (err) {
+      logger.error(
+        `Password change OTP email failed for ${user.id}: ${err?.message}`
+      );
+      throw new ApiError(
+        httpStatus.INTERNAL_SERVER_ERROR,
+        'Could not send the OTP email. Please try again.'
       );
     }
 
-    // Hash the new password
-    user.password = await bcrypt.hash(newPassword, 10);
-    await user.save();
-
-    logger.info(`Password changed successfully for user ID: ${userId}`);
-    // Optionally: Send an email notification about the password change
-    return true;
+    logger.info(`Password change OTP sent to user ${user.id}`);
+    return {
+      email: user.email,
+      expiresAt: expires,
+      expiresInSeconds: PASSWORD_OTP_EXPIRY_MINUTES * 60,
+      resendInSeconds: PASSWORD_OTP_RESEND_SECONDS,
+    };
   }
 
   /**
@@ -1240,6 +1360,8 @@ class UserService {
     // Clear the OTP fields after successful use
     user.passwordResetOtp = undefined;
     user.passwordResetOtpExpires = undefined;
+    // User chose their own password via OTP, so no forced change needed
+    user.mustChangePassword = false;
 
     await user?.save();
 
@@ -1436,6 +1558,7 @@ class UserService {
           passMap[user?.firstName] = user?.password;
           // passMap.set(user?.firstName, user?.password);
           user.password = await bcrypt.hash(user?.password, saltRounds);
+          user.mustChangePassword = true; // force password change on first login
           usersReadyForInsert?.push(user);
         } catch (hashError) {
           console.error(

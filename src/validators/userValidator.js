@@ -219,6 +219,11 @@ const changePasswordSchema = Joi.object({
     'string.empty': 'New password is required',
     'any.required': 'New password is required',
   }),
+  // Required (and checked by the service) only while user.mustChangePassword is true
+  otp: Joi.string()
+    .pattern(/^\d{4}$/)
+    .optional()
+    .messages({ 'string.pattern.base': 'OTP must be 4 digits' }),
   // Optional: Add complexity rules (e.g., regex for uppercase, number, symbol)
   // newPassword: Joi.string().min(8).pattern(new RegExp('^(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9])(?=.*[!@#$%^&*])')).required().messages({ ... }),
 }).options({ stripUnknown: true });
